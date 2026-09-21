@@ -1,0 +1,115 @@
+# ─── Python ──────────────────────────────────────────────────────────────────
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+*.pyd
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+share/python-wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+.mypy_cache/
+.ruff_cache/
+.pytype/
+cython_debug/
+
+# ─── Virtual Environments ─────────────────────────────────────────────────────
+.env
+.venv
+env/
+venv/
+ENV/
+env.bak/
+venv.bak/
+.python-version
+
+# ─── Environment & Secrets ───────────────────────────────────────────────────
+.env
+.env.local
+.env.*.local
+secrets/
+*.pem
+*.key
+*.crt
+*.p12
+google-calendar-sa.json
+
+# ─── Testing & Coverage ──────────────────────────────────────────────────────
+.tox/
+.nox/
+.cache
+.coverage
+.coverage.*
+htmlcov/
+.pytest_cache/
+coverage.xml
+*.cover
+*.py,cover
+nosetests.xml
+test-results/
+
+# ─── IDEs ────────────────────────────────────────────────────────────────────
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
+
+# ─── Docker ───────────────────────────────────────────────────────────────────
+infra/minio/data/
+infra/postgres/data/
+
+# ─── Logs ────────────────────────────────────────────────────────────────────
+*.log
+logs/
+*.log.*
+
+# ─── Distribution / Packaging ────────────────────────────────────────────────
+*.manifest
+*.spec
+
+# ─── Jupyter ─────────────────────────────────────────────────────────────────
+.ipynb_checkpoints
+
+# ─── Terraform ───────────────────────────────────────────────────────────────
+infrastructure/**/.terraform/
+infrastructure/**/*.tfstate
+infrastructure/**/*.tfstate.backup
+infrastructure/**/.terraform.lock.hcl
+*.tfvars
+!*.tfvars.example
+.venv/
+node_modules/
+.next/
+__pycache__/
+*.pyc
+.env
+artifacts/
+playwright-report/
+test-results/
+.venv/
+node_modules/
+.next/
+__pycache__/
+*.pyc
+.env
+artifacts/
+playwright-report/
+test-results/
+.gitignore.tmp

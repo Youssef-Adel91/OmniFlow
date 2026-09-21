@@ -1,0 +1,119 @@
+# docker-compose.monitoring.yml
+# ─────────────────────────────────────────────────────────────────────────────
+# OPTIONAL observability stack for OmniFlow AI.
+# Kept in a separate file on purpose: the core deployment must stay simple and
+# must not fail to start because a monitoring container is misconfigured.
+#
+# Start core + monitoring together:
+#   docker compose --env-file .env.prod -f docker-compose.prod.yml -f docker-compose.monitoring.yml up -d
+#
+# Start / stop monitoring only:
+#   docker compose --env-file .env.prod -f docker-compose.prod.yml -f docker-compose.monitoring.yml up -d prometheus grafana postgres-exporter redis-exporter
+#   docker compose --env-file .env.prod -f docker-compose.prod.yml -f docker-compose.monitoring.yml stop prometheus grafana postgres-exporter redis-exporter
+#
+# Core-only (monitoring simply never starts):
+#   docker compose --env-file .env.prod -f docker-compose.prod.yml up -d
+#
+# ⚠️ SECURITY: both UIs are published on 127.0.0.1 ONLY. Reach them through an
+# SSH tunnel, e.g.:  ssh -L 3001:127.0.0.1:3001 user@server
+# Do NOT expose them publicly without putting them behind auth + TLS.
+# ─────────────────────────────────────────────────────────────────────────────
+
+x-logging: &monitoring-logging
+  driver: "json-file"
+  options:
+    max-size: "20m"
+    max-file: "3"
+
+networks:
+  omniflow-prod-net:
+    name: omniflow-prod-net
+    driver: bridge
+
+volumes:
+  prometheus_prod_data:
+  grafana_prod_data:
+
+services:
+  prometheus:
+    image: prom/prometheus:v2.55.1
+    container_name: prod-prometheus
+    restart: always
+    logging: *monitoring-logging
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.path=/prometheus
+      - --storage.tsdb.retention.time=15d
+      - --web.enable-lifecycle
+    volumes:
+      - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus_prod_data:/prometheus
+    ports:
+      - "127.0.0.1:9091:9090"
+    networks:
+      - omniflow-prod-net
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1:9090/-/healthy || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+
+  grafana:
+    image: grafana/grafana:11.3.1
+    container_name: prod-grafana
+    restart: always
+    logging: *monitoring-logging
+    environment:
+      # ⚠️ CLIENT ACTION: set GRAFANA_ADMIN_USER / GRAFANA_ADMIN_PASSWORD in
+      # .env.prod. The fallbacks below exist only so the container can boot.
+      GF_SECURITY_ADMIN_USER: ${GRAFANA_ADMIN_USER:-admin}
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:-changeme-immediately}
+      GF_USERS_ALLOW_SIGN_UP: "false"
+      GF_ANALYTICS_REPORTING_ENABLED: "false"
+      GF_SERVER_ROOT_URL: ${GRAFANA_ROOT_URL:-http://localhost:3001}
+    volumes:
+      - grafana_prod_data:/var/lib/grafana
+    ports:
+      - "127.0.0.1:3001:3000"
+    depends_on:
+      prometheus:
+        condition: service_healthy
+    networks:
+      - omniflow-prod-net
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1:3000/api/health || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+
+  postgres-exporter:
+    image: prometheuscommunity/postgres-exporter:v0.16.0
+    container_name: prod-postgres-exporter
+    restart: always
+    logging: *monitoring-logging
+    environment:
+      # Connects directly to PostgreSQL (not PgBouncer) so that server-level
+      # statistics views are available.
+      DATA_SOURCE_NAME: "postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}?sslmode=disable"
+      PG_EXPORTER_AUTO_DISCOVER_DATABASES: "true"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - omniflow-prod-net
+
+  redis-exporter:
+    image: oliver006/redis_exporter:v1.66.0
+    container_name: prod-redis-exporter
+    restart: always
+    logging: *monitoring-logging
+    environment:
+      REDIS_ADDR: "redis://redis:6379"
+      REDIS_PASSWORD: ${REDIS_PASSWORD}
+    depends_on:
+      redis:
+        condition: service_healthy
+    networks:
+      - omniflow-prod-net

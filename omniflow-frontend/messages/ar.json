@@ -1,0 +1,86 @@
+{
+  "nav": {
+    "overview": "نظرة عامة",
+    "inbox": "صندوق الذكاء",
+    "properties": "العقارات",
+    "customers": "العملاء",
+    "knowledge": "معلومات شركتك",
+    "broadcasts": "الحملات",
+    "reports": "التقارير",
+    "settings": "الإعدادات",
+    "support": "الدعم"
+  },
+  "header": {
+    "search": "البحث...",
+    "notifications": "الإشعارات",
+    "profile": "الملف الشخصي",
+    "logout": "تسجيل الخروج",
+    "language": "اللغة"
+  },
+  "dashboard": {
+    "title": "لوحة التحكم",
+    "welcome": "أهلاً بك في OmniFlow AI",
+    "subtitle": "منصة العقارات الذكية"
+  },
+  "inbox": {
+    "title": "صندوق الرسائل الذكي",
+    "ai_active": "يُدار بالذكاء الاصطناعي",
+    "human_active": "وكيل بشري نشط",
+    "escalated": "تصعيد بشري",
+    "unread": "غير مقروء",
+    "reply": "الرد",
+    "takeover": "تسلّم المحادثة",
+    "empty": "لا توجد محادثات نشطة"
+  },
+  "properties": {
+    "title": "إدارة العقارات",
+    "add": "إضافة عقار",
+    "verified": "موثق",
+    "pending": "قيد التحقق",
+    "suspended": "موقوف",
+    "rega_number": "رقم الإعلان",
+    "price": "السعر",
+    "area": "المساحة",
+    "bedrooms": "غرف النوم",
+    "city": "المدينة",
+    "district": "الحي"
+  },
+  "common": {
+    "save": "حفظ",
+    "cancel": "إلغاء",
+    "delete": "حذف",
+    "edit": "تعديل",
+    "view": "عرض",
+    "loading": "جارٍ التحميل...",
+    "error": "حدث خطأ",
+    "success": "تم بنجاح",
+    "confirm": "تأكيد",
+    "back": "رجوع",
+    "search": "بحث",
+    "filter": "تصفية",
+    "export": "تصدير",
+    "sar": "ريال",
+    "sqm": "م²"
+  },
+  "auth": {
+    "login": "تسجيل الدخول",
+    "email": "البريد الإلكتروني",
+    "password": "كلمة المرور",
+    "forgot": "نسيت كلمة المرور؟",
+    "welcome_back": "مرحباً بعودتك",
+    "sign_in_desc": "سجّل الدخول للوصول إلى لوحة التحكم"
+  },
+  "metrics": {
+    "total_conversations": "إجمالي المحادثات",
+    "ai_handled": "محادثات الذكاء الاصطناعي",
+    "human_handled": "محادثات بشرية",
+    "response_time": "متوسط وقت الاستجابة",
+    "conversion_rate": "معدل التحويل",
+    "active_listings": "العقارات النشطة",
+    "new_customers": "عملاء جدد",
+    "active_conversations": "المحادثات النشطة",
+    "total_customers": "إجمالي العملاء",
+    "hot_leads": "العملاء الساخنون",
+    "reports_sold": "التقارير المُباعة"
+  }
+}

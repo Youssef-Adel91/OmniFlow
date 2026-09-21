@@ -1,0 +1,1872 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>OmniFlow AI — حين يصبح الحلم إمبراطورية رقمية | الوثيقة التنفيذية</title>
+
+<script src="https://cdn.jsdelivr.net/npm/mermaid/dist/mermaid.min.js"></script>
+<script>
+  mermaid.initialize({
+    startOnLoad: true,
+    theme: 'base',
+    themeVariables: {
+      primaryColor: '#c9a961',
+      primaryTextColor: '#ffffff',
+      primaryBorderColor: '#a8893e',
+      lineColor: '#1a2332',
+      secondaryColor: '#1a2332',
+      tertiaryColor: '#f8f5ef',
+      background: '#ffffff',
+      mainBkg: '#c9a961',
+      secondBkg: '#1a2332',
+      tertiaryBkg: '#faf7f0',
+      fontSize: '14px',
+      fontFamily: 'Segoe UI, Tahoma, Arial, sans-serif'
+    },
+    flowchart: {
+      htmlLabels: true,
+      curve: 'basis',
+      padding: 20
+    }
+  });
+</script>
+
+<style>
+  /* =====================================================
+     PAGED MEDIA — A4 PRINT OPTIMIZATION
+     ===================================================== */
+  @page {
+    size: A4;
+    margin: 22mm 18mm 25mm 18mm;
+    @bottom-center {
+      content: "OmniFlow AI — الوثيقة التنفيذية | الصفحة " counter(page) " من " counter(pages);
+      font-family: 'Segoe UI', Tahoma, Arial, sans-serif;
+      font-size: 9pt;
+      color: #94815a;
+    }
+    @top-center {
+      content: "وثيقة شراكة استراتيجية — للأستاذ المستشار أحمد الصائغ";
+      font-family: 'Segoe UI', Tahoma, Arial, sans-serif;
+      font-size: 8pt;
+      color: #b8a988;
+      font-style: italic;
+    }
+  }
+
+  @page :first {
+    @top-center { content: ""; }
+    @bottom-center { content: ""; }
+  }
+
+  /* =====================================================
+     ROOT VARIABLES — EXECUTIVE GOLD & DEEP NAVY PALETTE
+     ===================================================== */
+  :root {
+    --deep-navy: #1a2332;
+    --deep-navy-light: #2a3a52;
+    --deep-navy-soft: #3d4f6e;
+    --royal-gold: #c9a961;
+    --royal-gold-dark: #a8893e;
+    --royal-gold-light: #e0c98a;
+    --royal-gold-pale: #faf7f0;
+    --champagne: #f4ecd8;
+    --warm-cream: #fdfaf3;
+    --burgundy: #8b3a3a;
+    --burgundy-pale: #f9eded;
+    --sage: #6b8e6f;
+    --sage-pale: #eaf2eb;
+    --charcoal: #2c2c2c;
+    --gray-50: #faf9f6;
+    --gray-100: #f4f1ea;
+    --gray-200: #e8e2d3;
+    --gray-300: #d4c9b0;
+    --gray-400: #a89c83;
+    --gray-500: #7a6f5a;
+    --gray-600: #5c5343;
+    --gray-700: #3d3729;
+    --gray-800: #2a2519;
+    --white: #ffffff;
+  }
+
+  /* =====================================================
+     GLOBAL RESETS
+     ===================================================== */
+  * {
+    box-sizing: border-box;
+    margin: 0;
+    padding: 0;
+  }
+
+  html {
+    scroll-behavior: smooth;
+  }
+
+  body {
+    font-family: 'Segoe UI', Tahoma, Arial, sans-serif;
+    background: var(--warm-cream);
+    color: var(--gray-800);
+    line-height: 1.95;
+    font-size: 11.5pt;
+    -webkit-font-smoothing: antialiased;
+    direction: rtl;
+  }
+
+  /* =====================================================
+     LAYOUT CONTAINER
+     ===================================================== */
+  .container {
+    max-width: 1100px;
+    margin: 0 auto;
+    background: var(--white);
+    box-shadow: 0 0 60px rgba(26, 35, 50, 0.1);
+    min-height: 100vh;
+  }
+
+  /* =====================================================
+     COVER PAGE — ROYAL EXECUTIVE STYLE
+     ===================================================== */
+  .cover {
+    background: linear-gradient(160deg, var(--deep-navy) 0%, var(--deep-navy-light) 50%, #2c3e5e 100%);
+    color: var(--white);
+    padding: 90px 60px;
+    text-align: center;
+    page-break-after: always;
+    position: relative;
+    overflow: hidden;
+    min-height: 100vh;
+  }
+
+  .cover::before {
+    content: "";
+    position: absolute;
+    top: -50%;
+    right: -30%;
+    width: 80%;
+    height: 200%;
+    background: radial-gradient(circle, rgba(201, 169, 97, 0.12) 0%, transparent 50%);
+    pointer-events: none;
+  }
+
+  .cover::after {
+    content: "";
+    position: absolute;
+    bottom: -40%;
+    left: -20%;
+    width: 70%;
+    height: 150%;
+    background: radial-gradient(circle, rgba(224, 201, 138, 0.08) 0%, transparent 60%);
+    pointer-events: none;
+  }
+
+  .cover-ornament {
+    width: 80px;
+    height: 4px;
+    background: linear-gradient(90deg, transparent, var(--royal-gold), transparent);
+    margin: 0 auto 30px;
+    position: relative;
+    z-index: 1;
+  }
+
+  .cover-badge {
+    display: inline-block;
+    padding: 10px 32px;
+    background: rgba(201, 169, 97, 0.15);
+    border: 1px solid var(--royal-gold);
+    border-radius: 40px;
+    font-size: 10.5pt;
+    margin-bottom: 35px;
+    letter-spacing: 3px;
+    color: var(--royal-gold-light);
+    position: relative;
+    z-index: 1;
+    font-weight: 500;
+  }
+
+  .cover h1 {
+    font-size: 42pt;
+    font-weight: 800;
+    margin-bottom: 18px;
+    line-height: 1.25;
+    background: linear-gradient(135deg, #ffffff 0%, var(--royal-gold-light) 100%);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+    position: relative;
+    z-index: 1;
+  }
+
+  .cover .subtitle {
+    font-size: 22pt;
+    font-weight: 300;
+    color: var(--royal-gold-light);
+    margin-bottom: 12px;
+    line-height: 1.5;
+    position: relative;
+    z-index: 1;
+  }
+
+  .cover .tagline {
+    font-size: 13pt;
+    color: var(--gray-300);
+    font-style: italic;
+    margin-bottom: 50px;
+    max-width: 600px;
+    margin-left: auto;
+    margin-right: auto;
+    line-height: 1.7;
+    position: relative;
+    z-index: 1;
+  }
+
+  .cover .recipient-card {
+    background: rgba(255, 255, 255, 0.06);
+    border: 1px solid rgba(201, 169, 97, 0.3);
+    border-radius: 16px;
+    padding: 30px 40px;
+    max-width: 540px;
+    margin: 0 auto 30px;
+    backdrop-filter: blur(10px);
+    position: relative;
+    z-index: 1;
+  }
+
+  .recipient-label {
+    font-size: 9pt;
+    color: var(--royal-gold);
+    text-transform: uppercase;
+    letter-spacing: 3px;
+    margin-bottom: 12px;
+  }
+
+  .recipient-name {
+    font-size: 20pt;
+    font-weight: 700;
+    color: var(--white);
+    margin-bottom: 8px;
+  }
+
+  .recipient-title {
+    font-size: 11pt;
+    color: var(--gray-300);
+    font-style: italic;
+  }
+
+  .cover-meta {
+    display: flex;
+    justify-content: center;
+    gap: 50px;
+    margin-top: 40px;
+    flex-wrap: wrap;
+    position: relative;
+    z-index: 1;
+  }
+
+  .cover-meta-item {
+    text-align: center;
+  }
+
+  .cover-meta-label {
+    font-size: 8.5pt;
+    color: var(--royal-gold);
+    letter-spacing: 2px;
+    text-transform: uppercase;
+    margin-bottom: 6px;
+  }
+
+  .cover-meta-value {
+    font-size: 10.5pt;
+    color: var(--gray-200);
+  }
+
+  .cover-footer {
+    position: absolute;
+    bottom: 40px;
+    left: 0;
+    right: 0;
+    font-size: 9.5pt;
+    color: var(--gray-400);
+    z-index: 1;
+    font-style: italic;
+  }
+
+  /* =====================================================
+     MAIN CONTENT WRAPPER
+     ===================================================== */
+  .content {
+    padding: 60px 70px;
+  }
+
+  /* =====================================================
+     SECTION HEADERS — ELEGANT EXECUTIVE
+     ===================================================== */
+  h1.chapter-title {
+    font-size: 26pt;
+    color: var(--deep-navy);
+    margin: 60px 0 30px 0;
+    font-weight: 800;
+    page-break-after: avoid;
+    line-height: 1.4;
+    position: relative;
+    padding-bottom: 20px;
+  }
+
+  h1.chapter-title::after {
+    content: "";
+    position: absolute;
+    bottom: 0;
+    right: 0;
+    width: 120px;
+    height: 4px;
+    background: linear-gradient(90deg, var(--royal-gold) 0%, var(--royal-gold-light) 100%);
+    border-radius: 2px;
+  }
+
+  h1.chapter-title .chapter-number {
+    display: inline-block;
+    color: var(--royal-gold);
+    font-size: 18pt;
+    margin-left: 16px;
+    font-weight: 400;
+  }
+
+  h1.chapter-title .chapter-english {
+    display: block;
+    font-size: 11pt;
+    color: var(--royal-gold-dark);
+    font-weight: 500;
+    margin-top: 8px;
+    letter-spacing: 1.5px;
+    font-style: italic;
+  }
+
+  h2 {
+    font-size: 17pt;
+    color: var(--deep-navy);
+    margin: 38px 0 18px 0;
+    font-weight: 700;
+    padding-right: 16px;
+    border-right: 4px solid var(--royal-gold);
+    page-break-after: avoid;
+  }
+
+  h3 {
+    font-size: 14pt;
+    color: var(--royal-gold-dark);
+    margin: 28px 0 14px 0;
+    font-weight: 700;
+    page-break-after: avoid;
+  }
+
+  h4 {
+    font-size: 12pt;
+    color: var(--deep-navy);
+    margin: 22px 0 12px 0;
+    font-weight: 700;
+    page-break-after: avoid;
+  }
+
+  /* =====================================================
+     PARAGRAPHS
+     ===================================================== */
+  p {
+    margin-bottom: 16px;
+    text-align: justify;
+    color: var(--gray-700);
+    line-height: 1.95;
+  }
+
+  .lead {
+    font-size: 12.5pt;
+    color: var(--deep-navy);
+    line-height: 1.85;
+    font-weight: 500;
+  }
+
+  strong, b {
+    color: var(--deep-navy);
+    font-weight: 700;
+  }
+
+  em, i {
+    color: var(--royal-gold-dark);
+    font-style: italic;
+    font-weight: 500;
+  }
+
+  /* =====================================================
+     LISTS
+     ===================================================== */
+  ul, ol {
+    margin: 14px 32px 18px 0;
+    padding: 0;
+  }
+
+  ul li, ol li {
+    margin-bottom: 12px;
+    line-height: 1.95;
+    color: var(--gray-700);
+    padding-right: 6px;
+  }
+
+  ul li::marker {
+    color: var(--royal-gold);
+  }
+
+  ol li::marker {
+    color: var(--royal-gold-dark);
+    font-weight: 700;
+  }
+
+  /* =====================================================
+     STORY / NARRATIVE BLOCKS
+     ===================================================== */
+  .story-block {
+    background: linear-gradient(135deg, var(--warm-cream) 0%, var(--champagne) 100%);
+    border-right: 5px solid var(--royal-gold);
+    padding: 28px 32px;
+    margin: 28px 0;
+    border-radius: 14px;
+    box-shadow: 0 4px 16px rgba(201, 169, 97, 0.12);
+    page-break-inside: avoid;
+    position: relative;
+  }
+
+  .story-block::before {
+    content: "❝";
+    position: absolute;
+    top: 10px;
+    left: 24px;
+    font-size: 56pt;
+    color: var(--royal-gold);
+    opacity: 0.25;
+    line-height: 1;
+    font-family: Georgia, serif;
+  }
+
+  .story-block p {
+    color: var(--gray-800);
+    font-style: italic;
+    line-height: 2;
+    margin-bottom: 14px;
+  }
+
+  .story-block p:last-child {
+    margin-bottom: 0;
+  }
+
+  .story-scene-tag {
+    display: inline-block;
+    background: var(--deep-navy);
+    color: var(--royal-gold-light);
+    padding: 6px 18px;
+    border-radius: 20px;
+    font-size: 10pt;
+    font-weight: 600;
+    margin-bottom: 16px;
+    letter-spacing: 1px;
+    font-style: normal;
+  }
+
+  .dialog {
+    background: var(--white);
+    border-right: 3px solid var(--royal-gold);
+    padding: 16px 22px;
+    margin: 14px 0;
+    border-radius: 10px;
+    font-style: italic;
+    color: var(--gray-700);
+    box-shadow: 0 2px 6px rgba(0,0,0,0.04);
+    line-height: 1.85;
+  }
+
+  .dialog.customer {
+    border-right-color: var(--deep-navy);
+    background: #f5f7fa;
+  }
+
+  .dialog.advisor {
+    border-right-color: var(--royal-gold);
+    background: linear-gradient(135deg, #fdfaf3 0%, #faf5e8 100%);
+  }
+
+  .dialog-speaker {
+    display: block;
+    font-style: normal;
+    font-weight: 700;
+    color: var(--deep-navy);
+    font-size: 10pt;
+    margin-bottom: 6px;
+    letter-spacing: 0.5px;
+  }
+
+  /* =====================================================
+     IMPACT NUMBERS / METRICS
+     ===================================================== */
+  .impact-row {
+    display: flex;
+    gap: 20px;
+    margin: 28px 0;
+    flex-wrap: wrap;
+    page-break-inside: avoid;
+  }
+
+  .impact-card {
+    flex: 1;
+    min-width: 220px;
+    background: linear-gradient(135deg, var(--deep-navy) 0%, var(--deep-navy-light) 100%);
+    color: var(--white);
+    padding: 24px 22px;
+    border-radius: 14px;
+    text-align: center;
+    box-shadow: 0 6px 20px rgba(26, 35, 50, 0.18);
+    border-bottom: 4px solid var(--royal-gold);
+  }
+
+  .impact-number {
+    font-size: 32pt;
+    font-weight: 800;
+    color: var(--royal-gold-light);
+    line-height: 1;
+    margin-bottom: 10px;
+  }
+
+  .impact-label {
+    font-size: 10.5pt;
+    color: var(--gray-200);
+    line-height: 1.5;
+  }
+
+  /* =====================================================
+     CALLOUTS — EXECUTIVE STYLED
+     ===================================================== */
+  .callout {
+    background: linear-gradient(135deg, var(--royal-gold-pale) 0%, var(--champagne) 100%);
+    border-right: 5px solid var(--royal-gold);
+    padding: 20px 26px;
+    margin: 24px 0;
+    border-radius: 10px;
+    page-break-inside: avoid;
+    box-shadow: 0 2px 10px rgba(201, 169, 97, 0.1);
+  }
+
+  .callout-title {
+    font-weight: 700;
+    color: var(--royal-gold-dark);
+    margin-bottom: 10px;
+    font-size: 11.5pt;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .callout p:last-child {
+    margin-bottom: 0;
+  }
+
+  .callout.insight {
+    background: linear-gradient(135deg, var(--sage-pale) 0%, #d8e8da 100%);
+    border-right-color: var(--sage);
+  }
+
+  .callout.insight .callout-title {
+    color: var(--sage);
+  }
+
+  .callout.warning {
+    background: linear-gradient(135deg, var(--burgundy-pale) 0%, #f5dcdc 100%);
+    border-right-color: var(--burgundy);
+  }
+
+  .callout.warning .callout-title {
+    color: var(--burgundy);
+  }
+
+  /* =====================================================
+     PULL QUOTES — VISIONARY STATEMENTS
+     ===================================================== */
+  .pull-quote {
+    text-align: center;
+    margin: 36px 30px;
+    padding: 30px 40px;
+    font-size: 16pt;
+    font-style: italic;
+    color: var(--deep-navy);
+    line-height: 1.7;
+    position: relative;
+    page-break-inside: avoid;
+    border-top: 2px solid var(--royal-gold);
+    border-bottom: 2px solid var(--royal-gold);
+    font-weight: 500;
+  }
+
+  .pull-quote::before,
+  .pull-quote::after {
+    content: "";
+    position: absolute;
+    width: 40px;
+    height: 2px;
+    background: var(--royal-gold);
+  }
+
+  /* =====================================================
+     TABLES — ELEGANT EXECUTIVE
+     ===================================================== */
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 24px 0;
+    background: var(--white);
+    border-radius: 12px;
+    overflow: hidden;
+    box-shadow: 0 4px 16px rgba(26, 35, 50, 0.08);
+    page-break-inside: avoid;
+    border: 1px solid var(--gray-200);
+  }
+
+  table thead {
+    background: linear-gradient(135deg, var(--deep-navy) 0%, var(--deep-navy-light) 100%);
+    color: var(--white);
+  }
+
+  table thead th {
+    padding: 16px 18px;
+    text-align: right;
+    font-weight: 700;
+    font-size: 11pt;
+    border-bottom: 3px solid var(--royal-gold);
+    letter-spacing: 0.3px;
+  }
+
+  table tbody td {
+    padding: 14px 18px;
+    border-bottom: 1px solid var(--gray-200);
+    vertical-align: top;
+    font-size: 10.5pt;
+    color: var(--gray-700);
+    line-height: 1.8;
+  }
+
+  table tbody tr:nth-child(even) {
+    background: var(--royal-gold-pale);
+  }
+
+  table tbody tr:hover {
+    background: var(--champagne);
+  }
+
+  table tbody tr:last-child td {
+    border-bottom: none;
+  }
+
+  /* =====================================================
+     MERMAID DIAGRAMS
+     ===================================================== */
+  .diagram-wrapper {
+    background: linear-gradient(135deg, var(--gray-50) 0%, var(--warm-cream) 100%);
+    border: 1px solid var(--gray-200);
+    border-radius: 14px;
+    padding: 32px 24px;
+    margin: 28px 0;
+    text-align: center;
+    page-break-inside: avoid;
+    box-shadow: inset 0 0 24px rgba(201, 169, 97, 0.05);
+  }
+
+  .diagram-title {
+    font-size: 12.5pt;
+    color: var(--deep-navy);
+    font-weight: 700;
+    margin-bottom: 20px;
+    padding-bottom: 12px;
+    border-bottom: 2px dashed var(--gray-300);
+  }
+
+  .mermaid {
+    background: transparent !important;
+    direction: ltr;
+    text-align: center;
+  }
+
+  /* =====================================================
+     ROADMAP TIMELINE
+     ===================================================== */
+  .roadmap {
+    margin: 30px 0;
+    page-break-inside: avoid;
+  }
+
+  .roadmap-phase {
+    background: var(--white);
+    border-right: 5px solid var(--royal-gold);
+    padding: 24px 28px;
+    margin-bottom: 20px;
+    border-radius: 12px;
+    box-shadow: 0 3px 12px rgba(26, 35, 50, 0.06);
+    page-break-inside: avoid;
+  }
+
+  .roadmap-phase.phase-1 {
+    border-right-color: var(--sage);
+  }
+
+  .roadmap-phase.phase-2 {
+    border-right-color: var(--royal-gold);
+  }
+
+  .roadmap-phase.phase-3 {
+    border-right-color: var(--deep-navy);
+  }
+
+  .roadmap-phase-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 14px;
+    flex-wrap: wrap;
+    gap: 10px;
+  }
+
+  .roadmap-phase-title {
+    font-size: 14pt;
+    color: var(--deep-navy);
+    font-weight: 700;
+  }
+
+  .roadmap-phase-duration {
+    background: var(--deep-navy);
+    color: var(--royal-gold-light);
+    padding: 5px 16px;
+    border-radius: 18px;
+    font-size: 9.5pt;
+    font-weight: 600;
+    letter-spacing: 0.5px;
+  }
+
+  /* =====================================================
+     GUARANTEE LIST (FINAL)
+     ===================================================== */
+  .guarantee-list {
+    list-style: none;
+    padding: 0;
+    margin: 24px 0;
+  }
+
+  .guarantee-list li {
+    background: linear-gradient(135deg, var(--white) 0%, var(--royal-gold-pale) 100%);
+    border: 1px solid var(--gray-200);
+    border-right: 5px solid var(--royal-gold);
+    padding: 16px 24px 16px 50px;
+    margin-bottom: 14px;
+    border-radius: 12px;
+    position: relative;
+    font-size: 11pt;
+    color: var(--gray-700);
+    line-height: 1.8;
+    page-break-inside: avoid;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.04);
+  }
+
+  .guarantee-list li::before {
+    content: "✓";
+    position: absolute;
+    right: 22px;
+    top: 18px;
+    color: var(--royal-gold-dark);
+    font-weight: 900;
+    font-size: 14pt;
+  }
+
+  .guarantee-list li {
+    padding-right: 50px;
+    padding-left: 24px;
+  }
+
+  /* =====================================================
+     TABLE OF CONTENTS
+     ===================================================== */
+  .toc {
+    background: linear-gradient(135deg, var(--royal-gold-pale) 0%, var(--warm-cream) 100%);
+    border: 2px solid var(--royal-gold-light);
+    border-radius: 16px;
+    padding: 36px 44px;
+    margin: 30px 0 50px;
+    page-break-after: always;
+    box-shadow: 0 6px 24px rgba(201, 169, 97, 0.1);
+  }
+
+  .toc h2 {
+    color: var(--deep-navy);
+    border: none;
+    padding: 0;
+    text-align: center;
+    margin-top: 0;
+    font-size: 22pt;
+  }
+
+  .toc-ornament {
+    width: 60px;
+    height: 3px;
+    background: var(--royal-gold);
+    margin: 12px auto 28px;
+  }
+
+  .toc ol {
+    counter-reset: section;
+    list-style: none;
+    margin: 0;
+    padding: 0;
+  }
+
+  .toc ol li {
+    counter-increment: section;
+    padding: 14px 16px;
+    border-bottom: 1px dotted var(--gray-300);
+    font-size: 12pt;
+    color: var(--gray-700);
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+
+  .toc ol li::before {
+    content: "0" counter(section);
+    color: var(--royal-gold);
+    font-weight: 700;
+    font-size: 16pt;
+    background: var(--deep-navy);
+    width: 42px;
+    height: 42px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+  }
+
+  .toc ol li:last-child {
+    border-bottom: none;
+  }
+
+  /* =====================================================
+     FINAL SIGNATURE BLOCK
+     ===================================================== */
+  .closing-block {
+    background: linear-gradient(135deg, var(--deep-navy) 0%, var(--deep-navy-light) 100%);
+    color: var(--white);
+    border-radius: 16px;
+    padding: 40px 36px;
+    margin-top: 50px;
+    text-align: center;
+    page-break-inside: avoid;
+    position: relative;
+    overflow: hidden;
+  }
+
+  .closing-block::before {
+    content: "";
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 5px;
+    background: linear-gradient(90deg, transparent, var(--royal-gold), transparent);
+  }
+
+  .closing-block h3 {
+    color: var(--royal-gold-light);
+    font-size: 18pt;
+    margin: 0 0 16px 0;
+  }
+
+  .closing-block p {
+    color: var(--gray-200);
+    font-style: italic;
+    line-height: 1.85;
+    text-align: center;
+    margin: 0 auto 14px;
+    max-width: 700px;
+  }
+
+  .closing-signature {
+    margin-top: 28px;
+    padding-top: 24px;
+    border-top: 1px solid rgba(201, 169, 97, 0.3);
+    color: var(--royal-gold-light);
+    font-size: 11pt;
+    font-style: italic;
+  }
+
+  /* =====================================================
+     PDF DOWNLOAD BUTTON
+     ===================================================== */
+  .pdf-btn {
+    position: fixed;
+    bottom: 30px;
+    left: 30px;
+    background: linear-gradient(135deg, var(--royal-gold) 0%, var(--royal-gold-dark) 100%);
+    color: var(--deep-navy);
+    border: none;
+    padding: 16px 30px;
+    border-radius: 50px;
+    font-family: 'Segoe UI', Tahoma, Arial, sans-serif;
+    font-size: 12pt;
+    font-weight: 700;
+    cursor: pointer;
+    box-shadow: 0 8px 26px rgba(201, 169, 97, 0.5);
+    transition: all 0.3s ease;
+    z-index: 9999;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    letter-spacing: 0.5px;
+  }
+
+  .pdf-btn:hover {
+    transform: translateY(-3px);
+    box-shadow: 0 14px 36px rgba(201, 169, 97, 0.65);
+    background: linear-gradient(135deg, var(--royal-gold-dark) 0%, var(--deep-navy) 100%);
+    color: var(--royal-gold-light);
+  }
+
+  .pdf-btn:active {
+    transform: translateY(-1px);
+  }
+
+  .pdf-btn .icon {
+    font-size: 16pt;
+  }
+
+  /* =====================================================
+     HORIZONTAL DIVIDER
+     ===================================================== */
+  .ornament-divider {
+    text-align: center;
+    margin: 50px 0;
+    color: var(--royal-gold);
+    font-size: 18pt;
+    letter-spacing: 14px;
+    direction: ltr;
+  }
+
+  /* =====================================================
+     OPENING LETTER STYLE
+     ===================================================== */
+  .opening-letter {
+    background: var(--warm-cream);
+    border-radius: 16px;
+    padding: 30px 36px;
+    margin: 20px 0;
+    border-right: 5px solid var(--royal-gold);
+    font-size: 12.5pt;
+    line-height: 2;
+    color: var(--deep-navy);
+    box-shadow: 0 4px 14px rgba(201, 169, 97, 0.08);
+  }
+
+  .letter-greeting {
+    font-size: 14pt;
+    color: var(--royal-gold-dark);
+    font-weight: 600;
+    margin-bottom: 18px;
+  }
+
+  /* =====================================================
+     PRINT OVERRIDES
+     ===================================================== */
+  @media print {
+    body {
+      background: white;
+      font-size: 10.5pt;
+    }
+    
+    .container {
+      max-width: 100%;
+      margin: 0;
+      box-shadow: none;
+    }
+    
+    .pdf-btn {
+      display: none !important;
+    }
+    
+    .cover {
+      page-break-after: always;
+      min-height: auto;
+    }
+    
+    .content {
+      padding: 0;
+    }
+    
+    h1.chapter-title {
+      page-break-before: always;
+      margin-top: 0;
+    }
+    
+    h1.chapter-title:first-of-type {
+      page-break-before: avoid;
+    }
+    
+    table, pre, .diagram-wrapper, .callout, .story-block, 
+    .roadmap-phase, .guarantee-list li, .impact-row, .pull-quote {
+      page-break-inside: avoid;
+    }
+    
+    h1, h2, h3, h4 {
+      page-break-after: avoid;
+    }
+    
+    .toc {
+      page-break-after: always;
+    }
+  }
+
+  /* =====================================================
+     RESPONSIVE
+     ===================================================== */
+  @media (max-width: 768px) {
+    .content { padding: 35px 22px; }
+    .cover { padding: 50px 25px; }
+    .cover h1 { font-size: 28pt; }
+    .cover .subtitle { font-size: 16pt; }
+    .impact-row { flex-direction: column; }
+    table { font-size: 9.5pt; }
+    .cover-meta { gap: 24px; }
+  }
+
+  /* Force Mermaid Text Color */
+  .mermaid .nodeLabel, 
+  .mermaid .edgeLabel, 
+  .mermaid .cluster-label,
+  .mermaid span,
+  .mermaid p,
+  .mermaid div {
+    color: #ffffff !important;
+  }
+</style>
+</head>
+<body>
+
+<button class="pdf-btn" onclick="window.print()">
+  <span class="icon">📄</span>
+  <span>تحميل الوثيقة كـ PDF</span>
+</button>
+
+<div class="container">
+
+<!-- ============================================================
+     COVER PAGE — ROYAL EXECUTIVE
+     ============================================================ -->
+<section class="cover">
+  <div class="cover-ornament"></div>
+  <div class="cover-badge">وثيقة شراكة استراتيجية</div>
+  
+  <h1>OmniFlow AI</h1>
+  <div class="subtitle">حين يصبح الحلم إمبراطورية رقمية</div>
+  <div class="tagline">
+    التوأم الرقمي للمستشار أحمد الصائغ<br>
+    رؤية تنفيذية لإعادة تعريف الاستشارة العقارية في المملكة العربية السعودية
+  </div>
+
+  <div class="recipient-card">
+    <div class="recipient-label">مُوَجَّهة إلى</div>
+    <div class="recipient-name">الأستاذ المستشار / أحمد الصائغ</div>
+    <div class="recipient-title">صاحب الرؤية والشريك الاستراتيجي المُؤسِّس</div>
+  </div>
+
+  <div class="cover-meta">
+    <div class="cover-meta-item">
+      <div class="cover-meta-label">المُعِدّ</div>
+      <div class="cover-meta-value">فريق القيادة التقنية والمنتج</div>
+    </div>
+    <div class="cover-meta-item">
+      <div class="cover-meta-label">التصنيف</div>
+      <div class="cover-meta-value">سري — شراكة استراتيجية</div>
+    </div>
+    <div class="cover-meta-item">
+      <div class="cover-meta-label">التاريخ</div>
+      <div class="cover-meta-value">مايو 2026</div>
+    </div>
+  </div>
+
+  <div class="cover-footer">
+    "نحن لا نقدم لك أداة. نحن نقدم لك إمبراطورية."
+  </div>
+</section>
+
+<div class="content">
+
+<!-- ============================================================
+     TABLE OF CONTENTS
+     ============================================================ -->
+<section class="toc">
+  <h2>محتويات الوثيقة</h2>
+  <div class="toc-ornament"></div>
+  <ol>
+    <li>المقدمة: الحلم يتحول إلى واقع</li>
+    <li>تجربة العميل: سحر التوأم الرقمي</li>
+    <li>منجم الذهب: باقات الشركات والمكاتب</li>
+    <li>محركات النمو والاحتفاظ: أسلحة البيع السرية</li>
+    <li>الكواليس: كيف سنستوعب ٥٠٠ ألف مستخدم دون انهيار؟</li>
+    <li>العبقرية المالية: هندسة التوفير</li>
+    <li>الخطوات القادمة: خريطة الطريق نحو الإطلاق</li>
+  </ol>
+</section>
+
+<!-- ============================================================
+     SECTION 1 — INTRODUCTION
+     ============================================================ -->
+<h1 class="chapter-title">
+  <span class="chapter-number">٠١</span>
+  المقدمة: الحلم يتحول إلى واقع
+  <span class="chapter-english">The Vision Realized</span>
+</h1>
+
+<div class="opening-letter">
+  <div class="letter-greeting">أستاذ أحمد،</div>
+  <p style="margin-bottom: 0;">
+    تخيّل معي للحظة المشهد التالي: <strong>الساعة الثالثة فجراً في الرياض</strong>. شاب مغترب في الدمام يبحث عن شقة يومية لأسرته القادمة من القصيم بعد ساعات. في نفس اللحظة، مستثمر في جدة يتردد قبل توقيع صفقة بـ <strong>٤ مليون ريال</strong> ويحتاج رأياً موثوقاً. وفي إنستغرام، فتاة في تبوك تتساءل عن اشتراطات بناء مخطط ورثته عن والدها.
+  </p>
+</div>
+
+<p style="text-align: center; font-size: 13pt; color: var(--royal-gold-dark); font-weight: 600; margin: 30px 0;">
+  ثلاثة عملاء. ثلاث مدن. ثلاث منصات مختلفة. ساعة واحدة بعد منتصف الليل.
+</p>
+
+<div class="pull-quote">
+  والمستشار أحمد الصائغ يرد عليهم جميعاً في نفس اللحظة.<br>
+  بنفس الخبرة. بنفس النبرة. بنفس الدقة.
+</div>
+
+<p>هذا ليس خيالاً علمياً. هذه هي المعادلة التي سنحلّها معاً عبر OmniFlow AI. نحن لا نبني تطبيقاً، ولا نُبرمج بوت محادثة. نحن نُشيّد <strong>التوأم الرقمي لأحمد الصائغ</strong> — كيان معرفي يحمل خبرتك المتراكمة عبر سنوات في التقييم والتحكيم والفحص والإسكان التنموي، ويُحوّلها إلى خدمة فورية، <em>لا تنام، لا تتعب، ولا تنسى تفصيلاً واحداً</em> من كود البناء السعودي أو اشتراطات بلدية واحدة في المملكة.</p>
+
+<p>السوق العقاري السعودي يَتحرّك بسرعة غير مسبوقة بفضل رؤية ٢٠٣٠. مشاريع نيوم، والقدية، ومسار، والعلا — كلها تخلق تسونامي من الفرص والأسئلة. الجمهور يحتاج خبيراً يثق به. المكاتب العقارية تحتاج أداة تُغلق بها الصفقات. والسوق بأكمله ينتظر من يُقدّم <strong>معياراً ذهبياً جديداً للاستشارة العقارية الرقمية</strong>.</p>
+
+<div class="callout">
+  <div class="callout-title">🏛️ جوهر الرؤية</div>
+  <p>نحن لن نقدم لك أداة. نحن نقدم لك <strong>إمبراطورية</strong>.</p>
+</div>
+
+<div class="ornament-divider">❖ ❖ ❖</div>
+
+<!-- ============================================================
+     SECTION 2 — B2C MAGIC
+     ============================================================ -->
+<h1 class="chapter-title">
+  <span class="chapter-number">٠٢</span>
+  تجربة العميل: سحر التوأم الرقمي
+  <span class="chapter-english">The B2C Magic</span>
+</h1>
+
+<p class="lead">دعني أحكي لك قصة حقيقية ستعيش في منصتنا كل يوم.</p>
+
+<div class="story-block">
+  <span class="story-scene-tag">📍 المشهد: العاشرة وأربع وعشرون دقيقة مساءً — حي الياسمين، الرياض</span>
+  <p>محمد، شاب في الثلاثين، يفكر في شراء أول شقة له. يفتح واتساب، ويكتب لرقم المستشار أحمد الصائغ:</p>
+</div>
+
+<div class="dialog customer">
+  <span class="dialog-speaker">محمد:</span>
+  السلام عليكم، أبيك تساعدني. لقيت شقة في الياسمين بـ ٧٥٠ ألف، البائع ضاغط علي أوقع اليوم، وما عندي خبرة. شو رأيك؟
+</div>
+
+<p>في <strong>أقل من ثانية ونصف</strong>، تصل الرسالة الأولى:</p>
+
+<div class="dialog advisor">
+  <span class="dialog-speaker">المستشار أحمد الصائغ (الرقمي):</span>
+  وعليكم السلام أبو الكرم 🌹 أهلاً وسهلاً. خذ نفساً وقرر بهدوء، لأن قرار شراء أول بيت أعظم من أي ضغط مؤقت من بائع.<br><br>
+  قبل أي شيء، عندي لك ثلاث أسئلة سريعة: هل تملك صورة من الصك؟ ما هو رقم المخطط؟ وهل العقار مفرز رسمياً أم لا يزال جزءاً من صك أكبر؟
+</div>
+
+<p>محمد يُصعَق. النبرة، الأسلوب، الترتيب — <strong>كأنك أنت من تكتب</strong>. لا يكتب — بل يُسجّل رسالة صوتية وهو يقود سيارته، ويرفق معها صورة ملتقطة بسرعة لصك العقار.</p>
+
+<div class="dialog customer">
+  <span class="dialog-speaker">محمد (رسالة صوتية 🎙️ — ٤٧ ثانية):</span>
+  "أحمد.. واللهي ما أدري، البائع يقولي الفرصة ستفوت الليلة.. الصك معي هنا، ارفقت لك صورته.."
+</div>
+
+<div class="callout insight">
+  <div class="callout-title">🎙️ + 📄 الحواس الذكية في العمل</div>
+  <p>في أقل من دقيقة، يحدث شيء مذهل: التوأم الرقمي <strong>يستمع</strong> للرسالة الصوتية كاملاً ويحوّلها إلى نص دقيق، وفي نفس الوقت <strong>يرى</strong> صورة الصك ويستخرج منها تلقائياً: رقم المخطط، المساحة، تاريخ الإصدار، واسم الحي — دون أن يطلب من محمد كتابة حرف واحد. <em>٦٠٪ من المحادثات العقارية الخليجية تتم بصوت أو صورة — ونحن جاهزون لها.</em></p>
+</div>
+
+<p>خلال أربعين ثانية، يأتي الرد:</p>
+
+<div class="dialog advisor">
+  <span class="dialog-speaker">المستشار أحمد الصائغ (الرقمي):</span>
+  ممتاز يا محمد. لاحظت من الصك أن الشقة في بلوك C، وحسب اشتراطات بلدية شمال الرياض في هذا الحي، الكثافة البنائية مسموح بها بحدود ٦٠٪، والارتفاع الأقصى أربعة أدوار. هذا جيد.<br><br>
+  لكن انتبه: المخطط الذي ذكرته صُدر عام ٢٠١٨، وأنصحك أن تطلب تقرير فحص شامل قبل التوقيع. عندي تقرير فحص مفصّل للصك والاشتراطات البلدية بـ <strong>٢٩ ريال</strong> فقط — يوفّر عليك مخاطر قد تتجاوز عشرات الآلاف لاحقاً.<br><br>
+  هل تريد أن أُعدّ لك التقرير الآن؟
+</div>
+
+<p>محمد يضغط "نعم". يصله رابط دفع آمن. خلال عشرين ثانية يكتمل الدفع، وتلقائياً يصله <strong>تقرير مفصّل بصيغة PDF</strong> يحمل ختم العلامة، مع إخلاء مسؤولية قانوني واضح يحمي المنصة ويحمي محمد.</p>
+
+<p><strong>ثم تتطور القصة.</strong> محمد يكتب مجدداً:</p>
+
+<div class="dialog customer">
+  <span class="dialog-speaker">محمد:</span>
+  أحمد، أنا اقتنعت بالشقة، بس البائع الحين يقولي عنده شقة ثانية في حي السفارات بـ ٢.٨ مليون ويعطيني خصم لو اشتريت الاثنتين.
+</div>
+
+<p>هنا، تتنشّط <strong>خوارزمية التصعيد الذكية</strong> في الخلفية. صفقة بهذا الحجم تتجاوز عتبة الذكاء الاصطناعي. الرد يأتي:</p>
+
+<div class="dialog advisor">
+  <span class="dialog-speaker">المستشار أحمد الصائغ (الرقمي):</span>
+  محمد، هذي صفقة استثمارية كبيرة تستحق نقاشاً مباشراً. أنا حوّلتك الآن لفريقي البشري المتخصص في الصفقات الكبرى، وسيتواصل معك خلال ربع ساعة على نفس الرقم. لا توقّع شيئاً قبل ذلك. أنا معك.
+</div>
+
+<p>في لوحة التحكم لديك، <strong>يضيء إشعار مميز</strong>: عميل عالي القيمة، صفقة محتملة بـ ٣.٥ مليون، السياق الكامل للمحادثة جاهز، رقم العميل ومدينته وتفضيلاته — كل شيء معروض أمام موظفك في ثوانٍ.</p>
+
+<div class="ornament-divider">— • —</div>
+
+<h2>ما الذي حدث هنا فعلياً؟</h2>
+
+<div class="impact-row">
+  <div class="impact-card">
+    <div class="impact-number">٤٥ ثانية</div>
+    <div class="impact-label">حصل محمد على استشارة بمستوى خبير بشري</div>
+  </div>
+  <div class="impact-card">
+    <div class="impact-number">٢٩ ريالاً</div>
+    <div class="impact-label">دفعها للمنصة بسلاسة تامة</div>
+  </div>
+  <div class="impact-card">
+    <div class="impact-number">٣.٥ مليون</div>
+    <div class="impact-label">صفقة محتملة في يد فريقك البشري</div>
+  </div>
+</div>
+
+<ul>
+  <li>محمد حصل على استشارة بمستوى خبير بشري <strong>في أقل من ٤٥ ثانية إجمالاً</strong>.</li>
+  <li>شعر بالثقة، ولم يشعر للحظة أنه يكلم آلة.</li>
+  <li>دفع للمنصة <strong>٢٩ ريالاً بسلاسة تامة</strong>.</li>
+  <li>في اللحظة المناسبة بالضبط، تحول إلى فريقك البشري <strong>مع كامل سياق المحادثة</strong>.</li>
+  <li>أنت لم تتدخل، لكنك حصلت على:
+    <ul>
+      <li>عميل مدفوع التقرير (إيراد مباشر).</li>
+      <li>عميل محتمل لصفقة بـ ٣.٥ مليون (إيراد سمسرة محتمل بمئات الآلاف).</li>
+      <li>بيانات سلوكية ثمينة عن نمط شرائي معين في حي الياسمين.</li>
+    </ul>
+  </li>
+</ul>
+
+<div class="callout insight">
+  <div class="callout-title">✨ خلاصة المشهد</div>
+  <p><strong>هذا هو السحر.</strong> وهذا ما سيحدث <strong>٥٠٠ ألف مرة يومياً</strong>، عبر ست منصات مختلفة، بكفاءة لا تتزعزع.</p>
+</div>
+
+<div class="diagram-wrapper">
+  <div class="diagram-title">رحلة العميل عبر منظومة OmniFlow AI</div>
+  <div class="mermaid" dir="ltr">
+flowchart LR
+    C["👤 Customer<br/>Inquiry"]:::cust
+    C --> AI["🤖 Digital Twin<br/>Instant Response"]:::ai
+    AI --> CL["💬 Personalized<br/>Consultation"]:::ai
+    CL --> DEC{"⚖️ Deal<br/>Size?"}:::dec
+    DEC -->|Small/Medium| RPT["📄 Paid Report<br/>29/15 SAR"]:::pay
+    DEC -->|Large Deal| ESC["🎯 Human Team<br/>Escalation"]:::human
+    RPT --> INC1["💰 Direct Revenue"]:::win
+    ESC --> INC2["💎 High-Value<br/>Commission"]:::win
+    
+    classDef cust fill:#1a2332,stroke:#0f172a,color:#ffffff,font-weight:bold
+    classDef ai fill:#c9a961,stroke:#a8893e,color:#ffffff,font-weight:bold
+    classDef dec fill:#8b3a3a,stroke:#6b1f1f,color:#ffffff,font-weight:bold
+    classDef pay fill:#6b8e6f,stroke:#4a6e4e,color:#ffffff,font-weight:bold
+    classDef human fill:#2a3a52,stroke:#1a2332,color:#ffffff,font-weight:bold
+    classDef win fill:#e0c98a,stroke:#a8893e,color:#ffffff,font-weight:bold
+  </div>
+</div>
+
+<div class="ornament-divider">❖ ❖ ❖</div>
+
+<!-- ============================================================
+     SECTION 3 — B2B GOLDMINE
+     ============================================================ -->
+<h1 class="chapter-title">
+  <span class="chapter-number">٠٣</span>
+  منجم الذهب: باقات الشركات والمكاتب
+  <span class="chapter-english">The B2B SaaS Goldmine</span>
+</h1>
+
+<p class="lead">هنا يكمن جوهر اللعبة، أستاذ أحمد. لأن البوابة الأولى — يعني بوابتك الشخصية — هي علامتك التجارية، ووسيلتك لخدمة الجمهور. لكن <strong>البوابة الثانية هي منجم الذهب الذي يحوّل المنصة إلى آلة طباعة نقود ذاتية النمو</strong>.</p>
+
+<p>تخيّل المشهد التالي:</p>
+
+<p>في الرياض وحدها، يوجد آلاف المكاتب العقارية. كل مكتب يعاني من نفس المشكلة: لديه ٣ موظفين أو ٥، يضيع نصف وقتهم في الرد على رسائل عشوائية من فضوليين، والنصف الآخر في محاولة إغلاق صفقات تتسرب لأنهم لم يردّوا بسرعة كافية.</p>
+
+<p>تخيّل أنك تذهب لمكتب من هذه المكاتب، وتقول للمالك:</p>
+
+<div class="story-block">
+  <p>"أعطيك بـ <strong>١٥٠٠ ريال شهرياً</strong> نسخة من أحمد الصائغ الرقمي تشتغل داخل مكتبك ٢٤ ساعة، ترد على كل عملائك في واتساب وتيك توك وإنستغرام بنفس خبرتي، وتُسمّيهم باسم مكتبك، وترفع عروضك تلقائياً على المنصات الست، وتعطيك تحليلات سلوك عملائك. وأهم شيء — <em>لا أحد من المنافسين يقدر يشوف أي شيء من بياناتك أو عروضك</em>."</p>
+</div>
+
+<div class="pull-quote">
+  مَنْ سَيَرفُض هذا العرض؟
+</div>
+
+<h2>🏦 الخزينة الرقمية المؤمَّنة لكل مكتب</h2>
+
+<p>كل مكتب يشترك معنا، نمنحه — تشبيهاً مبسّطاً — <strong>خزينة فولاذية رقمية خاصة به</strong>. بياناته، عملاؤه، عروضه، تقاريره، تحليلاته — كلها داخل هذه الخزينة. حتى نحن في إدارة المنصة لا نستطيع رؤية محتواها إلا بإذن صريح ومسجّل في سجل تدقيق دائم.</p>
+
+<p>هذا ليس وعداً تسويقياً. هذا <strong>مبدأ هندسي صارم مبني داخل صميم النظام في ست طبقات متراصة</strong>. لو افتُرض جدلاً أن مهندساً ارتكب خطأ برمجياً، فإن النظام نفسه سيرفض تنفيذ الاستعلام ويُسجّل المحاولة كحادثة أمنية. هذا الضمان وحده يجعل المكاتب الكبرى تشعر بأمان مطلق للاشتراك.</p>
+
+<h2>🔗 الذاكرة العابرة للمنصات: السحر الذي يبيع نفسه</h2>
+
+<p>تخيّل أن عميل المكتب بدأ السؤال على تيك توك، ثم انتقل لإنستغرام، ثم استكمل الحوار على واتساب. في كل مرة، يجد البوت <strong>يعرفه باسمه، يتذكّر آخر ما تحدّثا فيه، ويُكمل من حيث توقفا</strong>.</p>
+
+<p>هذه التجربة تُعطي المكتب الصغير <strong>هالة شركة كبيرة عالمية</strong>. هذا وحده يجعل المكتب يضاعف أسعار خدماته للعميل، ويبقى مشتركاً معنا لأنه لا يستطيع الاستغناء.</p>
+
+<div class="diagram-wrapper">
+  <div class="diagram-title">الذاكرة الموحدة عبر المنصات الست</div>
+  <div class="mermaid" dir="ltr">
+flowchart TB
+    CUST["👤 One Customer"]:::cust
+    
+    CUST --> P1["📱 WhatsApp"]:::ch
+    CUST --> P2["🎵 TikTok"]:::ch
+    CUST --> P3["📸 Instagram"]:::ch
+    CUST --> P4["✖ Twitter/X"]:::ch
+    CUST --> P5["👻 Snapchat"]:::ch
+    CUST --> P6["🌐 Website"]:::ch
+    
+    P1 & P2 & P3 & P4 & P5 & P6 --> BRAIN["🧠 Unified Memory Brain<br/>One Identity · One Context · One Conversation"]:::brain
+    
+    BRAIN --> EXP["✨ Seamless Experience<br/>Customer never repeats himself"]:::exp
+    
+    classDef cust fill:#1a2332,stroke:#0f172a,color:#ffffff,font-weight:bold
+    classDef ch fill:#c9a961,stroke:#a8893e,color:#ffffff,font-weight:bold
+    classDef brain fill:#8b3a3a,stroke:#6b1f1f,color:#ffffff,font-weight:bold
+    classDef exp fill:#6b8e6f,stroke:#4a6e4e,color:#ffffff,font-weight:bold
+  </div>
+</div>
+
+<h2>📊 استراتيجية الباقات الثلاث: الهرم الذكي للاحتواء السوقي</h2>
+
+<table>
+  <thead>
+    <tr>
+      <th>الباقة</th>
+      <th>الفئة المستهدفة</th>
+      <th>الميزة الكبرى</th>
+      <th>السر التجاري</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td><strong>الاقتصادية</strong></td>
+      <td>المكاتب الناشئة والمسوقون الأفراد</td>
+      <td>اشتراك منخفض جداً، البوت يعمل باسم "المستشار أحمد الصائغ الرقمي" داخل مكتبهم</td>
+      <td><em>ربط اسمك ذهنياً بكل حركة عقارية في المملكة + اجتياح سوقي سريع</em></td>
+    </tr>
+    <tr>
+      <td><strong>المحترفة</strong></td>
+      <td>المكاتب المتوسطة المُنشأة</td>
+      <td>تخصيص جزئي للهوية مع الحفاظ على قوة المحرك</td>
+      <td><em>إيرادات أعلى لكل عميل</em></td>
+    </tr>
+    <tr>
+      <td><strong>المؤسسية</strong></td>
+      <td>المطورون الكبار وشركات التطوير العقاري</td>
+      <td>تخصيص هوية كاملة، APIs خاصة، ربط بأنظمتهم</td>
+      <td><em>عقود سنوية بمبالغ ضخمة + علاقات استراتيجية طويلة</em></td>
+    </tr>
+  </tbody>
+</table>
+
+<div class="callout insight">
+  <div class="callout-title">🐎 حصان طروادة العبقري</div>
+  <p>الباقة الاقتصادية وحدها هي <strong>حصان طروادة العبقري</strong>: كل مكتب صغير يشترك بها يصبح، دون أن يدري، <strong>مُسوّقاً مجانياً لعلامة أحمد الصائغ في كل محادثة يخوضها</strong>. تخيّل ١٠٠٠ مكتب صغير في المملكة، كل واحد يخدم عشرات العملاء يومياً، وكلهم يسمعون اسمك ويربطونه بالخبرة. هذا <strong>ولاء سوقي لا يُشترى بأي حملة إعلانية</strong>.</p>
+</div>
+
+<h2>🏛️ فلترة السوق: الربط بالهيئة العامة للعقار (REGA)</h2>
+
+<p>المكاتب العقارية تكره العروض الوهمية — وهي تُنفّر العملاء وتدمّر الثقة. قررنا أن نكون المنصة التي تُعالج هذا الجرح بشكل جذري.</p>
+
+<div class="callout">
+  <div class="callout-title">🔗 التحقق الآلي من رخصة فال</div>
+  <p>البوت مربوط مباشرة بقاعدة بيانات <strong>الهيئة العامة للعقار</strong>. أي عقار يُعرض عبر المنصة — سواء من بوابتك أو من بوابة أي مكتب مشترك — <strong>لن يظهر للعميل إلا برقم إعلان موثّق وفعّال</strong>. البوت يتحقق آلياً من رخصة فال للمعلن قبل بث أي عرض. هذا يجعل منصتنا <em>الأكثر موثوقية في المملكة</em>، ويمنح المكاتب المحترفة ميزة تنافسية حقيقية في مواجهة فوضى السوق.</p>
+</div>
+
+<h2>🖥️ لوحة القيادة السحرية: الرؤية الكاملة بلمسة واحدة</h2>
+
+<p>صاحب المكتب لا يريد فقط بوتاً يردّ. يريد أن <strong>يرى ويتحكم</strong>. هذا بالضبط ما بنيناه:</p>
+
+<div class="impact-row">
+  <div class="impact-card">
+    <div class="impact-number">🗺️</div>
+    <div class="impact-label">خريطة حرارية للأحياء<br>الأكثر طلباً اليوم</div>
+  </div>
+  <div class="impact-card">
+    <div class="impact-number">👁️</div>
+    <div class="impact-label">رؤية كاملة لكل محادثة<br>جارية مع كامل سياقها</div>
+  </div>
+  <div class="impact-card">
+    <div class="impact-number">🤝</div>
+    <div class="impact-label">استلام فوري من البوت<br>بلمسة زر واحدة</div>
+  </div>
+</div>
+
+<div class="callout insight">
+  <div class="callout-title">🔄 Human Takeover السلس</div>
+  <p>حين تشعر أن محادثة بعينها تستحق لمستك الشخصية — بضغطة زر واحدة في لوحة التحكم، <strong>تستلم المحادثة بسلاسة تامة</strong> دون أن يلاحظ العميل أي انقطاع. ستظل النبرة متسقة، والسياق محفوظ، والعميل مرتاح — أنت فقط أصبحت الصوت الحقيقي خلف الشاشة.</p>
+</div>
+
+<div class="ornament-divider">❖ ❖ ❖</div>
+
+<!-- ============================================================
+     SECTION 4 — GROWTH ENGINES
+     ============================================================ -->
+<h1 class="chapter-title">
+  <span class="chapter-number">٠٤</span>
+  محركات النمو والاحتفاظ: أسلحة البيع السرية
+  <span class="chapter-english">Growth Engines &amp; Retention Mechanics</span>
+</h1>
+
+<p class="lead">أستاذ أحمد، هذه الميزات هي التي طلبتها بنفسك، وصممناها هندسياً بعناية فائقة. إنها ليست مجرد أدوات — هي <strong>محركات نمو ذاتية</strong> تجعل المنصة تبيع نفسها وتُبقي العميل مرتبطاً بها.</p>
+
+<h2>🪝 صنارة العلامة التجارية: الكرت الرقمي (VCard)</h2>
+
+<div class="story-block">
+  <span class="story-scene-tag">📱 المشهد: أول رسالة يرسلها أي عميل جديد</span>
+  <p>عندما يُراسل أي شخص رقم المستشار أحمد الصائغ لأول مرة، لا يتلقى مجرد ردٍّ — يتلقى <strong>كارتاً رقمياً (VCard)</strong> احترافياً يحمل اسمك، شعارك، ورقمك. يُطلب منه حفظ جهة الاتصال لفتح الميزات المتقدمة.</p>
+  <p>النتيجة؟ <strong>علامتك التجارية تعيش في جيب كل عميل تحدّث إليك، للأبد</strong>. في المرة القادمة التي يحتاج فيها استشارة عقارية، اسمك هو أول ما يرى في جهات الاتصال.</p>
+</div>
+
+<div class="callout">
+  <div class="callout-title">🧲 معادلة الاحتجاز الذكي</div>
+  <p>العميل يحفظ الكرت ← يفتح الميزات المتقدمة ← يستخدم المنصة أكثر ← يصبح سفيراً طبيعياً للعلامة. كل عميل يجلب معه آخر <strong>بدون إنفاق ريال واحد على الإعلانات</strong>.</p>
+</div>
+
+<h2>📢 قوائم الـ VIP الحصرية: البديل السحري لحالات الواتساب</h2>
+
+<p>تخيّل قدرة صاحب المكتب على إرسال رسالة <strong>واحدة بضغطة زر</strong> تصل فوراً لكل عملائه الـ VIP المحددين:</p>
+
+<div class="dialog advisor">
+  <span class="dialog-speaker">مكتب النخبة العقارية (بث VIP حصري):</span>
+  🔥 <strong>عرض تصفية حصري — اليوم فقط</strong><br>
+  شقة ٣ غرف في حي الياسمين — ٦٨٠،٠٠٠ ريال (الأصلي ٧٥٠،٠٠٠)<br>
+  للحجز: اكتب "مهتم" الآن 👇
+</div>
+
+<p>ليس هذا مجرد بث رسائل — هذه <strong>آلة تسويق ذاتية</strong> تتيح للمكتب تصنيف عملائه (VIP / اهتمام بشقق / اهتمام بأراضي) وإرسال العروض الصحيحة للشخص الصحيح في الوقت الصحيح. <em>بدون تطبيقات إضافية، بدون تعقيد.</em></p>
+
+<h2>🗄️ الخزينة الأبدية: "تقاريري" في أي وقت</h2>
+
+<p>كل تقرير دفع من أجله عميل يُحفظ إلى الأبد في ملفه الشخصي. في أي لحظة — بعد أسبوع أو بعد سنة — يكتب:</p>
+
+<div class="dialog customer">
+  <span class="dialog-speaker">محمد (بعد ٦ أشهر):</span>
+  تقاريري
+</div>
+
+<div class="dialog advisor">
+  <span class="dialog-speaker">المستشار أحمد الصائغ (الرقمي):</span>
+  أهلاً محمد 🌹 إليك تقاريرك المحفوظة:<br>
+  📄 تقرير صك شقة الياسمين — ١٥ نوفمبر ٢٠٢٦<br>
+  📄 تحليل حي السفارات — ٢ ديسمبر ٢٠٢٦<br>
+  هل تريد فتح أي منها؟
+</div>
+
+<div class="callout insight">
+  <div class="callout-title">📊 تأثير الخزينة على Retention</div>
+  <p>العميل الذي يحمل تقاريره عندك <strong>لن يذهب لمنافس أبداً</strong>. كل تقرير جديد يشتريه هو خيط إضافي يربطه بمنصتك. هذا ما يُسمى في عالم SaaS بـ "Data Lock-in" — <em>أغلى أداة احتفاظ في الكون، ونحن نقدمها للعميل كخدمة مجانية يراها قيمة مضافة.</em></p>
+</div>
+
+<div class="diagram-wrapper">
+  <div class="diagram-title">دولاب النمو الذاتي — The Growth Flywheel</div>
+  <div class="mermaid" dir="ltr">
+flowchart LR
+    VC["🪪 VCard\nSaved"]:::v
+    USE["⭐ Premium\nFeatures\nUnlocked"]:::u
+    REP["📄 Reports\nPurchased"]:::r
+    VAULT["🗄️ The Vault\nGrows"]:::va
+    LOYAL["💎 Loyal\nCustomer"]:::l
+    REF["🗣️ Refers\nFriends"]:::ref
+
+    VC --> USE --> REP --> VAULT --> LOYAL --> REF --> VC
+
+    classDef v fill:#c9a961,stroke:#a8893e,color:#ffffff,font-weight:bold
+    classDef u fill:#1a2332,stroke:#0f172a,color:#ffffff,font-weight:bold
+    classDef r fill:#6b8e6f,stroke:#4a6e4e,color:#ffffff,font-weight:bold
+    classDef va fill:#8b3a3a,stroke:#6b1f1f,color:#ffffff,font-weight:bold
+    classDef l fill:#2a3a52,stroke:#1a2332,color:#ffffff,font-weight:bold
+    classDef ref fill:#e0c98a,stroke:#a8893e,color:#ffffff,font-weight:bold
+  </div>
+</div>
+
+<div class="ornament-divider">❖ ❖ ❖</div>
+
+<!-- ============================================================
+     SECTION 5 — HANDLING SCALE
+     ============================================================ -->
+<h1 class="chapter-title">
+  <span class="chapter-number">٠٥</span>
+  الكواليس: كيف سنستوعب ٥٠٠ ألف مستخدم دون انهيار?
+  <span class="chapter-english">Handling The Scale</span>
+</h1>
+
+<p class="lead">دعني أكون صادقاً تماماً: بناء منصة لـ ١٠٠ مستخدم سهل. أي طالب جامعي يستطيع ذلك. لكن بناء منصة لـ ٥٠٠ ألف مستخدم نشط من اليوم الأول، <strong>دون أن تتأخر رسالة واحدة، أو يضيع تقرير واحد، أو يخسر مكتب اشتراك واحد بسبب بطء النظام</strong> — هذه مهمة لا يُتقنها إلا فريق من النخبة العالمية.</p>
+
+<h2>🏢 التشبيه التنفيذي: مركز التوزيع الذكي</h2>
+
+<p>تخيّل أن لديك <strong>مطعماً صغيراً</strong>، وفجأة قرر ٥٠٠ ألف عميل الحضور في نفس اللحظة. ماذا سيحدث؟ ستنهار العمليات. الطلبات ستتداخل. الطعام سيحترق. الموظفون سيستقيلون.</p>
+
+<div class="callout warning">
+  <div class="callout-title">❌ الحل التقليدي الساذج</div>
+  <p>توظيف ٥٠٠ موظف استقبال. هذه فكرة <strong>كارثية</strong>: تكلفة هائلة عندما يقل الزبائن، وعجز كامل عندما يتضاعفون.</p>
+</div>
+
+<p>ما بنيناه لك مختلف جذرياً. تخيّل <strong>مركز توزيع آلي ذكي</strong> يعمل كالتالي:</p>
+
+<div class="story-block">
+  <p>كل رسالة قادمة تدخل إلى <strong>بوابة استقبال موحدة فائقة السرعة</strong>، تأخذ الرسالة، تُعطيها رقماً، وتقول للعميل فوراً "تم استلام طلبك" في أقل من ٢٠٠ مللي ثانية. ثم تضع الرسالة في <strong>سير ناقل آلي ذكي</strong> (هذا هو Kafka).</p>
+  
+  <p>السير الناقل يوزّع الرسائل على <strong>مئات الموظفين الافتراضيين</strong>، كل موظف متخصص في نوع معين من الطلبات. والمدهش: <strong>إذا زاد الحمل</strong>، يفتح النظام تلقائياً موظفين جدداً خلال ثوانٍ. وإذا قل الحمل، يُسرّحهم تلقائياً ليوفر التكلفة.</p>
+</div>
+
+<div class="callout insight">
+  <div class="callout-title">💡 النتيجة المذهلة</div>
+  <p><strong>النظام يتنفس مع حركة السوق</strong>. يوم الجمعة المساء عندما يبحث الجميع عن شقق يومية لعطلة نهاية الأسبوع، يصبح لدينا ٥٠٠ موظف افتراضي. ليلة الأربعاء الهادئة، يصبح لدينا ٥٠.</p>
+</div>
+
+<div class="diagram-wrapper">
+  <div class="diagram-title">مركز التوزيع الذكي — كيف يتنفس النظام مع الحمل</div>
+  <div class="mermaid" dir="ltr">
+flowchart TB
+    MSG["📨 Incoming<br/>Messages"]:::msg
+    GATE["⚡ Ultra-Fast<br/>Reception Gate<br/>(less than 200ms)"]:::gate
+    BELT["🔄 Smart Conveyor Belt<br/>(Kafka)"]:::belt
+    
+    MSG --> GATE
+    GATE --> BELT
+    
+    BELT --> W1["👷 Worker 1"]:::wrk
+    BELT --> W2["👷 Worker 2"]:::wrk
+    BELT --> W3["👷 Worker 3"]:::wrk
+    BELT --> WN["👷 Worker N..."]:::wrk
+    BELT --> AUTO["🤖 Auto-Scaler<br/>Adds/Removes<br/>Workers"]:::auto
+    
+    W1 & W2 & W3 & WN --> OUT["✅ Customer<br/>Response"]:::out
+    AUTO -.->|"Friday peak<br/>= 500 workers"| BELT
+    AUTO -.->|"Wednesday quiet<br/>= 50 workers"| BELT
+    
+    classDef msg fill:#1a2332,stroke:#0f172a,color:#ffffff,font-weight:bold
+    classDef gate fill:#c9a961,stroke:#a8893e,color:#ffffff,font-weight:bold
+    classDef belt fill:#8b3a3a,stroke:#6b1f1f,color:#ffffff,font-weight:bold
+    classDef wrk fill:#2a3a52,stroke:#1a2332,color:#ffffff,font-weight:bold
+    classDef auto fill:#6b8e6f,stroke:#4a6e4e,color:#ffffff,font-weight:bold
+    classDef out fill:#e0c98a,stroke:#a8893e,color:#ffffff,font-weight:bold
+  </div>
+</div>
+
+<h2>🛡️ الشبكة العنكبوتية للأمان</h2>
+
+<p>ليس هذا فقط. لقد بنينا النظام في <strong>منطقتين سحابيتين مختلفتين داخل المملكة</strong>. إذا — لا قدّر الله — توقّف مركز بيانات كامل بسبب كارثة طبيعية أو حريق أو هجوم سيبراني، فإن النظام يتحوّل تلقائياً خلال <strong>أقل من ١٥ دقيقة</strong> للمنطقة الاحتياطية، والعملاء لا يلاحظون شيئاً سوى تأخّر طفيف لثوانٍ.</p>
+
+<p>كل دقيقة، كل بيانة، كل تقرير — يُنسخ احتياطياً في <strong>ثلاث طبقات</strong>. حتى لو دُمّر النظام كله، بياناتك آمنة لمدة <strong>٧ سنوات قادمة</strong>، في تخزين مشفّر لا يستطيع أحد — بما فينا — تعديله.</p>
+
+<div class="impact-row">
+  <div class="impact-card">
+    <div class="impact-number">١٥ دقيقة</div>
+    <div class="impact-label">أقصى زمن للتعافي من الكوارث</div>
+  </div>
+  <div class="impact-card">
+    <div class="impact-number">٣ طبقات</div>
+    <div class="impact-label">نسخ احتياطية لكل بيانة</div>
+  </div>
+  <div class="impact-card">
+    <div class="impact-number">٧ سنوات</div>
+    <div class="impact-label">احتفاظ مشفر مضمون</div>
+  </div>
+</div>
+
+<h2>🛰️ الحراسة الذكية ٢٤/٧</h2>
+
+<p>في الخلفية، <strong>آلاف الحسّاسات الذكية</strong> تراقب صحة النظام كل ثانية: كم رسالة دخلت، كم رسالة تأخّر الرد عليها، كم اشتراك جديد، كم تقرير صدر، أين توجد الاختناقات. لو ارتفع أي مؤشر فوق الحد الطبيعي، <strong>يصل تنبيه فوري لفريق العمليات قبل أن يلاحظ أي عميل أي مشكلة</strong>.</p>
+
+<div class="pull-quote">
+  هذا ما يجعل الفرق بين منصة تجارية حقيقية ومنصة هواة.
+</div>
+
+<div class="ornament-divider">❖ ❖ ❖</div>
+
+<!-- ============================================================
+     SECTION 5 — FINANCIAL GENIUS
+     ============================================================ -->
+<h1 class="chapter-title">
+  <span class="chapter-number">٠٦</span>
+  العبقرية المالية: هندسة التوفير
+  <span class="chapter-english">The Financial Genius of Token Routing</span>
+</h1>
+
+<p class="lead">أستاذ أحمد، هنا تكمن <strong>الجوهرة الخفية</strong> التي ستحدد الفرق بين منصة تخسر مالاً وأخرى تطبع نقوداً.</p>
+
+<h2>⚠️ المشكلة الجوهرية في السوق</h2>
+
+<p>أي منافس سيحاول تقليدنا سيواجه نفس الجدار: <strong>الذكاء الاصطناعي المتقدم باهظ التكلفة</strong>. كل سؤال يُمرَّر للنماذج الكبيرة يُكلّف المنصة جزءاً من الريال. وعند ٥٠٠ ألف مستخدم يطرحون عشرات الأسئلة يومياً، الفاتورة الشهرية للذكاء الاصطناعي وحدها قد تتجاوز <strong>نصف مليون ريال شهرياً</strong> بسهولة.</p>
+
+<div class="callout warning">
+  <div class="callout-title">📉 حقيقة رياضية لا جدال فيها</div>
+  <p>أي منافس بدون هندسة ذكية <strong>سيخسر</strong>. هذه حقيقة رياضية لا جدال فيها.</p>
+</div>
+
+<h2>🧠 الحل العبقري: الفرز الذكي للأسئلة</h2>
+
+<p>تخيّل أن لديك ثلاثة موظفين في مكتب:</p>
+
+<ul>
+  <li><strong>الموظف الأول</strong>: شاب ذكي ومجتهد، راتبه ٣٠٠٠ ريال. يرد على ٨٠٪ من الأسئلة العامة بكفاءة عالية.</li>
+  <li><strong>الموظف الثاني</strong>: متخصص خبرة متوسطة، راتبه ١٠٠٠٠ ريال. يتدخّل في الأسئلة المتوسطة التعقيد.</li>
+  <li><strong>الموظف الثالث (وهو أنت)</strong>: العقل الاستراتيجي، خبرة ١٥ سنة، راتبك بمئات الآلاف. تتدخّل فقط في القرارات الكبرى المعقّدة.</li>
+</ul>
+
+<p>هل من العقل أن تردّ أنت بنفسك على شخص يسأل عن ساعات دوام المكتب؟ بالطبع لا. <em>هذه إهانة لخبرتك وإهدار لمواردك.</em></p>
+
+<p>نحن طبّقنا هذا المبدأ بدقة جراحية. <strong>نظامنا يفرز كل سؤال قادم خلال أجزاء من الثانية</strong>، ويوجّهه للمستوى المناسب:</p>
+
+<table>
+  <thead>
+    <tr>
+      <th>نوع السؤال</th>
+      <th>الموظف الذي يردّ</th>
+      <th>التكلفة لكل سؤال</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>سؤال متكرر سبق الإجابة عنه (تحيات، أسئلة شائعة)</td>
+      <td><strong>ذاكرة فورية</strong> — صفر تكلفة</td>
+      <td>صفر</td>
+    </tr>
+    <tr>
+      <td>سؤال عام بسيط</td>
+      <td>الذكاء الخفيف الاقتصادي</td>
+      <td>جزء من الهللة</td>
+    </tr>
+    <tr>
+      <td>استشارة متخصصة تتطلب بحثاً</td>
+      <td>الذكاء الخفيف + قاعدة المعرفة</td>
+      <td>أقل من ريال</td>
+    </tr>
+    <tr>
+      <td>تقرير عميق، صفقة كبرى، تحليل قرار</td>
+      <td>الذكاء العبقري المتقدم</td>
+      <td>ريالات قليلة</td>
+    </tr>
+  </tbody>
+</table>
+
+<div class="diagram-wrapper">
+  <div class="diagram-title">الفرز الذكي للأسئلة — توزيع التكلفة الجراحي</div>
+  <div class="mermaid" dir="ltr">
+flowchart TB
+    Q["❓ Incoming Question"]:::q
+    Q --> R["🎯 Smart Router<br/>(less than 0.1 second decision)"]:::r
+    
+    R --> L0["📚 45% Cached<br/>Cost: ZERO"]:::l0
+    R --> L1["⚡ 35% Light AI<br/>Cost: Tiny"]:::l1
+    R --> L2["🔍 15% Mid AI + RAG<br/>Cost: Low"]:::l2
+    R --> L3["💎 5% Genius AI<br/>Cost: Reserved for Money-Generating Tasks"]:::l3
+    
+    L0 & L1 & L2 & L3 --> SAVE["💰 80% Cost Savings vs Competitors"]:::save
+    
+    classDef q fill:#1a2332,stroke:#0f172a,color:#ffffff,font-weight:bold
+    classDef r fill:#c9a961,stroke:#a8893e,color:#ffffff,font-weight:bold
+    classDef l0 fill:#6b8e6f,stroke:#4a6e4e,color:#ffffff,font-weight:bold
+    classDef l1 fill:#a8c4ab,stroke:#6b8e6f,color:#ffffff,font-weight:bold
+    classDef l2 fill:#e0c98a,stroke:#a8893e,color:#ffffff,font-weight:bold
+    classDef l3 fill:#8b3a3a,stroke:#6b1f1f,color:#ffffff,font-weight:bold
+    classDef save fill:#1a2332,stroke:#0f172a,color:#ffffff,font-weight:bold
+  </div>
+</div>
+
+<h2>💰 النتيجة الاقتصادية الصاعقة</h2>
+
+<p>في المنصات التقليدية، <strong>١٠٠٪ من الأسئلة تذهب للنموذج الباهظ</strong>. في منصتنا:</p>
+
+<div class="impact-row">
+  <div class="impact-card">
+    <div class="impact-number">٤٥٪</div>
+    <div class="impact-label">تُجاب من الذاكرة الفورية<br>(صفر تكلفة)</div>
+  </div>
+  <div class="impact-card">
+    <div class="impact-number">٣٥٪</div>
+    <div class="impact-label">تُجاب من النموذج الاقتصادي<br>(تكلفة ضئيلة)</div>
+  </div>
+  <div class="impact-card">
+    <div class="impact-number">١٥٪</div>
+    <div class="impact-label">تستخدم البحث المتقدم<br>(تكلفة متوسطة)</div>
+  </div>
+  <div class="impact-card">
+    <div class="impact-number">٥٪</div>
+    <div class="impact-label">فقط تستخدم النموذج العبقري<br>(تكلفة عالية)</div>
+  </div>
+</div>
+
+<div class="callout">
+  <div class="callout-title">🎯 النتيجة</div>
+  <p>فاتورة الذكاء الاصطناعي تنخفض بنسبة تتجاوز <strong>٨٠٪</strong> مقارنة بأي منافس. وهذا يعني أن هامش ربحنا التشغيلي يبقى مرتفعاً حتى مع التسعيرة التنافسية للباقات الاقتصادية، <strong>بينما المنافسون سيخسرون مع كل مشترك جديد</strong>.</p>
+</div>
+
+<h2>📈 النموذج الاقتصادي بأرقام واقعية</h2>
+
+<p>إذا اشترك <strong>١٠٠٠ مكتب فقط</strong> في الباقة الاقتصادية بسعر متحفّظ، فإن الإيراد الشهري المتكرر يتجاوز <strong>١.٥ مليون ريال شهرياً</strong>. أضف لذلك:</p>
+
+<ul>
+  <li>إيرادات التقارير المدفوعة من البوابة الأم.</li>
+  <li>عمولات السمسرة الناتجة عن إغلاق الصفقات.</li>
+  <li>باقات Tier 2 و Tier 3 ذات الهامش المرتفع.</li>
+  <li>تكلفة تشغيلية للذكاء الاصطناعي <strong>تتجاوز ٧٥٪ توفيراً بفضل الهندسة</strong>.</li>
+</ul>
+
+<div class="pull-quote">
+  نصل بسهولة إلى منصة تُولّد ربحاً صافياً<br>
+  بملايين الريالات شهرياً خلال السنة الأولى وحدها.
+</div>
+
+<p style="text-align: center; font-style: italic; color: var(--royal-gold-dark); font-size: 12pt;">وهذا قبل أن نحسب القيمة السوقية للمنصة كأصل قابل للبيع أو الاستثمار من قِبل صناديق رؤية ٢٠٣٠.</p>
+
+<div class="ornament-divider">❖ ❖ ❖</div>
+
+<!-- ============================================================
+     SECTION 6 — ROADMAP
+     ============================================================ -->
+<h1 class="chapter-title">
+  <span class="chapter-number">٠٧</span>
+  الخطوات القادمة: خريطة الطريق نحو الإطلاق
+  <span class="chapter-english">The Roadmap to Launch</span>
+</h1>
+
+<p class="lead">أستاذ أحمد، الأساس التقني المعماري <strong>مكتمل، موثّق، ومُراجع</strong> على أعلى المعايير العالمية. وثيقة المواصفات البرمجية التي بين يدي فريقي الآن تتجاوز <strong>١٢٠٠٠ كلمة</strong> من التفاصيل الهندسية الدقيقة — مخططات قواعد البيانات، عقود الواجهات، آليات الأمان، استراتيجيات التعافي.</p>
+
+<div class="pull-quote">
+  هذه ليست مرحلة "نفكر ونخطّط".<br>
+  نحن في مرحلة "نبني".
+</div>
+
+<div class="roadmap">
+
+<div class="roadmap-phase phase-1">
+  <div class="roadmap-phase-header">
+    <div class="roadmap-phase-title">🚀 المرحلة الأولى: الإطلاق المؤسِّس</div>
+    <div class="roadmap-phase-duration">٤–٦ أشهر</div>
+  </div>
+  <p>نطلق النواة الذكية الأساسية مع:</p>
+  <ul>
+    <li>بوابتك الرئيسية (B2C) عبر واتساب — <strong>قلب العملية</strong>.</li>
+    <li>المحرك الاستشاري كاملاً مع شخصيتك ونبرتك.</li>
+    <li>نظام التقارير المدفوعة (29 ريال / 15 ريال) مع بوابة الدفع.</li>
+    <li>محرك المواعيد وحاسبة الانتداب اللوجستي.</li>
+    <li>لوحة تحكّمك الإدارية الشاملة.</li>
+  </ul>
+  <div class="callout insight" style="margin-top: 14px;">
+    <div class="callout-title">💰 إيرادات من اليوم الأول</div>
+    <p>في هذه المرحلة، أنت تبدأ تحقيق إيرادات من اليوم الأول للإطلاق عبر التقارير والسمسرة.</p>
+  </div>
+</div>
+
+<div class="roadmap-phase phase-2">
+  <div class="roadmap-phase-header">
+    <div class="roadmap-phase-title">💥 المرحلة الثانية: الانفجار التجاري</div>
+    <div class="roadmap-phase-duration">٦–١٢ شهراً</div>
+  </div>
+  <p>نُطلق <strong>بوابة الاشتراكات B2B</strong> بكامل قوتها:</p>
+  <ul>
+    <li>لوحات تحكم المكاتب المعزولة.</li>
+    <li>الباقات الثلاث (اقتصادية / محترفة / مؤسسية).</li>
+    <li>نظام الفوترة المتكرر والتسويات المالية.</li>
+    <li>ربط المنصات الستة كاملة (تيك توك، إنستغرام، X، سناب شات، الويب).</li>
+    <li>تحليلات سلوك العملاء.</li>
+  </ul>
+  <div class="callout" style="margin-top: 14px;">
+    <div class="callout-title">📈 منحنى النمو الأُسي</div>
+    <p>هنا تبدأ <strong>منحنى النمو الأُسي</strong>. كل مكتب يشترك يجلب معه عشرات العملاء النهائيين، الذين بدورهم يُولّدون إيرادات إضافية للمنصة الأم.</p>
+  </div>
+</div>
+
+<div class="roadmap-phase phase-3">
+  <div class="roadmap-phase-header">
+    <div class="roadmap-phase-title">👑 المرحلة الثالثة: النضج والريادة المطلقة</div>
+    <div class="roadmap-phase-duration">١٢–١٨ شهراً</div>
+  </div>
+  <ul>
+    <li>ميزات الصوت والصورة (تحليل صور العقارات تلقائياً، الرسائل الصوتية).</li>
+    <li>التكامل العميق مع أنظمة CRM للمطورين الكبار.</li>
+    <li>توسّع إقليمي محتمل (الإمارات، الكويت، قطر).</li>
+    <li>إعداد المنصة لجذب استثمار مؤسسي أو إعداد ملف اكتتاب أو بيع جزئي بتقييم مرتفع.</li>
+  </ul>
+</div>
+
+</div>
+
+<div class="diagram-wrapper">
+  <div class="diagram-title">الرحلة الكاملة — من الإطلاق إلى الإمبراطورية</div>
+  <div class="mermaid" dir="ltr">
+flowchart LR
+    P1["🚀 Phase 1<br/>Foundation Launch<br/>4-6 months<br/>--<br/>B2C Core<br/>Reports + Payments<br/>First Revenue"]:::p1
+    
+    P2["💥 Phase 2<br/>Commercial Explosion<br/>6-12 months<br/>--<br/>B2B Gateway<br/>3 Tiers<br/>6 Channels<br/>Exponential Growth"]:::p2
+    
+    P3["👑 Phase 3<br/>Mastery & Leadership<br/>12-18 months<br/>--<br/>Voice + Vision<br/>Regional Expansion<br/>Investment Ready"]:::p3
+    
+    P1 ==> P2 ==> P3
+    
+    classDef p1 fill:#6b8e6f,stroke:#4a6e4e,color:#ffffff,font-weight:bold
+    classDef p2 fill:#c9a961,stroke:#a8893e,color:#ffffff,font-weight:bold
+    classDef p3 fill:#1a2332,stroke:#0f172a,color:#ffffff,font-weight:bold
+  </div>
+</div>
+
+<h2>🤝 الضمانات التي نقدّمها لك</h2>
+
+<ul class="guarantee-list">
+  <li><strong>التزام تعاقدي بمعايير إتاحة الخدمة (SLA)</strong> بنسبة ٩٩.٩٥٪ كحد أدنى — أي ما لا يتجاوز ٢٢ دقيقة من التوقف الشهري.</li>
+  <li><strong>عقد سرية وملكية فكرية صارم</strong> يحمي خبرتك ومحتواك المعرفي.</li>
+  <li><strong>تقارير شفافة شهرية</strong> عن الأداء، الإيرادات، التكاليف، ومؤشرات النمو.</li>
+  <li><strong>توطين كامل للبيانات داخل المملكة</strong> التزاماً بكل اشتراطات SDAIA والهيئة العامة للعقار.</li>
+  <li><strong>خطة تعافٍ من الكوارث موثّقة</strong> تضمن استمرارية الأعمال في أسوأ السيناريوهات.</li>
+</ul>
+
+<div class="ornament-divider">❖ ❖ ❖</div>
+
+<!-- ============================================================
+     CLOSING
+     ============================================================ -->
+<div class="closing-block">
+  <h3>كلمة ختامية</h3>
+  <p><strong style="color: var(--royal-gold-light);">أستاذ أحمد،</strong></p>
+  <p>ما نتحدث عنه ليس مشروعاً تقنياً. هذا <strong style="color: var(--royal-gold-light);">توثيق رقمي خالد لإرث مهني تراكم عبر سنوات من العمل الجاد</strong>. نحن نأخذ خبرتك التي قد تخدم — بحدودها البشرية — بضع مئات من العملاء سنوياً، ونُحوّلها إلى أصل رقمي يخدم <strong style="color: var(--royal-gold-light);">مئات الآلاف شهرياً، ويبقى يعمل حتى بعد عقود من الآن</strong>.</p>
+  
+  <p>السوق العقاري السعودي على أعتاب أكبر تحول في تاريخه. الأسئلة تتدفق من كل اتجاه. الجمهور يبحث عن خبير يثق به. المكاتب تبحث عن أداة تنقذها من الفوضى. <strong style="color: var(--royal-gold-light);">النافذة مفتوحة الآن، وفي هذه اللحظة بالذات، لمن يمتلك الجرأة والرؤية والشريك التقني الصحيح</strong>.</p>
+  
+  <p style="font-size: 13pt; color: var(--royal-gold-light); font-weight: 600; margin-top: 28px;">
+    نحن جاهزون. الهندسة مكتملة. الفريق محشود. التقنية جاهزة.<br><br>
+    يبقى أن نقول معاً: <em style="color: var(--white); font-size: 16pt;">نَبدَأ</em>.
+  </p>
+  
+  <div class="closing-signature">
+    مع كل التقدير والاحترام،<br>
+    <strong style="color: var(--royal-gold-light);">فريق القيادة التقنية والمنتج — OmniFlow AI</strong><br>
+    <em>شركاؤك في بناء الإمبراطورية الرقمية للاستشارات العقارية</em>
+  </div>
+</div>
+
+<p style="text-align: center; margin-top: 50px; padding: 24px; color: var(--gray-500); font-style: italic; border-top: 1px solid var(--gray-200); font-size: 10pt;">
+  © OmniFlow AI 2026 — وثيقة شراكة استراتيجية سرية<br>
+  جميع الحقوق محفوظة | إعداد فريق القيادة التقنية والمنتج
+</p>
+
+</div><!-- /.content -->
+</div><!-- /.container -->
+
+<script>
+  window.addEventListener('load', function() {
+    if (typeof mermaid !== 'undefined') {
+      mermaid.contentLoaded();
+    }
+  });
+</script>
+
+</body>
+</html>

@@ -1,0 +1,91 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# Prometheus scrape configuration for OmniFlow AI.
+# Mounted read-only into the prometheus container by
+# docker-compose.monitoring.yml.
+#
+# Reload without a restart:
+#   curl -X POST http://127.0.0.1:9091/-/reload
+# ─────────────────────────────────────────────────────────────────────────────
+
+global:
+  scrape_interval: 30s
+  scrape_timeout: 10s
+  evaluation_interval: 30s
+  external_labels:
+    environment: production
+    project: omniflow
+
+# Alertmanager / alert rules are intentionally not configured yet.
+# ⚠️ CLIENT ACTION: to get paged, add an Alertmanager target here plus a
+# rule_files entry, or wire Grafana alerting to a Slack/email channel.
+# alerting:
+#   alertmanagers:
+#     - static_configs:
+#         - targets: ["alertmanager:9093"]
+# rule_files:
+#   - /etc/prometheus/rules/*.yml
+
+scrape_configs:
+  # ── Prometheus itself ──────────────────────────────────────────────────────
+  - job_name: prometheus
+    static_configs:
+      - targets: ["localhost:9090"]
+
+  # ── PostgreSQL ─────────────────────────────────────────────────────────────
+  - job_name: postgres
+    static_configs:
+      - targets: ["postgres-exporter:9187"]
+        labels:
+          service: postgres
+
+  # ── Redis ──────────────────────────────────────────────────────────────────
+  - job_name: redis
+    static_configs:
+      - targets: ["redis-exporter:9121"]
+        labels:
+          service: redis
+
+  # ── FastAPI backend ────────────────────────────────────────────────────────
+  # The backend enables a Prometheus exporter via OpenTelemetry when
+  # PROMETHEUS_ENABLED=true (see omniflow-backend/.env.example); the exporter
+  # listens on PROMETHEUS_PORT, which defaults to 9090.
+  #
+  # ⚠️ CLIENT ACTION: if the backend instead mounts the metrics endpoint on the
+  # main API port, swap the target for "fastapi-backend:8000" and set
+  # metrics_path to the route it actually uses (commonly /metrics).
+  - job_name: fastapi-backend
+    metrics_path: /metrics
+    static_configs:
+      - targets: ["fastapi-backend:9090"]
+        labels:
+          service: fastapi-backend
+
+  # ── Celery / AI workers ────────────────────────────────────────────────────
+  # Disabled by default: these processes expose no HTTP metrics port yet.
+  # Enable once a prometheus_client start_http_server(9100) (or a Flower
+  # exporter) is added to the worker entrypoints.
+  # - job_name: celery-worker
+  #   static_configs:
+  #     - targets: ["celery-worker:9100"]
+
+  # ── Qdrant ─────────────────────────────────────────────────────────────────
+  # Qdrant exposes Prometheus metrics on /metrics of its REST port.
+  # If QDRANT__SERVICE__API_KEY is set, the scrape needs the api-key header —
+  # uncomment the authorization block and store the key in a file.
+  - job_name: qdrant
+    metrics_path: /metrics
+    static_configs:
+      - targets: ["qdrant:6333"]
+        labels:
+          service: qdrant
+    # authorization:
+    #   type: api-key
+    #   credentials_file: /etc/prometheus/qdrant_api_key
+
+  # ── MinIO ──────────────────────────────────────────────────────────────────
+  # ⚠️ CLIENT ACTION: MinIO metrics require a bearer token unless
+  # MINIO_PROMETHEUS_AUTH_TYPE=public is set on the minio service.
+  # - job_name: minio
+  #   metrics_path: /minio/v2/metrics/cluster
+  #   static_configs:
+  #     - targets: ["minio:9000"]

@@ -1,0 +1,312 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Noto+Kufi+Arabic:wght@300;400;500;600;700&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   CSS Variables — Light Theme (Luxury Corporate)
+   Consumed by Tailwind via bg-background / text-foreground etc.
+   ═══════════════════════════════════════════════════════════════════════════ */
+@layer base {
+  :root {
+    /* Core surfaces */
+    --background:          #faf7f0;   /* Warm Cream — main content area */
+    --card:                #ffffff;   /* Pure white — cards/panels */
+    --card-foreground:     #1a2332;   /* Deep Navy — text on cards */
+    --sidebar:             #1a2332;   /* Deep Navy — left sidebar */
+    --sidebar-foreground:  #faf7f0;   /* Warm Cream — text on sidebar */
+    --header:              #ffffff;   /* White — top navigation bar */
+
+    /* Text */
+    --foreground:          #1a2332;   /* Deep Navy — primary text */
+    --muted-foreground:    #6b7280;   /* Gray-500 — secondary/helper text */
+
+    /* Brand */
+    --primary:             #1a2332;   /* Deep Navy */
+    --primary-foreground:  #faf7f0;   /* Warm Cream text on Navy */
+    --accent:              #c9a961;   /* Royal Gold */
+    --accent-foreground:   #1a2332;   /* Navy text on Gold */
+
+    /* Structural */
+    --border:              #e8e1d5;   /* Warm border */
+    --input:               #f5efdf;   /* Input background */
+    --ring:                #c9a961;   /* Focus ring — Royal Gold */
+
+    /* Semantic */
+    --success:             #16a34a;
+    --warning:             #ca8a04;
+    --danger:              #dc2626;
+    --info:                #0891b2;
+
+    /* Sidebar nav item states */
+    --sidebar-item-hover:  rgba(201, 169, 97, 0.12);
+    --sidebar-item-active: rgba(201, 169, 97, 0.20);
+    --sidebar-item-active-border: #c9a961;
+
+    /* Radius */
+    --radius:              0.625rem;  /* 10px — polished, not too rounded */
+    --radius-sm:           0.375rem;
+    --radius-lg:           1rem;
+    --radius-xl:           1.5rem;
+  }
+
+  /* Dark theme (auto when system preference is dark) */
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --background:          #0f141d;
+      --card:                #1a2332;
+      --card-foreground:     #faf7f0;
+      --sidebar:             #080c12;
+      --sidebar-foreground:  #faf7f0;
+      --header:              #1a2332;
+      --foreground:          #faf7f0;
+      --muted-foreground:    #9ca3af;
+      --border:              #243044;
+      --input:               #243044;
+    }
+  }
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   Base Styles
+   ═══════════════════════════════════════════════════════════════════════════ */
+@layer base {
+  * {
+    @apply border-border;
+    box-sizing: border-box;
+  }
+
+  html {
+    /* Smooth scrolling for anchor navigation */
+    scroll-behavior: smooth;
+    /* Prevent layout shift on scrollbar appearance */
+    scrollbar-gutter: stable;
+  }
+
+  body {
+    @apply bg-[var(--background)] text-[var(--foreground)];
+    font-family: var(--font-inter), system-ui, sans-serif;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    font-feature-settings: "cv02", "cv03", "cv04", "cv11";
+  }
+
+  /* RTL font override — use Arabic font stack */
+  [dir="rtl"] body,
+  [dir="rtl"] .font-arabic {
+    font-family: var(--font-noto-kufi), var(--font-inter), sans-serif;
+  }
+
+  /* ── Headings ─────────────────────────────────────────────────────────── */
+  h1, h2, h3, h4, h5, h6 {
+    @apply font-semibold tracking-tight text-[var(--foreground)];
+    line-height: 1.2;
+  }
+
+  /* ── Links ───────────────────────────────────────────────────────────── */
+  a {
+    @apply text-[var(--accent)] hover:opacity-80 transition-opacity duration-150;
+  }
+
+  /* ── Focus Visible (accessibility) ──────────────────────────────────── */
+  :focus-visible {
+    outline: 2px solid var(--ring);
+    outline-offset: 2px;
+    border-radius: var(--radius-sm);
+  }
+
+  /* ── Custom Scrollbar (Luxury feel) ─────────────────────────────────── */
+  ::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  ::-webkit-scrollbar-thumb {
+    background: rgba(26, 35, 50, 0.2);
+    border-radius: 3px;
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    background: rgba(201, 169, 97, 0.5);
+  }
+
+  /* ── Sidebar Scrollbar (on navy bg) ─────────────────────────────────── */
+  .sidebar-scroll::-webkit-scrollbar-thumb {
+    background: rgba(250, 247, 240, 0.15);
+  }
+  .sidebar-scroll::-webkit-scrollbar-thumb:hover {
+    background: rgba(201, 169, 97, 0.40);
+  }
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   Component Layer — Reusable utility classes
+   ═══════════════════════════════════════════════════════════════════════════ */
+@layer components {
+
+  /* ── Card ─────────────────────────────────────────────────────────────── */
+  .card {
+    @apply bg-[var(--card)] rounded-[var(--radius)] shadow-card
+           border border-[var(--border)] p-6;
+  }
+  .card-hover {
+    @apply card transition-shadow duration-200 hover:shadow-card-md;
+  }
+
+  /* ── Button base ─────────────────────────────────────────────────────── */
+  .btn {
+    @apply inline-flex items-center justify-center gap-2
+           rounded-[var(--radius)] font-medium text-sm
+           transition-all duration-150 cursor-pointer
+           focus-visible:outline-none focus-visible:ring-2
+           focus-visible:ring-[var(--ring)] focus-visible:ring-offset-2
+           disabled:opacity-50 disabled:cursor-not-allowed
+           select-none;
+  }
+  .btn-primary {
+    @apply btn bg-[var(--accent)] text-[var(--accent-foreground)]
+           px-5 py-2.5 hover:brightness-105 active:scale-[0.98]
+           shadow-sm hover:shadow-gold;
+  }
+  .btn-navy {
+    @apply btn bg-[var(--primary)] text-[var(--primary-foreground)]
+           px-5 py-2.5 hover:brightness-110 active:scale-[0.98] shadow-sm;
+  }
+  .btn-ghost {
+    @apply btn bg-transparent hover:bg-[var(--sidebar-item-hover)]
+           text-[var(--foreground)] px-4 py-2;
+  }
+  .btn-outline {
+    @apply btn border border-[var(--border)] bg-transparent
+           text-[var(--foreground)] px-4 py-2
+           hover:bg-[var(--input)] active:scale-[0.98];
+  }
+  .btn-danger {
+    @apply btn bg-danger text-white px-5 py-2.5 hover:brightness-105;
+  }
+
+  /* ── Input ───────────────────────────────────────────────────────────── */
+  .input {
+    @apply w-full rounded-[var(--radius-sm)] border border-[var(--border)]
+           bg-[var(--input)] px-3 py-2 text-sm text-[var(--foreground)]
+           placeholder:text-[var(--muted-foreground)]
+           focus:outline-none focus:ring-2 focus:ring-[var(--ring)]
+           transition-shadow duration-150;
+  }
+
+  /* ── Badge ───────────────────────────────────────────────────────────── */
+  .badge {
+    @apply inline-flex items-center rounded-full px-2.5 py-0.5
+           text-xs font-medium ring-1 ring-inset;
+  }
+  .badge-gold {
+    @apply badge bg-gold-100 text-gold-800 ring-gold-200;
+  }
+  .badge-navy {
+    @apply badge bg-navy-100 text-navy-800 ring-navy-200;
+  }
+  .badge-success {
+    @apply badge bg-success-light text-success-dark ring-green-200;
+  }
+  .badge-danger {
+    @apply badge bg-danger-light text-danger-dark ring-red-200;
+  }
+  .badge-warning {
+    @apply badge bg-warning-light text-warning-dark ring-yellow-200;
+  }
+
+  /* ── Sidebar Nav Item ────────────────────────────────────────────────── */
+  .nav-item {
+    @apply flex items-center gap-3 px-3 py-2.5 rounded-[var(--radius-sm)]
+           text-sm font-medium text-[var(--sidebar-foreground)]
+           opacity-70 transition-all duration-150 cursor-pointer
+           hover:opacity-100 hover:bg-[var(--sidebar-item-hover)];
+  }
+  .nav-item-active {
+    @apply nav-item opacity-100
+           bg-[var(--sidebar-item-active)]
+           border-s-2 border-[var(--sidebar-item-active-border)]
+           text-[var(--accent)];
+  }
+
+  /* ── Page Header ─────────────────────────────────────────────────────── */
+  .page-header {
+    @apply flex items-center justify-between mb-8;
+  }
+  .page-title {
+    @apply text-2xl font-semibold text-[var(--foreground)];
+  }
+  .page-subtitle {
+    @apply text-sm text-[var(--muted-foreground)] mt-1;
+  }
+
+  /* ── Skeleton Shimmer ────────────────────────────────────────────────── */
+  .skeleton {
+    @apply rounded-[var(--radius-sm)] bg-gradient-to-r
+           from-cream-300 via-cream-200 to-cream-300
+           bg-[length:200%_100%] animate-shimmer;
+  }
+
+  /* ── Divider ─────────────────────────────────────────────────────────── */
+  .divider {
+    @apply my-4 border-t border-[var(--border)];
+  }
+
+  /* ── RTL-aware flex ──────────────────────────────────────────────────── */
+  .flex-row-rtl {
+    @apply flex flex-row rtl:flex-row-reverse;
+  }
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   Utility Layer
+   ═══════════════════════════════════════════════════════════════════════════ */
+@layer utilities {
+  /* Gradient text (Gold shine) */
+  .text-gradient-gold {
+    background: linear-gradient(135deg, #c9a961 0%, #e9d498 50%, #c9a961 100%);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+  }
+
+  /* Gold shimmer border */
+  .border-gradient-gold {
+    border-image: linear-gradient(135deg, #c9a961, #e9d498, #c9a961) 1;
+  }
+
+  /* Glassmorphism panels */
+  .glass {
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    background: rgba(255, 255, 255, 0.75);
+    border: 1px solid rgba(255, 255, 255, 0.3);
+  }
+  .glass-dark {
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    background: rgba(26, 35, 50, 0.80);
+    border: 1px solid rgba(201, 169, 97, 0.15);
+  }
+
+  /* Safe area padding (iOS notch compatibility) */
+  .safe-top    { padding-top:    env(safe-area-inset-top);    }
+  .safe-bottom { padding-bottom: env(safe-area-inset-bottom); }
+
+  /* Truncate with tooltip hint */
+  .truncate-2 {
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+  }
+
+  /* Hide scrollbar but keep scroll */
+  .scrollbar-hidden {
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+  }
+  .scrollbar-hidden::-webkit-scrollbar { display: none; }
+}

@@ -1,0 +1,86 @@
+{
+  "nav": {
+    "overview": "Overview",
+    "inbox": "Smart Inbox",
+    "properties": "Properties",
+    "customers": "Customers",
+    "knowledge": "Knowledge Base",
+    "broadcasts": "Broadcasts",
+    "reports": "Reports",
+    "settings": "Settings",
+    "support": "Support"
+  },
+  "header": {
+    "search": "Search...",
+    "notifications": "Notifications",
+    "profile": "Profile",
+    "logout": "Sign Out",
+    "language": "Language"
+  },
+  "dashboard": {
+    "title": "Dashboard",
+    "welcome": "Welcome to OmniFlow AI",
+    "subtitle": "Smart Real Estate Platform"
+  },
+  "inbox": {
+    "title": "Smart Inbox",
+    "ai_active": "AI Managed",
+    "human_active": "Human Agent Active",
+    "escalated": "Escalated",
+    "unread": "Unread",
+    "reply": "Reply",
+    "takeover": "Take Over",
+    "empty": "No active conversations"
+  },
+  "properties": {
+    "title": "Property Management",
+    "add": "Add Property",
+    "verified": "Verified",
+    "pending": "Pending Verification",
+    "suspended": "Suspended",
+    "rega_number": "REGA Ad Number",
+    "price": "Price",
+    "area": "Area",
+    "bedrooms": "Bedrooms",
+    "city": "City",
+    "district": "District"
+  },
+  "common": {
+    "save": "Save",
+    "cancel": "Cancel",
+    "delete": "Delete",
+    "edit": "Edit",
+    "view": "View",
+    "loading": "Loading...",
+    "error": "An error occurred",
+    "success": "Success",
+    "confirm": "Confirm",
+    "back": "Back",
+    "search": "Search",
+    "filter": "Filter",
+    "export": "Export",
+    "sar": "SAR",
+    "sqm": "sqm"
+  },
+  "auth": {
+    "login": "Sign In",
+    "email": "Email address",
+    "password": "Password",
+    "forgot": "Forgot password?",
+    "welcome_back": "Welcome back",
+    "sign_in_desc": "Sign in to access your dashboard"
+  },
+  "metrics": {
+    "total_conversations": "Total Conversations",
+    "ai_handled": "AI Handled",
+    "human_handled": "Human Handled",
+    "response_time": "Avg Response Time",
+    "conversion_rate": "Conversion Rate",
+    "active_listings": "Active Listings",
+    "new_customers": "New Customers",
+    "active_conversations": "Active Conversations",
+    "total_customers": "Total Customers",
+    "hot_leads": "Hot Leads",
+    "reports_sold": "Reports Sold"
+  }
+}

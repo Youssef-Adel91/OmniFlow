@@ -1,0 +1,38 @@
+# ── Secrets ──────────────────────────────────────────────────────────────────
+.env
+.env.prod
+.env.*.local
+*.env.prod
+!.env.prod.example
+
+# ── TLS material & credentials ───────────────────────────────────────────────
+certbot/
+nginx/htpasswd
+*.pem
+*.key
+*.crt
+*.p12
+*.pfx
+
+# ── Backups (never in git — they contain customer PII) ───────────────────────
+backups/
+*.sql
+*.sql.gz
+*.dump
+*.snapshot
+
+# ── Runtime / logs ───────────────────────────────────────────────────────────
+*.log
+logs/
+data/
+grafana-data/
+prometheus-data/
+
+# ── OS / editor noise ────────────────────────────────────────────────────────
+.DS_Store
+Thumbs.db
+desktop.ini
+*.swp
+*~
+.idea/
+.vscode/

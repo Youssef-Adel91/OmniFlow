@@ -1,0 +1,4403 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>OmniFlow AI — SRS V2.0 Final Unified Edition | الوثيقة الموحدة النهائية</title>
+
+<script src="https://cdn.jsdelivr.net/npm/mermaid/dist/mermaid.min.js"></script>
+<script>
+  mermaid.initialize({
+    startOnLoad: true,
+    theme: 'base',
+    themeVariables: {
+      primaryColor: '#0284c7',
+      primaryTextColor: '#ffffff',
+      primaryBorderColor: '#38bdf8',
+      lineColor: '#cbd5e1',
+      secondaryColor: '#1e293b',
+      tertiaryColor: '#0f172a'
+    },
+    flowchart: {
+      htmlLabels: true,
+      curve: 'basis',
+      padding: 20
+    },
+    sequence: {
+      actorFontWeight: 'bold',
+      actorTextColor: '#ffffff',
+      noteFontSize: 13
+    }
+  });
+</script>
+
+<style>
+  @page {
+    size: A4;
+    margin: 20mm 16mm 25mm 16mm;
+    @bottom-center {
+      content: "OmniFlow AI — SRS V2.0 Final | الصفحة " counter(page) " من " counter(pages);
+      font-family: 'Segoe UI', Tahoma, Arial, sans-serif;
+      font-size: 9pt;
+      color: #64748b;
+    }
+    @top-center {
+      content: "SRS-OMNI-2026-V2.0 FINAL — Confidential | Production-Grade Specification";
+      font-family: 'Segoe UI', Tahoma, Arial, sans-serif;
+      font-size: 8pt;
+      color: #94a3b8;
+    }
+  }
+
+  @page :first {
+    @top-center { content: ""; }
+    @bottom-center { content: ""; }
+  }
+
+  :root {
+    --slate-navy: #0f172a;
+    --slate-navy-light: #1e293b;
+    --slate-navy-lighter: #334155;
+    --cyan-primary: #0284c7;
+    --cyan-dark: #0369a1;
+    --cyan-light: #38bdf8;
+    --cyan-pale: #e0f2fe;
+    --accent-red: #c53030;
+    --accent-red-pale: #fff5f5;
+    --accent-amber: #d97706;
+    --accent-amber-pale: #fef3c7;
+    --accent-green: #16a34a;
+    --accent-green-pale: #dcfce7;
+    --accent-purple: #7c3aed;
+    --accent-purple-pale: #ede9fe;
+    --accent-pink: #db2777;
+    --accent-pink-pale: #fce7f3;
+    --gray-50: #f8fafc;
+    --gray-100: #f1f5f9;
+    --gray-200: #e2e8f0;
+    --gray-300: #cbd5e1;
+    --gray-400: #94a3b8;
+    --gray-500: #64748b;
+    --gray-600: #475569;
+    --gray-700: #334155;
+    --gray-800: #1e293b;
+    --gray-900: #0f172a;
+    --white: #ffffff;
+    --code-bg: #0f172a;
+    --code-text: #e2e8f0;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html { scroll-behavior: smooth; }
+
+  body {
+    font-family: 'Segoe UI', Tahoma, Arial, sans-serif;
+    background: var(--gray-50);
+    color: var(--gray-800);
+    line-height: 1.85;
+    font-size: 11pt;
+    -webkit-font-smoothing: antialiased;
+    direction: rtl;
+  }
+
+  .container {
+    max-width: 1180px;
+    margin: 0 auto;
+    background: var(--white);
+    box-shadow: 0 0 50px rgba(15, 23, 42, 0.08);
+    min-height: 100vh;
+  }
+
+  .cover {
+    background: linear-gradient(135deg, var(--slate-navy) 0%, var(--slate-navy-light) 50%, var(--cyan-dark) 100%);
+    color: var(--white);
+    padding: 70px 60px;
+    text-align: center;
+    page-break-after: always;
+    position: relative;
+    overflow: hidden;
+    min-height: 100vh;
+  }
+
+  .cover::before {
+    content: "";
+    position: absolute;
+    top: -50%;
+    left: -50%;
+    width: 200%;
+    height: 200%;
+    background: radial-gradient(circle, rgba(56, 189, 248, 0.1) 0%, transparent 60%);
+    pointer-events: none;
+  }
+
+  .cover-version-tag {
+    display: inline-block;
+    padding: 6px 18px;
+    background: var(--accent-green);
+    color: var(--white);
+    border-radius: 6px;
+    font-size: 10pt;
+    margin-bottom: 14px;
+    letter-spacing: 2px;
+    font-weight: 700;
+    position: relative;
+    z-index: 1;
+  }
+
+  .cover-badge {
+    display: inline-block;
+    padding: 10px 28px;
+    background: rgba(56, 189, 248, 0.15);
+    border: 1px solid var(--cyan-light);
+    border-radius: 30px;
+    font-size: 11pt;
+    margin-bottom: 24px;
+    letter-spacing: 1.5px;
+    position: relative;
+    z-index: 1;
+  }
+
+  .cover h1 {
+    font-size: 38pt;
+    font-weight: 800;
+    margin-bottom: 14px;
+    line-height: 1.3;
+    position: relative;
+    z-index: 1;
+  }
+
+  .cover .subtitle {
+    font-size: 18pt;
+    font-weight: 300;
+    color: var(--cyan-light);
+    margin-bottom: 24px;
+    position: relative;
+    z-index: 1;
+  }
+
+  .cover .tagline {
+    font-size: 12pt;
+    color: var(--gray-300);
+    max-width: 720px;
+    margin: 0 auto 32px;
+    font-style: italic;
+    line-height: 1.8;
+    position: relative;
+    z-index: 1;
+  }
+
+  .cover .meta-grid {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 14px;
+    max-width: 820px;
+    margin: 30px auto 0;
+    position: relative;
+    z-index: 1;
+  }
+
+  .cover .meta-item {
+    background: rgba(255, 255, 255, 0.07);
+    border: 1px solid rgba(255, 255, 255, 0.15);
+    border-radius: 10px;
+    padding: 14px 16px;
+    backdrop-filter: blur(10px);
+  }
+
+  .cover .meta-label {
+    font-size: 9pt;
+    color: var(--cyan-light);
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    margin-bottom: 5px;
+  }
+
+  .cover .meta-value {
+    font-size: 10.5pt;
+    font-weight: 600;
+  }
+
+  .cover .new-layers-banner {
+    margin-top: 30px;
+    padding: 18px 26px;
+    background: rgba(124, 58, 237, 0.15);
+    border: 1px solid var(--accent-purple);
+    border-radius: 12px;
+    position: relative;
+    z-index: 1;
+  }
+
+  .new-layers-title {
+    font-size: 10.5pt;
+    color: #c4b5fd;
+    letter-spacing: 2px;
+    margin-bottom: 10px;
+    font-weight: 700;
+  }
+
+  .new-layers-tags {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: 6px;
+  }
+
+  .new-layer-tag {
+    background: rgba(255, 255, 255, 0.1);
+    padding: 5px 12px;
+    border-radius: 6px;
+    font-size: 9pt;
+    border: 1px solid rgba(255, 255, 255, 0.15);
+  }
+
+  .cover-footer {
+    margin-top: 40px;
+    font-size: 10pt;
+    color: var(--gray-400);
+    position: relative;
+    z-index: 1;
+  }
+
+  .content { padding: 50px 60px; }
+
+  h1.section-title {
+    font-size: 24pt;
+    color: var(--slate-navy);
+    border-right: 6px solid var(--cyan-primary);
+    padding-right: 18px;
+    margin: 50px 0 20px 0;
+    font-weight: 800;
+    page-break-after: avoid;
+    line-height: 1.4;
+  }
+
+  h1.section-title .english-tag {
+    display: block;
+    font-size: 12pt;
+    color: var(--cyan-primary);
+    font-weight: 600;
+    margin-top: 6px;
+    letter-spacing: 0.5px;
+  }
+
+  h2 {
+    font-size: 17pt;
+    color: var(--slate-navy);
+    margin: 35px 0 16px 0;
+    font-weight: 700;
+    padding-bottom: 8px;
+    border-bottom: 2px solid var(--gray-200);
+    page-break-after: avoid;
+  }
+
+  h3 {
+    font-size: 14pt;
+    color: var(--cyan-dark);
+    margin: 25px 0 12px 0;
+    font-weight: 700;
+    page-break-after: avoid;
+  }
+
+  h4 {
+    font-size: 12pt;
+    color: var(--slate-navy);
+    margin: 20px 0 10px 0;
+    font-weight: 700;
+    page-break-after: avoid;
+  }
+
+  p {
+    margin-bottom: 14px;
+    text-align: justify;
+    color: var(--gray-700);
+  }
+
+  strong, b { color: var(--slate-navy); font-weight: 700; }
+  em, i { color: var(--cyan-dark); font-style: normal; font-weight: 600; }
+
+  ul, ol { margin: 12px 30px 16px 0; padding: 0; }
+  ul li, ol li { margin-bottom: 10px; line-height: 1.85; color: var(--gray-700); }
+  ul li::marker { color: var(--cyan-primary); }
+
+  code {
+    background: var(--cyan-pale);
+    color: var(--cyan-dark);
+    padding: 2px 8px;
+    border-radius: 4px;
+    font-family: 'Courier New', 'Consolas', monospace;
+    font-size: 10pt;
+    direction: ltr;
+    display: inline-block;
+  }
+
+  pre {
+    background: var(--code-bg);
+    color: var(--code-text);
+    padding: 22px;
+    border-radius: 10px;
+    overflow-x: auto;
+    margin: 20px 0;
+    font-family: 'Courier New', 'Consolas', monospace;
+    font-size: 9.5pt;
+    line-height: 1.7;
+    direction: ltr;
+    text-align: left;
+    border: 1px solid var(--slate-navy-lighter);
+    box-shadow: 0 4px 12px rgba(15, 23, 42, 0.15);
+    page-break-inside: avoid;
+  }
+
+  pre code { background: transparent; color: var(--code-text); padding: 0; font-size: inherit; }
+
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 20px 0;
+    background: var(--white);
+    border-radius: 10px;
+    overflow: hidden;
+    box-shadow: 0 2px 8px rgba(15, 23, 42, 0.08);
+    page-break-inside: avoid;
+    border: 1px solid var(--gray-200);
+  }
+
+  table thead {
+    background: linear-gradient(135deg, var(--slate-navy) 0%, var(--slate-navy-light) 100%);
+    color: var(--white);
+  }
+
+  table thead th {
+    padding: 14px 16px;
+    text-align: right;
+    font-weight: 700;
+    font-size: 11pt;
+    border-bottom: 3px solid var(--cyan-primary);
+  }
+
+  table tbody td {
+    padding: 12px 16px;
+    border-bottom: 1px solid var(--gray-200);
+    vertical-align: top;
+    font-size: 10.5pt;
+    color: var(--gray-700);
+  }
+
+  table tbody tr:nth-child(even) { background: var(--gray-50); }
+  table tbody tr:hover { background: var(--cyan-pale); }
+  table tbody tr:last-child td { border-bottom: none; }
+
+  table.metrics-table thead { background: linear-gradient(135deg, var(--accent-red) 0%, #9b2c2c 100%); }
+  table.metrics-table thead th { border-bottom-color: #fed7d7; }
+  table.metrics-table tbody tr:nth-child(even) { background: var(--accent-red-pale); }
+
+  table.tier-table thead { background: linear-gradient(135deg, var(--cyan-dark) 0%, var(--cyan-primary) 100%); }
+
+  .callout {
+    border-right: 5px solid var(--cyan-primary);
+    background: var(--cyan-pale);
+    padding: 18px 22px;
+    margin: 22px 0;
+    border-radius: 8px;
+    page-break-inside: avoid;
+  }
+
+  .callout-title {
+    font-weight: 700;
+    color: var(--cyan-dark);
+    margin-bottom: 8px;
+    font-size: 11pt;
+  }
+
+  .callout.warning { border-right-color: var(--accent-amber); background: var(--accent-amber-pale); }
+  .callout.warning .callout-title { color: #92400e; }
+
+  .callout.critical { border-right-color: var(--accent-red); background: var(--accent-red-pale); }
+  .callout.critical .callout-title { color: var(--accent-red); }
+
+  .callout.success { border-right-color: var(--accent-green); background: var(--accent-green-pale); }
+  .callout.success .callout-title { color: #15803d; }
+
+  .callout.new-layer {
+    border-right-color: var(--accent-purple);
+    background: var(--accent-purple-pale);
+    border: 2px dashed var(--accent-purple);
+    border-right: 5px solid var(--accent-purple);
+  }
+  .callout.new-layer .callout-title { color: var(--accent-purple); }
+
+  .callout.growth {
+    border-right-color: var(--accent-pink);
+    background: var(--accent-pink-pale);
+    border: 2px dashed var(--accent-pink);
+    border-right: 5px solid var(--accent-pink);
+  }
+  .callout.growth .callout-title { color: var(--accent-pink); }
+
+  .diagram-wrapper {
+    background: var(--slate-navy);
+    border: 1px solid var(--slate-navy-light);
+    border-radius: 12px;
+    padding: 30px 20px;
+    margin: 25px 0;
+    text-align: center;
+    page-break-inside: avoid;
+    box-shadow: 0 4px 20px rgba(15, 23, 42, 0.15);
+  }
+
+  .diagram-title {
+    font-size: 12pt;
+    color: var(--cyan-light);
+    font-weight: 700;
+    margin-bottom: 18px;
+    padding-bottom: 10px;
+    border-bottom: 2px dashed var(--slate-navy-lighter);
+  }
+
+  .mermaid {
+    background: transparent !important;
+    direction: ltr;
+    text-align: center;
+  }
+
+  .ascii-art {
+    background: var(--slate-navy);
+    color: var(--cyan-light);
+    padding: 24px;
+    border-radius: 10px;
+    font-family: 'Courier New', monospace;
+    font-size: 9pt;
+    line-height: 1.5;
+    overflow-x: auto;
+    margin: 20px 0;
+    direction: ltr;
+    text-align: left;
+    white-space: pre;
+    page-break-inside: avoid;
+    border: 1px solid var(--slate-navy-lighter);
+  }
+
+  .checklist { list-style: none; padding: 0; margin: 20px 0; }
+
+  .checklist li {
+    padding: 12px 50px 12px 16px;
+    margin-bottom: 10px;
+    background: var(--gray-50);
+    border-right: 4px solid var(--accent-green);
+    border-radius: 8px;
+    position: relative;
+    page-break-inside: avoid;
+  }
+
+  .checklist li::before {
+    content: "✓";
+    position: absolute;
+    right: 16px;
+    top: 50%;
+    transform: translateY(-50%);
+    color: var(--accent-green);
+    font-weight: 900;
+    font-size: 16pt;
+  }
+
+  .toc {
+    background: var(--gray-50);
+    border: 1px solid var(--gray-200);
+    border-radius: 12px;
+    padding: 30px 36px;
+    margin: 30px 0 50px;
+    page-break-after: always;
+  }
+
+  .toc h2 {
+    color: var(--slate-navy);
+    border-bottom: 3px solid var(--cyan-primary);
+    margin-top: 0;
+  }
+
+  .toc ol {
+    counter-reset: section;
+    list-style: none;
+    margin: 16px 0 0 0;
+    padding: 0;
+  }
+
+  .toc ol li {
+    counter-increment: section;
+    padding: 10px 0;
+    border-bottom: 1px dashed var(--gray-300);
+    font-size: 12pt;
+    color: var(--gray-700);
+  }
+
+  .toc ol li::before {
+    content: counter(section, decimal) ". ";
+    color: var(--cyan-primary);
+    font-weight: 700;
+    margin-left: 10px;
+  }
+
+  .toc ol li.new-section {
+    background: var(--accent-purple-pale);
+    padding: 10px 12px;
+    border-radius: 6px;
+    margin: 4px 0;
+    border-bottom: none;
+  }
+
+  .toc ol li.new-section::before { color: var(--accent-purple); }
+
+  .toc ol li.growth-section {
+    background: var(--accent-pink-pale);
+    padding: 10px 12px;
+    border-radius: 6px;
+    margin: 4px 0;
+    border-bottom: none;
+  }
+
+  .toc ol li.growth-section::before { color: var(--accent-pink); }
+
+  .toc-new-badge {
+    background: var(--accent-purple);
+    color: var(--white);
+    font-size: 8.5pt;
+    padding: 2px 10px;
+    border-radius: 12px;
+    margin-right: 8px;
+    font-weight: 700;
+    letter-spacing: 0.5px;
+  }
+
+  .toc-growth-badge {
+    background: var(--accent-pink);
+    color: var(--white);
+    font-size: 8.5pt;
+    padding: 2px 10px;
+    border-radius: 12px;
+    margin-right: 8px;
+    font-weight: 700;
+    letter-spacing: 0.5px;
+  }
+
+  .toc ol li:last-child { border-bottom: none; }
+
+  .signature-table {
+    background: linear-gradient(135deg, var(--slate-navy) 0%, var(--slate-navy-light) 100%);
+    color: var(--white);
+    border-radius: 12px;
+    padding: 30px;
+    margin-top: 40px;
+    page-break-inside: avoid;
+  }
+
+  .signature-table h3 {
+    color: var(--cyan-light);
+    text-align: center;
+    margin-bottom: 22px;
+    font-size: 16pt;
+  }
+
+  .signature-table table { background: transparent; box-shadow: none; border: none; }
+
+  .signature-table table tbody td {
+    color: var(--gray-200);
+    border-bottom-color: rgba(255, 255, 255, 0.1);
+    background: transparent !important;
+  }
+
+  .signature-table table tbody tr:hover { background: rgba(255, 255, 255, 0.05) !important; }
+  .signature-table strong { color: var(--cyan-light); }
+
+  .pdf-btn {
+    position: fixed;
+    bottom: 30px;
+    left: 30px;
+    background: linear-gradient(135deg, var(--cyan-primary) 0%, var(--cyan-dark) 100%);
+    color: var(--white);
+    border: none;
+    padding: 16px 28px;
+    border-radius: 50px;
+    font-family: 'Segoe UI', Tahoma, Arial, sans-serif;
+    font-size: 12pt;
+    font-weight: 700;
+    cursor: pointer;
+    box-shadow: 0 8px 24px rgba(2, 132, 199, 0.4);
+    transition: all 0.3s ease;
+    z-index: 9999;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+
+  .pdf-btn:hover {
+    transform: translateY(-3px);
+    box-shadow: 0 12px 32px rgba(2, 132, 199, 0.55);
+    background: linear-gradient(135deg, var(--cyan-dark) 0%, var(--slate-navy) 100%);
+  }
+
+  .pdf-btn:active { transform: translateY(-1px); }
+  .pdf-btn .icon { font-size: 16pt; }
+
+  hr {
+    border: none;
+    height: 2px;
+    background: linear-gradient(90deg, transparent 0%, var(--cyan-primary) 50%, transparent 100%);
+    margin: 40px 0;
+  }
+
+  .structural-note {
+    background: linear-gradient(135deg, #fffbeb 0%, #fef3c7 100%);
+    border: 1px dashed var(--accent-amber);
+    padding: 14px 20px;
+    border-radius: 8px;
+    margin: 16px 0 25px;
+    font-style: italic;
+    color: #92400e;
+    page-break-inside: avoid;
+  }
+
+  .structural-note strong { color: #78350f; }
+
+  .new-layer-marker {
+    display: inline-block;
+    background: var(--accent-purple);
+    color: var(--white);
+    font-size: 9pt;
+    padding: 3px 12px;
+    border-radius: 14px;
+    margin-right: 10px;
+    font-weight: 700;
+    letter-spacing: 0.5px;
+    vertical-align: middle;
+  }
+
+  .growth-marker {
+    display: inline-block;
+    background: var(--accent-pink);
+    color: var(--white);
+    font-size: 9pt;
+    padding: 3px 12px;
+    border-radius: 14px;
+    margin-right: 10px;
+    font-weight: 700;
+    letter-spacing: 0.5px;
+    vertical-align: middle;
+  }
+
+  blockquote {
+    border-right: 4px solid var(--cyan-primary);
+    background: var(--cyan-pale);
+    padding: 14px 20px;
+    margin: 16px 0;
+    border-radius: 8px;
+    color: var(--cyan-dark);
+    font-style: italic;
+  }
+
+  @media print {
+    body { background: white; font-size: 10pt; }
+    .container { max-width: 100%; margin: 0; box-shadow: none; }
+    .pdf-btn { display: none !important; }
+    .cover { page-break-after: always; min-height: auto; }
+    .content { padding: 0; }
+    h1.section-title { page-break-before: always; margin-top: 0; }
+    h1.section-title:first-of-type { page-break-before: avoid; }
+    table, pre, .diagram-wrapper, .callout, .ascii-art, .checklist li { page-break-inside: avoid; }
+    h1, h2, h3, h4 { page-break-after: avoid; }
+    a { color: var(--slate-navy); text-decoration: none; }
+    .toc { page-break-after: always; }
+    .diagram-wrapper { background: white; border: 1px solid #cbd5e1; }
+    .diagram-title { color: var(--slate-navy); }
+  }
+
+  @media (max-width: 768px) {
+    .content { padding: 30px 20px; }
+    .cover { padding: 50px 25px; }
+    .cover h1 { font-size: 24pt; }
+    .cover .meta-grid { grid-template-columns: 1fr; }
+    table { font-size: 9pt; }
+    pre { font-size: 8.5pt; }
+  }
+
+  /* Force Mermaid Text Color */
+  .mermaid .nodeLabel, 
+  .mermaid .edgeLabel, 
+  .mermaid .cluster-label,
+  .mermaid span,
+  .mermaid p,
+  .mermaid div {
+    color: #ffffff !important;
+  }
+</style>
+</head>
+<body>
+
+<button class="pdf-btn" onclick="window.print()">
+  <span class="icon">📄</span>
+  <span>تحميل الوثيقة كـ PDF</span>
+</button>
+
+<div class="container">
+
+<section class="cover">
+  <div class="cover-version-tag">V2.0 FINAL — ENTERPRISE UNIFIED EDITION</div>
+  <div class="cover-badge">PRODUCTION-GRADE SPECIFICATION</div>
+  <h1>OmniFlow AI</h1>
+  <div class="subtitle">التوأم الرقمي للمستشار أحمد الصائغ</div>
+  <div class="tagline">
+    وثيقة المواصفات البرمجية والهندسة المعمارية الموحدة النهائية<br>
+    <em style="color: var(--cyan-light); font-weight: 400;">Final Unified Software Requirements Specification &amp; Enterprise System Design</em>
+  </div>
+
+  <div class="meta-grid">
+    <div class="meta-item">
+      <div class="meta-label">رقم الإصدار</div>
+      <div class="meta-value">SRS-OMNI-2026-V2.0 FINAL</div>
+    </div>
+    <div class="meta-item">
+      <div class="meta-label">التصنيف</div>
+      <div class="meta-value">Production-Grade | Confidential</div>
+    </div>
+    <div class="meta-item">
+      <div class="meta-label">الفئة المستهدفة</div>
+      <div class="meta-value">Principal Architects · Frontend Leads · CRO · CTO Office</div>
+    </div>
+    <div class="meta-item">
+      <div class="meta-label">التاريخ المرجعي</div>
+      <div class="meta-value">مايو 2026</div>
+    </div>
+    <div class="meta-item">
+      <div class="meta-label">نطاق التحميل</div>
+      <div class="meta-value">500,000+ مستخدم نشط متزامن</div>
+    </div>
+    <div class="meta-item">
+      <div class="meta-label">عدد الأقسام</div>
+      <div class="meta-value">8 أقسام + 5 طبقات إنتاجية + 3 محركات نمو</div>
+    </div>
+  </div>
+
+  <div class="new-layers-banner">
+    <div class="new-layers-title">🆕 الطبقات الإنتاجية والنمو المُدمَجة في هذا الإصدار</div>
+    <div class="new-layers-tags">
+      <span class="new-layer-tag">Frontend &amp; Dashboard (Next.js 14 + SSE)</span>
+      <span class="new-layer-tag">Multimodal Pipeline (Whisper + Vision)</span>
+      <span class="new-layer-tag">CI/CD + IaC + Load Testing</span>
+      <span class="new-layer-tag">PDPL Right-to-be-Forgotten</span>
+      <span class="new-layer-tag">ClickHouse OLAP</span>
+      <span class="new-layer-tag">VCard Gatekeeper</span>
+      <span class="new-layer-tag">VIP Broadcast Engine</span>
+      <span class="new-layer-tag">Digital Reports Vault</span>
+    </div>
+  </div>
+
+  <div class="cover-footer">
+    وثيقة معمارية موحدة نهائية — إعداد فريق القيادة التقنية والمنتج<br>
+    © OmniFlow AI 2026 — جميع الحقوق محفوظة
+  </div>
+</section>
+
+<div class="content">
+
+<section class="toc">
+  <h2>جدول المحتويات</h2>
+  <ol>
+    <li>الملخص التنفيذي وتحليل المنطق التجاري</li>
+    <li>هندسة النظام عالي الإتاحة والتوسع
+      <ul style="margin-top: 8px;">
+        <li class="new-section"><span class="toc-new-badge">جديد</span> 2.8 معمارية الواجهات الأمامية ولوحات التحكم الحية</li>
+        <li class="new-section"><span class="toc-new-badge">جديد</span> 2.9 استراتيجية هندسة جودة البرمجيات والإطلاق (CI/CD + IaC)</li>
+      </ul>
+    </li>
+    <li>العزل الصارم متعدد الإيجار والتشفير المعماري
+      <ul style="margin-top: 8px;">
+        <li class="growth-section"><span class="toc-growth-badge">نمو</span> 3.5 خزانة ومحفظة التقارير العقارية الدائمة (Reports Vault)</li>
+      </ul>
+    </li>
+    <li>هندسة البيانات المتقدمة والطبقة الوكيلة للذكاء الاصطناعي
+      <ul style="margin-top: 8px;">
+        <li class="new-section"><span class="toc-new-badge">جديد</span> 4.4 مسار معالجة الوسائط المتعددة (Multimodal Pipeline)</li>
+        <li class="new-section"><span class="toc-new-badge">جديد</span> 4.5 مستودع البيانات التحليلي (ClickHouse OLAP)</li>
+      </ul>
+    </li>
+    <li>المحركات اللوجستية وتكاملات الطرف الثالث
+      <ul style="margin-top: 8px;">
+        <li class="growth-section"><span class="toc-growth-badge">نمو</span> 5.5 محرك الكرت الرقمي والحجز المشروط (VCard Gatekeeper)</li>
+        <li class="growth-section"><span class="toc-growth-badge">نمو</span> 5.6 محرك البث الحصري وقوائم VIP (Broadcast Engine)</li>
+      </ul>
+    </li>
+    <li>المواصفات التقنية والعقود البرمجية</li>
+    <li>طبقة المراقبة والملاحظة الإنتاجية</li>
+    <li>الأمان السيبراني والامتثال التنظيمي
+      <ul style="margin-top: 8px;">
+        <li class="new-section"><span class="toc-new-badge">جديد</span> 8.3 الآلية التشغيلية لامتثال البيانات وحقوق المستخدمين (PDPL)</li>
+      </ul>
+    </li>
+  </ol>
+</section>
+
+<h1 class="section-title">
+  القسم الأول: الملخص التنفيذي وتحليل المنطق التجاري
+  <span class="english-tag">EXECUTIVE SUMMARY &amp; BUSINESS LOGIC ANALYSIS</span>
+</h1>
+
+<h2>1.1 الفلسفة الجوهرية للنظام: من المستشار البشري إلى التوأم الرقمي</h2>
+
+<p>منظومة <strong>OmniFlow AI</strong> ليست تطبيقاً ذكياً تقليدياً قائماً على الردود الآلية، وليست مجرد بوت محادثة (Conversational Bot) مزوَّد بنماذج لغوية كبيرة. بل هي <strong>بنية رقمية متكاملة (Digital Twin Architecture)</strong> تهدف إلى الاستحواذ الإلكتروني الكامل على رأس المال المعرفي للمستشار العقاري أحمد الصائغ — ابتداءً من أُطر التحليل التي يستخدمها في تقييم العقارات، مروراً بالنبرة الصوتية واللغوية التي يتعامل بها مع العملاء، وانتهاءً بالمنطق التنفيذي الذي يحكم اتخاذه لقرارات السمسرة، الفحص، والاستشارات التنموية.</p>
+
+<p>الفكرة الجوهرية تستند إلى مبدأ هندسي صارم: <strong>رأس المال المعرفي للخبير البشري هو أصل اقتصادي قابل للترميز والتوزيع غير المحدود (Codifiable &amp; Infinitely Distributable Asset)</strong>. وبالتالي، فإن المنظومة تُحوِّل الندرة البشرية إلى وفرة رقمية، دون التضحية بالعمق الاستشاري أو السلامة القانونية أو الموثوقية المهنية. هذا التحويل يتم عبر طبقات هندسية متراصة تضمن أن العميل النهائي يتلقى استجابة تكاد تكون مطابقة سلوكياً (Behaviorally Equivalent) لما كان سيتلقاه من المستشار شخصياً، لكن بسرعة مللي ثوانٍ، وبتكلفة هامشية تقترب من الصفر مع تضخم قاعدة المستخدمين.</p>
+
+<h2>1.2 ازدواجية النموذج الاقتصادي: تشريح البوابتين</h2>
+
+<p>تتميز هندسة OmniFlow AI بكونها <strong>منظومة ثنائية البوابة (Dual-Gate Architecture)</strong> تجمع بين نموذجين تجاريين متباينين جذرياً، يعملان على نفس النواة التقنية، لكن بمنطق تجاري واقتصادي متمايز تمامًا:</p>
+
+<div class="diagram-wrapper">
+  <div class="diagram-title">المعمار الازدواجي للبوابتين B2C &amp; B2B</div>
+  <div class="mermaid" dir="ltr">
+flowchart TB
+    A["OmniFlow AI<br/>Unified Core Engine"]:::core
+    A --> B2C["B2C Gate<br/>Core Brand Identity"]:::b2c
+    A --> B2B["B2B Gate<br/>Multi-tenant SaaS Platform"]:::b2b
+    B2C --> B2C1["Smart Brokerage<br/>from Unified Inventory"]:::leaf
+    B2C --> B2C2["Deep Specialized<br/>Consultations"]:::leaf
+    B2C --> B2C3["Paid Reports<br/>29 SAR / 15 SAR"]:::leaf
+    B2C --> B2C4["Secondary<br/>Commission Engine"]:::leaf
+    B2B --> T1["Tier 1<br/>Economic"]:::tier1
+    B2B --> T2["Tier 2<br/>Professional"]:::tier2
+    B2B --> T3["Tier 3<br/>Enterprise"]:::tier3
+    classDef core fill:#0f172a,stroke:#38bdf8,stroke-width:3px,color:#ffffff,font-weight:bold
+    classDef b2c fill:#0284c7,stroke:#38bdf8,color:#ffffff,font-weight:bold
+    classDef b2b fill:#0369a1,stroke:#38bdf8,color:#ffffff,font-weight:bold
+    classDef leaf fill:#1e293b,stroke:#38bdf8,color:#ffffff
+    classDef tier1 fill:#0c4a6e,stroke:#38bdf8,color:#ffffff
+    classDef tier2 fill:#075985,stroke:#38bdf8,color:#ffffff
+    classDef tier3 fill:#0369a1,stroke:#38bdf8,color:#ffffff
+  </div>
+</div>
+
+<h3>1.2.1 البوابة الأولى — هوية العلامة الجوهرية (B2C Core Brand Identity)</h3>
+
+<p>هذه البوابة هي <strong>العمود الفقري الإيراد</strong>ي للمنظومة في مرحلتها التأسيسية، وتعمل تحت الهوية الأصلية للمستشار أحمد الصائغ على الرقم الرئيسي للعلامة التجارية. وظائفها التشغيلية تشمل:</p>
+
+<ul>
+  <li><strong>السمسرة الذكية المستندة إلى المخزون الموحد</strong>: تقوم المنظومة بمسح بنك العروض العقارية المُغذَّى من قِبَل مشتركي بوابة B2B، وتوفِّر سمسرة آلية متكاملة مع أولوية صارمة للشقق اليومية والعروض البيعية المباشرة، استجابةً لضرورات تسريع دورة التدفق النقدي (Cash Velocity).</li>
+  <li><strong>الاستشارات المتخصصة العميقة</strong>: تقديم خبرة فنية في فحص البناء، استشارات الإسكان التنموي، التحكيم العقاري، ومنطق اتخاذ قرارات الشراء وفقاً لأُطر التحليل المُسجَّلة في البنك المعرفي الخاص بالمستشار.</li>
+  <li><strong>التقارير المدفوعة بنظام Pay-Per-Output</strong>: إصدار تقارير فحص الصكوك والبيانات (29 ريال)، والتقارير الاستشارية المتقدمة (15 ريال)، ومطابقتها مع كود البناء السعودي والاشتراطات البلدية لكل منطقة.</li>
+  <li><strong>محرك العمولات الثانوي</strong>: احتساب وتوزيع عمولات السمسرة المُغلَقة عبر النظام كمصدر دخل تكميلي.</li>
+</ul>
+
+<h3>1.2.2 البوابة الثانية — منصة SaaS متعددة الإيجار (B2B Multi-tenant SaaS Platform)</h3>
+
+<p>هذه البوابة هي <strong>محرك التوسع الأُسي (Exponential Scaling Engine)</strong> للنظام، وتستهدف المكاتب العقارية والمسوقين الأفراد عبر نظام اشتراكات هرمي (Tiered Subscription Model):</p>
+
+<table class="tier-table">
+  <thead>
+    <tr>
+      <th>المستوى</th>
+      <th>الاسم التقني</th>
+      <th>الخصائص التجارية</th>
+      <th>الخصائص الهندسية</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td><strong>Tier 1</strong></td>
+      <td>Economic Tier (الباقة الاقتصادية)</td>
+      <td>تسعير اختراقي مدعوم بتسهيلات مالية. يعمل البوت تحت مسمى "المستشار أحمد الصائغ الرقمي" كعضو فريق افتراضي داخل المكتب. الهدف: الاجتياح السوقي السريع وربط ذهني للعلامة الأم.</td>
+      <td><code>Tenant_ID</code> مع <code>Brand_Overlay = "AhmedAlSayegh_Digital"</code>. قوالب الرسائل ثابتة برمجياً. لا يُسمح بتعديل الهوية النصية الرئيسية.</td>
+    </tr>
+    <tr>
+      <td><strong>Tier 2</strong></td>
+      <td>Professional Tier (الباقة المحترفة)</td>
+      <td>تسعير متوسط للمكاتب متوسطة الحجم. تخصيص جزئي للهوية مع الاحتفاظ بمنطق التحليل الأصلي.</td>
+      <td><code>Custom_Branding_Layer</code> مُفعَّل. <code>Custom_Persona_Mask</code> مع الحفاظ على <code>Reasoning_Engine</code> الأصلي.</td>
+    </tr>
+    <tr>
+      <td><strong>Tier 3</strong></td>
+      <td>Enterprise / Advanced Customization</td>
+      <td>للمطورين الكبار والشركات العقارية المؤسسية. تخصيص هوية تجارية كاملة، مع منح APIs خاصة وربط CRM.</td>
+      <td>White-Label Mode. Dedicated Kubernetes Namespace. Custom RAG Pipelines. SLAs مخصصة بنسبة 99.99% uptime.</td>
+    </tr>
+  </tbody>
+</table>
+
+<h2>1.3 التحديات الهندسية الجوهرية المُستخلَصة من المنطق التجاري</h2>
+
+<p>من تحليل ازدواجية النموذج، تنبثق ثلاث تحديات هندسية لا يمكن المساومة عليها:</p>
+
+<div class="callout">
+  <div class="callout-title">التحدي الأول: التزامن الفوري عبر المنصات الستة (Omnichannel Synchronicity)</div>
+  <p style="margin: 0;">عندما يتفاعل عميل عبر تيك توك، ثم ينتقل إلى واتساب، ثم يكمل التقرير عبر الويب — يجب أن تكون "ذاكرة المحادثة" واحدة، وهوية العميل واحدة، وسياق المنطق المُستخدَم واحداً، دون أن يُلاحظ العميل أي قطع في تجربته.</p>
+</div>
+
+<div class="callout warning">
+  <div class="callout-title">التحدي الثاني: العزل الصارم متعدد الإيجار (Strict Multi-Tenant Isolation)</div>
+  <p style="margin: 0;">البيانات بين المكاتب المشتركة لا يجب أن تتسرب بأي شكل من الأشكال؛ لا على مستوى قاعدة البيانات العلائقية، ولا على مستوى قاعدة البيانات الشعاعية، ولا حتى على مستوى ذاكرة التخزين المؤقت (Cache Layer).</p>
+</div>
+
+<div class="callout critical">
+  <div class="callout-title">التحدي الثالث: الكفاءة الاقتصادية للتوكنز (Token Economic Efficiency)</div>
+  <p style="margin: 0;">مع 500,000 مستخدم نشط، إذا تم استدعاء نموذج لغوي متقدم لكل رسالة، فإن الفاتورة الشهرية لمزود الذكاء الاصطناعي ستتجاوز ميزانية المنصة بأضعاف. لذا، فإن تصميم طبقة التوجيه الذكي (Semantic Router) وطبقة الكاش الدلالي (Semantic Cache) ليس ميزة جانبية، بل <strong>شرط بقاء وجودي للنموذج التجاري بأكمله</strong>.</p>
+</div>
+
+<hr>
+
+<h1 class="section-title">
+  القسم الثاني: هندسة النظام عالي الإتاحة والتوسع
+  <span class="english-tag">HIGH-AVAILABILITY SYSTEM ARCHITECTURE &amp; DESIGN</span>
+</h1>
+
+<h2>2.1 الفلسفة المعمارية: لماذا Event-Driven Microservices؟</h2>
+
+<p>التصميم المعماري المُختار لـ OmniFlow AI هو <strong>Event-Driven Microservices Architecture (EDMA)</strong> غير المتزامن (Asynchronous)، وهذا الاختيار ليس عشوائياً، بل مدفوع بضرورات هندسية صارمة:</p>
+
+<ul>
+  <li><strong>فك الاقتران الزمني (Temporal Decoupling)</strong>: ردود LLM قد تستغرق من 800 مللي ثانية إلى 6 ثوانٍ. هذه المدة تتجاوز بشكل صارخ الحد الأقصى المسموح به في Webhooks الخاصة بواتساب وميتا (المُحدَّد عادةً بـ 5 ثوانٍ كحد أقصى). بدون فصل الاستقبال عن المعالجة، ستُسبِّب أي واجهة LLM فشلاً تتالياً (Cascading Failures) في جميع Webhooks الواردة.</li>
+  <li><strong>التحجيم المستقل لكل خدمة (Independent Scalability)</strong>: خدمة استقبال الرسائل قد تحتاج إلى 50 نسخة، بينما خدمة LLM Routing قد تحتاج إلى 200 نسخة، وخدمة التقارير قد تكفيها 10 نسخ. مع EDMA، يمكن لكل خدمة أن تتوسع بمعدل مختلف.</li>
+  <li><strong>الصمود أمام الفشل (Fault Tolerance &amp; Resilience)</strong>: إذا تعطلت خدمة معينة (مثل خدمة الدفع)، فإن الرسائل تنتظر في طوابيرها دون فقدان، وتتم معالجتها فور استعادة الخدمة.</li>
+</ul>
+
+<h2>2.2 الطبقات الأفقية للبنية المعمارية</h2>
+
+<div class="diagram-wrapper">
+  <div class="diagram-title">الطبقات السبع الأفقية لبنية OmniFlow AI (شاملة طبقة الـ Frontend)</div>
+  <div class="mermaid" dir="ltr">
+flowchart TB
+    L0["🖥️ Layer 0: Frontend &amp; Dashboard<br/>Next.js 14 + React + TailwindCSS<br/>WebSocket / SSE Live Sync · Zustand State"]:::front
+    L1["🌐 Layer 1: External Channels<br/>WhatsApp | TikTok DM | Instagram | X | Snapchat | Web"]:::ext
+    L2["🛡️ Layer 2: Edge &amp; Gateway<br/>Cloudflare → AWS ALB → API Gateway<br/>TLS Termination · DDoS Protection · Rate Limiting"]:::edge
+    L3["📥 Layer 3: Ingestion Microservices (Stateless)<br/>Channel Adapters · Immediate HTTP 200 OK<br/>Event normalization &amp; publishing"]:::ingest
+    L4["📨 Layer 4: Message Broker (Apache Kafka Cluster)<br/>Topics: messages.incoming · llm.routing · multimodal.audio · multimodal.vision · broadcast.marketing"]:::kafka
+    L4b["⏱️ Layer 4b: Distributed Task Scheduler<br/>Celery + Redis (Beat) · SLA Timers · VIP Follow-ups · Cron Jobs"]:::scheduler
+    L5["⚙️ Layer 5: Processing Workers (FastAPI + Docker + K8s)<br/>Semantic Router · Multimodal Workers · RAG Engine · LLM Invoker · Vault Worker"]:::process
+    L6["💾 Layer 6: Data Plane<br/>PostgreSQL (RLS) · Qdrant · Redis · S3 · ClickHouse OLAP"]:::data
+    L0 ==> L2
+    L1 ==> L2
+    L2 ==> L3
+    L3 ==> L4
+    L4 ==> L4b
+    L4b ==> L5
+    L5 ==> L6
+    L4b -.->|"Delayed Jobs Broker"| L6
+    L6 -.->|"Real-Time Updates"| L0
+    classDef front fill:#7c3aed,stroke:#a78bfa,stroke-width:3px,color:#ffffff,font-weight:bold
+    classDef ext fill:#0284c7,stroke:#38bdf8,stroke-width:2px,color:#ffffff,font-weight:bold
+    classDef edge fill:#0369a1,stroke:#38bdf8,stroke-width:2px,color:#ffffff,font-weight:bold
+    classDef ingest fill:#0c4a6e,stroke:#38bdf8,stroke-width:2px,color:#ffffff,font-weight:bold
+    classDef kafka fill:#1e293b,stroke:#38bdf8,stroke-width:2px,color:#ffffff,font-weight:bold
+    classDef process fill:#334155,stroke:#38bdf8,stroke-width:2px,color:#ffffff,font-weight:bold
+    classDef data fill:#475569,stroke:#38bdf8,stroke-width:2px,color:#ffffff,font-weight:bold
+    classDef scheduler fill:#b45309,stroke:#fcd34d,stroke-width:2px,color:#ffffff,font-weight:bold
+  </div>
+</div>
+
+<h3>2.2.1 محرك المهام المجدولة الموزّع (Distributed Task Scheduler)</h3>
+
+<p><strong>Kafka ليس محرك مؤقتات (Timers)</strong>: طوابير Kafka مُصمَّمة لمعالجة الأحداث الفورية والتدفق المستمر، وليست للمهام المؤجَّلة طويلة الأمد (مثل: "أرسل تذكيراً بعد 7 أيام" أو "صعِّد للمدير إذا لم يرد الموظف خلال 15 دقيقة"). لذلك يُضاف مكوّن مستقل:</p>
+
+<ul>
+  <li><strong>الاختيار المعتمد (V1)</strong>: <strong>Celery + Redis (Beat)</strong> — Redis يُستخدم أصلاً في Layer 6، فيُستثمر كـ Broker للمهام المؤجَّلة مع Beat Scheduler للـ Cron Jobs.</li>
+  <li><strong>البديل المؤسسي (Enterprise)</strong>: <strong>Temporal.io</strong> — عند الحاجة لـ Workflows معقدة مع ضمانات Exactly-Once وإعادة تشغيل آمنة (مثلاً: سلاسل تصعيد SLA متعددة المراحل).</li>
+</ul>
+
+<p><strong>حالات الاستخدام الإلزامية لهذا المحرك:</strong></p>
+<ul>
+  <li><strong>SLA Timers</strong> (راجع 5.4): عداد استجابة الموظف البشري + تصعيد تلقائي للمدير عند التأخير.</li>
+  <li><strong>VIP Follow-ups</strong> (راجع 5.6): تذكير العميل بعد 7 أيام عند عدم الرد على دعوة الاشتراك.</li>
+  <li><strong>VCard Reminders</strong> (راجع 5.5): تذكيرات STATE_REMINDER_1 / STATE_REMINDER_2 / STATE_DORMANT.</li>
+  <li><strong>REGA Re-verification Cron</strong> (راجع 5.1): إعادة التحقق الدوري من العروض النشطة.</li>
+</ul>
+
+<h2>2.3 تدفق البيانات من الطرف إلى الطرف (End-to-End Data Flow)</h2>
+
+<p><strong>الخطوة 1 — وصول الرسالة إلى Edge Layer</strong>: عندما يُرسل عميل رسالة عبر واتساب، فإن Meta Cloud API يقوم بإرسال Webhook إلى نقطة النهاية المخصصة في النظام، عبر Cloudflare الذي يقوم بحماية الطبقة من هجمات DDoS، وSSL Termination، وفحص أولي للحد من الطلبات المسيئة.</p>
+
+<p><strong>الخطوة 2 — التحقق من توقيع Webhook</strong>: قبل القبول، تتم عملية التحقق من <code>X-Hub-Signature-256</code> باستخدام HMAC-SHA256، للتأكد أن الطلب صادر فعلاً من Meta وليس مزوَّراً. أي طلب فاشل التحقق يُرفض بصمت دون استهلاك موارد إضافية.</p>
+
+<p><strong>الخطوة 3 — Channel Adapter (Ingestion Microservice)</strong>: خدمة Stateless مكتوبة بـ FastAPI تستقبل الطلب، تقوم بـ:</p>
+
+<ul>
+  <li><strong>(أ)</strong> تطبيع الرسالة إلى صيغة موحدة (Canonical Event Schema) بحيث لا يهم بعد ذلك من أي منصة جاءت الرسالة.</li>
+  <li><strong>(ب)</strong> نشر الحدث على Topic مخصص في Kafka (<code>messages.incoming.v1</code>).</li>
+  <li><strong>(ج)</strong> إرجاع <code>HTTP 200 OK</code> فوراً إلى Meta — في أقل من 200 مللي ثانية. <strong>هذه الخطوة الحرجة تمنع الـ Webhook Timeout وتحافظ على صحة قناة الاتصال مع مزودي المنصات.</strong></li>
+</ul>
+
+<p><strong>الخطوة 4 — Message Broker (Apache Kafka)</strong>: Kafka هنا ليس مجرد طابور؛ هو <strong>العمود الفقري للنظام (Backbone)</strong>. اختياره عوضاً عن RabbitMQ مبرَّر بـ:</p>
+
+<ul>
+  <li>معدل إنتاجية يتجاوز مليون رسالة في الثانية على Cluster متوسط.</li>
+  <li>الاحتفاظ بالسجل (Log Retention) يسمح بإعادة معالجة الرسائل في حالة الأخطاء.</li>
+  <li>التقسيم بحسب <code>Tenant_ID</code> يضمن العزل الأفقي على مستوى الـ Topic.</li>
+</ul>
+
+<p><strong>الخطوة 5 — Worker Pool (FastAPI Async Workers)</strong>: مجموعة من العمال غير المتزامنين يستهلكون الأحداث من Kafka. كل عامل يقوم بـ:</p>
+
+<ol>
+  <li>استخراج <code>User_ID</code> و<code>Tenant_ID</code> من الحدث.</li>
+  <li>فحص <code>customers.is_processing_restricted</code> — إن كان <code>TRUE</code>، يُتخطَّى مسار الـ AI ويُوجَّه للموظف البشري فوراً (امتثالاً لـ PDPL — راجع 8.3.1).</li>
+  <li>استعلام Redis Cluster لاسترداد سياق المحادثة (Conversation Context).</li>
+  <li>تمرير الرسالة إلى <strong>Semantic Router</strong> الذي يقرر المسار.</li>
+  <li>فحص <strong>Semantic Cache</strong> قبل أي استدعاء LLM.</li>
+  <li>إن لم يوجد كاش، استدعاء LLM المناسب (Lite أو Master).</li>
+  <li>حقن الرد في طابور الإرسال (<code>messages.outgoing.v1</code>).</li>
+</ol>
+
+<p><strong>الخطوة 6 — Outbound Dispatcher</strong>: خدمة مستقلة تستهلك من طابور الإرسال، وترسل الرد عبر القناة الأصلية إلى المستخدم.</p>
+
+<div class="diagram-wrapper">
+  <div class="diagram-title">تدفق البيانات الكامل من العميل إلى الرد النهائي</div>
+  <div class="mermaid" dir="ltr">
+sequenceDiagram
+    participant C as Customer
+    participant M as Meta Cloud API
+    participant E as Cloudflare Edge
+    participant A as Channel Adapter
+    participant K as Kafka Broker
+    participant W as Worker (FastAPI)
+    participant R as Redis Cache
+    participant S as Semantic Router
+    participant L as LLM
+    participant O as Outbound Dispatcher
+    C->>M: Send Message
+    M->>E: Webhook Push
+    E->>A: HMAC-SHA256 Verified
+    A->>K: Publish Event
+    A-->>M: HTTP 200 OK (200ms)
+    K->>W: Consume Event
+    W->>R: Get Conversation Context
+    R-->>W: Return Context
+    W->>S: Route Decision
+    S->>R: Semantic Cache Probe
+    alt Cache Hit
+        R-->>W: Cached Response
+    else Cache Miss
+        S->>L: Invoke LLM
+        L-->>W: Generated Response
+    end
+    W->>K: Publish Outbound
+    K->>O: Consume Outbound
+    O->>M: Send Reply
+    M->>C: Deliver Message
+  </div>
+</div>
+
+<h2>2.4 طبقة الحوسبة: FastAPI + Docker + Kubernetes</h2>
+
+<p>اختيار <strong>FastAPI</strong> كإطار العمل الأساسي للخدمات الصغيرة مبني على:</p>
+
+<ul>
+  <li><strong>الأداء العالي</strong> المعتمد على Starlette وUvicorn، الذي يضعه في صدارة معايير الأداء للأطر الموازية في Python.</li>
+  <li><strong>الدعم الأصلي للـ Async/Await</strong> الذي يسمح لعامل واحد بمعالجة آلاف الطلبات المتزامنة دون استنفاد الخيوط.</li>
+  <li><strong>التحقق التلقائي من البيانات</strong> عبر Pydantic، مما يحمي من أخطاء الإدخال على مستوى العقد.</li>
+</ul>
+
+<p>كل خدمة دقيقة (Microservice) تُحزَّم في <strong>Docker Container</strong> مع صورة أساسية رفيعة (Alpine أو Distroless) لتقليل سطح الهجوم والتسريع من زمن التشغيل البارد (Cold Start). يتم تنظيم الحاويات عبر <strong>Kubernetes</strong> (AWS EKS أو GKE) مع تكوين:</p>
+
+<ul>
+  <li><strong>Horizontal Pod Autoscaler (HPA)</strong>: يُقاس بمعدل وحدة المعالجة المركزية، الذاكرة، وعمق طابور Kafka. حين تتجاوز الحاويات 65% استهلاك CPU أو يتجاوز عمق الطابور حداً معيناً، تُضاف نُسخ جديدة تلقائياً.</li>
+  <li><strong>Cluster Autoscaler</strong>: عندما لا تكفي العقد (Nodes) الحالية، تُضاف عقد جديدة من السحابة تلقائياً.</li>
+  <li><strong>Pod Disruption Budgets</strong>: تضمن وجود حد أدنى من النسخ الفعالة في كل لحظة حتى أثناء التحديثات.</li>
+  <li><strong>Multi-AZ Deployment</strong>: توزيع العقد على ثلاث مناطق توفر مختلفة (Availability Zones) لضمان البقاء حتى عند فشل مركز بيانات كامل.</li>
+</ul>
+
+<h2>2.5 استراتيجية التخزين المؤقت: Redis Cluster + Semantic Caching</h2>
+
+<p>تُعد طبقة Redis في OmniFlow AI <strong>محوراً اقتصادياً لا مجرد طبقة تسريع</strong>. تتكون من:</p>
+
+<p><strong>Redis Cluster ذو 6 عقد (3 Masters + 3 Replicas)</strong>: يحفظ ثلاثة أنواع من البيانات:</p>
+
+<ol>
+  <li><strong>Conversation Context Store</strong>: آخر 20 رسالة لكل مستخدم، مع TTL ديناميكي (24 ساعة بشكل افتراضي، أو حتى نهاية الجلسة).</li>
+  <li><strong>Session State</strong>: حالة العميل في الـ Funnel (هل هو في مرحلة سؤال، حجز، دفع، إلخ).</li>
+  <li><strong>Rate Limiting Counters</strong>: عداد للطلبات لكل <code>User_ID</code> و<code>Tenant_ID</code> لمنع الإساءة.</li>
+</ol>
+
+<p><strong>Semantic Cache Layer (الطبقة الذهبية لتوفير التوكنز)</strong>: هذه الطبقة هي الفارق الحاسم بين منصة قابلة للحياة اقتصادياً ومنصة تستنزف ميزانيتها. تعمل كالتالي:</p>
+
+<p>عند استقبال سؤال جديد من المستخدم، يتم:</p>
+
+<ol>
+  <li>توليد متجه دلالي (Embedding) للسؤال باستخدام نموذج خفيف ورخيص جداً (مثل <code>text-embedding-3-small</code> أو نظيره).</li>
+  <li>البحث في فهرس Qdrant مخصص للأسئلة المتكررة عن أقرب جار (Nearest Neighbor) بقياس Cosine Similarity.</li>
+  <li>إذا كانت درجة التشابه ≥ 0.95، يُسترجع الرد المُخزَّن مسبقاً ويُرسَل <strong>في أقل من 50 مللي ثانية</strong>، بصفر استهلاك توكنز LLM.</li>
+  <li>إذا كانت بين 0.85 و0.95، يُستخدم الرد كسياق مرجعي للنموذج الخفيف لإعادة الصياغة بسرعة.</li>
+  <li>إذا كانت أقل من 0.85، تُعتبر الأسئلة جديدة وتُمرَّر للمسار الكامل.</li>
+</ol>
+
+<p>تجريبياً، تُظهر هذه الطبقة قدرة على اعتراض <strong>40% إلى 60% من الأسئلة في بيئة عقارية تشغيلية</strong>، نظراً للنمط المتكرر للاستفسارات (أسعار، مواصفات، اشتراطات قانونية، إلخ).</p>
+
+<h2>2.6 تقدير الأبعاد العددية للحمل (Capacity Planning)</h2>
+
+<table>
+  <thead>
+    <tr>
+      <th>المؤشر</th>
+      <th>التقدير لـ 500K مستخدم</th>
+      <th>الموارد المخصصة</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr><td>الرسائل الواردة/ثانية في الذروة</td><td>~3,500 msg/sec</td><td>80 instance من Channel Adapters</td></tr>
+    <tr><td>متوسط زمن الاستجابة (Median Latency)</td><td>&lt; 1.2 ثانية</td><td>Kafka + 200 LLM Workers</td></tr>
+    <tr><td>نسبة الإصابة في Semantic Cache</td><td>≥ 45%</td><td>يوفر ~$180K سنوياً</td></tr>
+    <tr><td>تخزين قاعدة البيانات الأساسي</td><td>~12 TB في السنة الأولى</td><td>PostgreSQL مع Read Replicas</td></tr>
+    <tr><td>Vector DB Index Size</td><td>~80M vectors</td><td>Qdrant مع 3 Replicas</td></tr>
+  </tbody>
+</table>
+
+<h2>2.7 استراتيجية الإتاحة المستمرة والتعافي من الكوارث</h2>
+<h3 style="margin-top: -8px; color: var(--cyan-primary); font-size: 13pt;">Disaster Recovery &amp; Business Continuity</h3>
+
+<div class="structural-note">
+  <strong>ملاحظة هيكلية:</strong> تم دمج هذا القسم الفرعي داخل القسم الثاني لأن الإتاحة المستمرة (Continuous Availability) ليست منفصلة عن هندسة High-Availability، بل هي امتدادها الطبيعي والمكمل الحتمي لها. التحجيم الأفقي يتعامل مع الحمل، بينما الـ DR يتعامل مع الكوارث.
+</div>
+
+<h3>2.7.1 أهداف الإتاحة الكميّة (SLOs)</h3>
+
+<table class="metrics-table">
+  <thead>
+    <tr>
+      <th>المؤشر</th>
+      <th>الهدف الإنتاجي</th>
+      <th>آلية القياس</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr><td><strong>Uptime SLA</strong></td><td>99.95% (B2C) / 99.99% (Enterprise Tier)</td><td>Synthetic monitoring كل 30 ثانية</td></tr>
+    <tr><td><strong>P95 Latency للردود المُكاشة</strong></td><td>&lt; 200 ms</td><td>OpenTelemetry traces</td></tr>
+    <tr><td><strong>P95 Latency لردود L1 (Triage)</strong></td><td>&lt; 1.5 s</td><td>Distributed tracing</td></tr>
+    <tr><td><strong>P95 Latency لردود L3 (Master)</strong></td><td>&lt; 5 s</td><td>Distributed tracing</td></tr>
+    <tr><td><strong>RPO (Recovery Point Objective)</strong></td><td>≤ 60 ثانية</td><td>Continuous WAL streaming</td></tr>
+    <tr><td><strong>RTO (Recovery Time Objective)</strong></td><td>≤ 15 دقيقة</td><td>Hot Standby + Auto-failover</td></tr>
+    <tr><td><strong>Error Budget الشهري</strong></td><td>21.6 دقيقة</td><td>Error budget burn-rate alerts</td></tr>
+  </tbody>
+</table>
+
+<h3>2.7.2 التوزيع متعدد المناطق (Multi-Region Active-Passive)</h3>
+
+<p>النظام يُنشر في منطقتين سحابيتين رئيسيتين داخل المملكة وحولها لضمان توطين البيانات والاستمرارية:</p>
+
+<ul>
+  <li><strong>Primary Region</strong>: AWS me-south-1 (Bahrain) أو STC Cloud Riyadh.</li>
+  <li><strong>Secondary Region</strong>: AWS me-central-1 (UAE) أو Mobily/NEOM Cloud كنسخة احتياطية حارة.</li>
+</ul>
+
+<h3>2.7.3 تكرار الطبقات (Layer-by-Layer Replication Strategy)</h3>
+
+<p>كل طبقة بيانات في النظام تخضع لاستراتيجية تكرار مخصصة بحسب طبيعتها التشغيلية:</p>
+
+<ul>
+  <li><strong>PostgreSQL</strong>: Streaming Replication مع Read Replicas في المنطقة الثانوية، و WAL Archiving إلى S3 Cross-Region. يضمن هذا أن أي معاملة كُتبت على Primary تنتقل خلال ثوانٍ معدودة إلى Secondary.</li>
+  <li><strong>Qdrant</strong>: Snapshot كل 6 ساعات إلى تخزين كائني متعدد المناطق، مع نسخ متزامن لـ delta-changes في الفترات البينية.</li>
+  <li><strong>Redis</strong>: AOF + RDB persistence مع Replica Cluster في المنطقة الثانوية لاستعادة سياق المحادثات وعدادات الـ Rate Limiting.</li>
+  <li><strong>Kafka</strong>: MirrorMaker 2.0 يُكرر الـ Topics الحرجة عبر المناطق بضمانات Exactly-Once Semantics.</li>
+  <li><strong>S3 / Object Storage</strong>: Cross-Region Replication مُفعَّل افتراضياً للوثائق الحساسة (الصكوك، التقارير الموقَّعة، الفواتير).</li>
+</ul>
+
+<h3>2.7.4 آلية التحويل التلقائي عند الفشل (Automated Failover System Flow)</h3>
+
+<div class="diagram-wrapper">
+  <div class="diagram-title">تسلسل الفشل التلقائي وإعادة التوجيه</div>
+  <div class="mermaid" dir="ltr">
+flowchart TB
+    A["🔍 Failure Detection<br/>Health Checks failed 3x within 90s"]:::detect
+    B["🌐 DNS Failover<br/>via Route53 / Cloudflare<br/>TTL ≤ 30s"]:::dns
+    C["💾 Database Failover<br/>Promote Secondary PostgreSQL → Primary"]:::db
+    D["📨 Message Broker Failover<br/>Re-point Kafka Producers → Mirror Cluster"]:::kafka
+    E["✅ System Verification<br/>Smoke Tests + Stability Check"]:::verify
+    F["📢 Alerting &amp; Communication<br/>Notify Ops Team + Update Status Page"]:::alert
+    A ==> B ==> C ==> D ==> E ==> F
+    classDef detect fill:#c53030,stroke:#fca5a5,color:#ffffff,font-weight:bold
+    classDef dns fill:#d97706,stroke:#fcd34d,color:#ffffff,font-weight:bold
+    classDef db fill:#0284c7,stroke:#38bdf8,color:#ffffff,font-weight:bold
+    classDef kafka fill:#0c4a6e,stroke:#38bdf8,color:#ffffff,font-weight:bold
+    classDef verify fill:#16a34a,stroke:#86efac,color:#ffffff,font-weight:bold
+    classDef alert fill:#1e293b,stroke:#38bdf8,color:#ffffff,font-weight:bold
+  </div>
+</div>
+
+<h3>2.7.5 إجراء النسخ الاحتياطي والاستعادة (Backup &amp; Restoration Procedures)</h3>
+
+<ul>
+  <li><strong>Hot Backups</strong>: كل ساعة، Snapshot كاملة لـ PostgreSQL، تُخزَّن في تخزين سريع للاستعادة الفورية.</li>
+  <li><strong>Warm Backups</strong>: يومياً، Logical dumps لكل tenant على حدة لتمكين <strong>Tenant-Level Restoration</strong> — وهي قدرة حاسمة تسمح باستعادة بيانات مكتب واحد دون التأثير على باقي المستأجرين.</li>
+  <li><strong>Cold Backups</strong>: أسبوعياً، أرشيف مشفر إلى <strong>Glacier Deep Archive</strong> لمدة <strong>7 سنوات</strong> (متطلبات SDAIA الإلزامية للاحتفاظ بالسجلات).</li>
+  <li><strong>Restoration Drills</strong>: محاكاة استعادة كاملة كل 90 يوماً مع توثيق زمن الاستعادة الفعلي ومقارنته بـ RTO المعلن. أي انحراف عن الهدف يُعتبر حادثة عملياتية تستوجب التحقيق.</li>
+</ul>
+
+<h2>2.8 معمارية الواجهات الأمامية ولوحات التحكم الحية <span class="new-layer-marker">طبقة جديدة</span></h2>
+<h3 style="margin-top: -8px; color: var(--accent-purple); font-size: 13pt;">Frontend &amp; Real-Time Dashboard Architecture</h3>
+
+<div class="structural-note">
+  <strong>الموقع الهيكلي:</strong> هذه الطبقة مُدمَجة في القسم الثاني (هندسة النظام) لأن الواجهات الأمامية الإنتاجية ليست ترفاً بصرياً، بل هي <em>الوجه التشغيلي الوحيد</em> الذي يرى المستأجر من خلاله المنظومة بأكملها. أي خلل في الواجهة يساوي خللاً في المنتج، حتى لو كانت طبقات الخلفية مثالية.
+</div>
+
+<h3>2.8.1 الفلسفة التصميمية: لوحة التحكم كنظام تشغيل للمكتب</h3>
+
+<p>لوحة التحكم الموحدة (Unified Dashboard) ليست مجرد واجهة لعرض الإحصائيات؛ هي <strong>نظام تشغيل كامل (Operational Control Plane)</strong> يستخدمه المكتب المشترك للتحكم في كل تفاعل آلي يحدث باسمه. كل مستأجر يدخل لوحته يجب أن يرى — في الوقت الحقيقي — كل محادثة دائرة بين البوت وعملائه عبر المنصات الست، مع القدرة على التدخل والاستلام البشري دون أي إعادة تحميل للصفحة.</p>
+
+<h3>2.8.2 الحزمة التقنية المُعتمَدة (Frontend Stack)</h3>
+
+<table>
+  <thead>
+    <tr>
+      <th>الطبقة</th>
+      <th>التقنية</th>
+      <th>التبرير الهندسي</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td><strong>Framework</strong></td>
+      <td>Next.js 14+ (App Router)</td>
+      <td>Server Components تقلل JS المُرسَل للعميل بنسبة 40%+، مع SSR/ISR لتحسين Time-to-First-Byte. App Router يدعم Streaming UI لتحميل تدريجي.</td>
+    </tr>
+    <tr>
+      <td><strong>UI Library</strong></td>
+      <td>React 18+</td>
+      <td>Concurrent Mode + Suspense Boundaries لتقديم تجربة سلسة حتى مع آلاف المكونات الحية على الشاشة.</td>
+    </tr>
+    <tr>
+      <td><strong>Styling</strong></td>
+      <td>TailwindCSS 3+ مع shadcn/ui</td>
+      <td>Utility-first يُسرِّع التطوير بـ 3x، مع PurgeCSS يُنتج CSS bundle بحجم &lt;15KB في الإنتاج.</td>
+    </tr>
+    <tr>
+      <td><strong>State Management</strong></td>
+      <td>Zustand للحالة العامة + React Query للبيانات</td>
+      <td>Zustand أبسط من Redux Toolkit بـ 70%، بدون Boilerplate، يدعم Middleware لتسجيل التغييرات. React Query يدير Caching الذكي لطلبات HTTP.</td>
+    </tr>
+    <tr>
+      <td><strong>Real-Time Transport</strong></td>
+      <td>Server-Sent Events (SSE) + WebSocket Fallback</td>
+      <td>SSE أبسط في التطوير، يستخدم HTTP/2 multiplexing بكفاءة، ولا يحتاج بروتوكولاً منفصلاً. WebSocket كـ fallback للتفاعل ثنائي الاتجاه عند الحاجة.</td>
+    </tr>
+    <tr>
+      <td><strong>Charts &amp; Visualization</strong></td>
+      <td>Recharts + Tremor</td>
+      <td>مكتبات React-native تُقدم رسومات بيانية تفاعلية للوحات التحليلات (Analytics Tab).</td>
+    </tr>
+    <tr>
+      <td><strong>Form Handling</strong></td>
+      <td>React Hook Form + Zod</td>
+      <td>أداء عالٍ مع التحقق من الأنواع على مستوى TypeScript، يقلل re-renders بشكل دراماتيكي.</td>
+    </tr>
+  </tbody>
+</table>
+
+<h3>2.8.3 آلية المزامنة الفورية (Real-Time Sync Mechanism)</h3>
+
+<p>القلب النابض للوحة التحكم هو <strong>خدمة التنبيهات المخصصة (Dedicated Notification Service)</strong> المبنية بـ FastAPI، التي تعمل كحلقة وصل بين أحداث الـ Kafka وبين المتصفحات المفتوحة لدى المشتركين.</p>
+
+<div class="diagram-wrapper">
+  <div class="diagram-title">آلية المزامنة الفورية بين الـ Backend والـ Dashboard</div>
+  <div class="mermaid" dir="ltr">
+flowchart LR
+    K["📨 Kafka Topics<br/>conversations.*<br/>messages.*<br/>analytics.*"]:::kafka
+    K --> NS["⚡ Notification Service<br/>FastAPI + asyncio<br/>SSE/WebSocket Server"]:::ns
+    NS --> AUTH{"🔐 JWT Verify<br/>Tenant_ID Filter"}:::auth
+    AUTH -->|Authorized| CON1["🖥️ Tenant A<br/>Dashboard<br/>SSE Connection"]:::con
+    AUTH -->|Authorized| CON2["🖥️ Tenant B<br/>Dashboard<br/>SSE Connection"]:::con
+    AUTH -->|Authorized| CON3["🖥️ Tenant C<br/>Dashboard<br/>SSE Connection"]:::con
+    AUTH -->|Denied| REJ["❌ Connection<br/>Closed"]:::rej
+    CON1 --> Z1["🗂️ Zustand Store<br/>Live Updates"]:::z
+    CON2 --> Z2["🗂️ Zustand Store<br/>Live Updates"]:::z
+    CON3 --> Z3["🗂️ Zustand Store<br/>Live Updates"]:::z
+    Z1 & Z2 & Z3 --> UI["🎨 React Components<br/>Auto Re-render<br/>No Page Refresh"]:::ui
+    classDef kafka fill:#1e293b,stroke:#38bdf8,color:#ffffff,font-weight:bold
+    classDef ns fill:#7c3aed,stroke:#c4b5fd,color:#ffffff,font-weight:bold
+    classDef auth fill:#d97706,stroke:#fcd34d,color:#ffffff,font-weight:bold
+    classDef con fill:#0284c7,stroke:#38bdf8,color:#ffffff,font-weight:bold
+    classDef rej fill:#c53030,stroke:#fca5a5,color:#ffffff,font-weight:bold
+    classDef z fill:#0369a1,stroke:#38bdf8,color:#ffffff,font-weight:bold
+    classDef ui fill:#16a34a,stroke:#86efac,color:#ffffff,font-weight:bold
+  </div>
+</div>
+
+<p>تفاصيل التشغيل:</p>
+
+<ol>
+  <li><strong>المتصفح يفتح اتصال SSE</strong> على endpoint مخصص: <code>GET /api/v1/stream/dashboard?token=&lt;JWT&gt;</code>.</li>
+  <li><strong>Notification Service يتحقق من JWT</strong>، يستخرج <code>tenant_id</code>، ثم يشترك في الـ Kafka Topics ذات الصلة فقط بهذا المستأجر.</li>
+  <li><strong>عند وصول حدث جديد</strong> (رسالة عميل، رد آلي، تنبيه تصعيد، تحديث تحليلي)، يتم تحويله إلى صيغة <code>event: type\ndata: {json}\n\n</code> وإرساله للمتصفح فوراً.</li>
+  <li><strong>الـ Frontend يستقبل الحدث</strong> عبر <code>EventSource API</code>، يُحدِّث Zustand store، فتتعدَّل المكونات تلقائياً.</li>
+  <li><strong>Heartbeat كل 30 ثانية</strong> يضمن أن الاتصال لا يُغلق من قِبَل الـ proxies (مثل Cloudflare).</li>
+  <li><strong>Auto-reconnect</strong> مع Exponential Backoff إذا انقطع الاتصال.</li>
+</ol>
+
+<h3>2.8.4 سيناريو "Human Agent Takeover" — الاستلام البشري السلس</h3>
+
+<p>أهم ميزة في الـ Dashboard هي قدرة الموظف البشري على <strong>الاستلام من البوت في أي لحظة دون أي قطع للعميل</strong>:</p>
+
+<div class="callout new-layer">
+  <div class="callout-title">🎯 سير العمل الكامل للاستلام البشري</div>
+  <ol style="margin-bottom: 0;">
+    <li>الموظف يرى محادثة جارية بين البوت وعميل في الوقت الحقيقي على شاشته.</li>
+    <li>يضغط زر <strong>"استلام المحادثة (Take Over)"</strong>.</li>
+    <li>الـ Frontend يُرسل <code>POST /api/v1/conversations/{id}/takeover</code>.</li>
+    <li>الـ Backend يقوم بـ:
+      <ul>
+        <li>تحديث <code>conversations.status = 'human_active'</code> و<code>assigned_agent_id = {current_tenant_user_id}</code> في PostgreSQL.</li>
+        <li>إيقاف معالجة Kafka events لهذه المحادثة على مستوى الـ AI Workers.</li>
+        <li>توجيه رسائل العميل القادمة إلى لوحة الموظف مباشرة عبر SSE.</li>
+        <li>إرسال إشعار اختياري للعميل: "تم تحويلك لأحد موظفي مكتبنا."</li>
+      </ul>
+    </li>
+    <li>الموظف يكتب من نفس الواجهة، تُرسَل رسائله إلى Kafka topic مختلف (<code>messages.outgoing.human.v1</code>) مع تسجيل <code>messages.agent_id</code> و<code>sender_type = 'human_agent'</code> لربط كل رد بموظف محدد (راجع 6.1).</li>
+    <li>عند انتهاء التفاعل، الموظف يضغط <strong>"إعادة التسليم للبوت (Hand Back)"</strong> فيعود المسار الآلي تلقائياً.</li>
+  </ol>
+</div>
+
+<h3>2.8.5 إدارة الحالة (State Management) في بيئة متعددة الإيجار</h3>
+
+<p>Zustand stores مُقسَّمة منطقياً لتعزل بيانات المستأجر:</p>
+
+<pre><code>// stores/tenant-store.ts
+interface TenantState {
+  tenantId: string;
+  brandConfig: BrandOverlay;
+  tier: 'economic' | 'professional' | 'enterprise';
+  uiPreferences: UIConfig;
+}
+
+// stores/conversations-store.ts
+interface ConversationsState {
+  liveConversations: Map&lt;string, Conversation&gt;;
+  selectedConversationId: string | null;
+  takeoverInProgress: Set&lt;string&gt;;
+  updateMessage: (convId: string, msg: Message) =&gt; void;
+  takeOver: (convId: string) =&gt; Promise&lt;void&gt;;
+  handBack: (convId: string) =&gt; Promise&lt;void&gt;;
+}
+
+// stores/analytics-store.ts
+interface AnalyticsState {
+  realTimeMetrics: DashboardMetrics;
+  historicalData: TimeSeriesData[];
+  refreshInterval: number;
+}
+
+// stores/connection-store.ts (Live SSE Status)
+interface ConnectionState {
+  status: 'connected' | 'reconnecting' | 'disconnected';
+  lastHeartbeat: Date | null;
+  reconnectAttempts: number;
+}</code></pre>
+
+<p>كل store مُعزَّل تماماً، وعند تسجيل خروج المستأجر تُمسح جميع الـ stores بـ <code>useStore.persist.clearStorage()</code> لمنع تسرب البيانات في حالة استخدام نفس المتصفح من قِبَل مستأجر آخر لاحقاً.</p>
+
+<h3>2.8.6 الميزات الجوهرية للوحة التحكم</h3>
+
+<table>
+  <thead>
+    <tr>
+      <th>الميزة</th>
+      <th>الوصف التشغيلي</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr><td><strong>المحادثات الحية</strong></td><td>عرض جميع المحادثات الجارية مع فلترة بحسب القناة، الحالة، أو مستوى الإلحاح.</td></tr>
+    <tr><td><strong>مركز التصعيد</strong></td><td>قائمة المحادثات التي صعَّدها النظام، مع سياق كامل وزمن استجابة متبقي (SLA Timer).</td></tr>
+    <tr><td><strong>إدارة العروض</strong></td><td>رفع/تعديل/حذف العروض، مع حالة تحقق REGA في الوقت الحقيقي.</td></tr>
+    <tr><td><strong>تحليلات الأداء</strong></td><td>تتغذى من ClickHouse (انظر القسم 4.5)، تعرض معدلات التحويل، الإيرادات، الترندات.</td></tr>
+    <tr><td><strong>التقويم اللوجستي</strong></td><td>مواعيد المعاينات، تكامل CalDAV، تنبيهات قبل الموعد.</td></tr>
+    <tr><td><strong>الإعدادات والفوترة</strong></td><td>إدارة الاشتراك، فواتير العمولات، تخصيص الـ Brand Overlay (لـ Tier 2+).</td></tr>
+    <tr><td><strong>سجل التدقيق</strong></td><td>كل إجراء يُسجَّل: من فعل ماذا ومتى ومن أي IP.</td></tr>
+    <tr><td><strong>محرك البث (VIP Broadcast)</strong></td><td>إنشاء وإرسال حملات تسويقية للقوائم VIP المُعرَّفة (راجع 5.6).</td></tr>
+    <tr><td><strong>إدارة قوالب VCard</strong></td><td>تخصيص بطاقة الاتصال الرقمية المُرسَلة في أول لقاء (راجع 5.5).</td></tr>
+  </tbody>
+</table>
+
+<h2>2.9 استراتيجية هندسة جودة البرمجيات والإطلاق <span class="new-layer-marker">طبقة جديدة</span></h2>
+<h3 style="margin-top: -8px; color: var(--accent-purple); font-size: 13pt;">CI/CD, Infrastructure as Code &amp; Enterprise Load Testing</h3>
+
+<div class="structural-note">
+  <strong>الموقع الهيكلي:</strong> هذه الطبقة تُدمَج كقسم فرعي من القسم الثاني لأن الإطلاق الإنتاجي والاختبار الحملي هما <em>الإثبات النهائي</em> لكل ادعاءات الإتاحة والقدرة على التحمل المذكورة في الأقسام السابقة. بدون اختبار حقيقي بـ 3,500 رسالة/ثانية قبل الإطلاق، تبقى الـ SLOs مجرد آمال.
+</div>
+
+<h3>2.9.1 البنية التحتية ككود (Infrastructure as Code)</h3>
+
+<p><strong>المبدأ الجوهري</strong>: لا توجد أي بنية تحتية يدوية في OmniFlow AI. <em>كل عقدة Kubernetes، كل قاعدة بيانات، كل سياسة شبكة، كل قاعدة WAF — كلها مكتوبة كأكواد Terraform مُتحكَّم بها عبر Git</em>. هذا يضمن:</p>
+
+<ul>
+  <li><strong>قابلية إعادة الإنتاج (Reproducibility)</strong>: بيئة الاختبار مطابقة 100% لبيئة الإنتاج، فلا توجد "بسبب الفرق بين البيئات" كعذر.</li>
+  <li><strong>قابلية التتبع (Traceability)</strong>: كل تغيير في البنية له PR مع مُراجَع، وصف، وزمن.</li>
+  <li><strong>التعافي السريع</strong>: إذا دُمِّرت المنطقة بالكامل، يكفي <code>terraform apply</code> لإعادة بناء كل شيء.</li>
+</ul>
+
+<p>هيكل Terraform Modules:</p>
+
+<pre><code>infrastructure/
+├── modules/
+│   ├── networking/          # VPC, Subnets, NAT Gateways, Route Tables
+│   ├── kubernetes/          # EKS Cluster, Node Groups, IAM Roles
+│   ├── kafka/               # MSK Cluster, Topic configurations
+│   ├── postgresql/          # RDS Aurora, Read Replicas, Parameter Groups
+│   ├── redis/               # ElastiCache Cluster, Subnet Groups
+│   ├── qdrant/              # EC2 instances + EBS volumes + Load Balancer
+│   ├── clickhouse/          # ClickHouse Cluster on EKS
+│   ├── observability/       # Prometheus, Grafana, Loki, Jaeger
+│   ├── security/            # KMS Keys, WAF Rules, IAM Policies
+│   └── dns/                 # Route53 Zones, Health Checks
+├── environments/
+│   ├── dev/
+│   │   └── main.tf          # Uses modules with dev variables
+│   ├── staging/
+│   │   └── main.tf          # Mirror of prod, smaller scale
+│   └── production/
+│       └── main.tf          # Production configuration
+├── global/
+│   ├── iam/                 # Cross-account IAM roles
+│   └── tfstate-backend/     # S3 + DynamoDB for state locking
+└── policies/
+    └── opa/                 # Open Policy Agent rules</code></pre>
+
+<p>كل وحدة Module مُعرَّفة بمدخلات ومخرجات واضحة، مع versioning صارم في Terraform Registry الخاص.</p>
+
+<h3>2.9.2 خط أنابيب التكامل والنشر (CI/CD Pipeline)</h3>
+
+<p>النظام يعتمد على نموذج <strong>GitOps</strong> الكامل، حيث Git هو المصدر الوحيد للحقيقة (Single Source of Truth):</p>
+
+<div class="diagram-wrapper">
+  <div class="diagram-title">خط أنابيب CI/CD الكامل من Commit إلى Production</div>
+  <div class="mermaid" dir="ltr">
+flowchart TB
+    DEV["👨‍💻 Developer<br/>git push"]:::dev
+    PR["📝 Pull Request<br/>GitHub"]:::pr
+    GHA["🔧 GitHub Actions<br/>CI Pipeline"]:::gha
+    DEV --> PR
+    PR --> GHA
+    GHA --> T1["✅ Unit Tests<br/>pytest + jest"]:::test
+    GHA --> T2["🔍 Linting<br/>ruff + eslint"]:::test
+    GHA --> T3["🛡️ Security Scan<br/>Snyk + Trivy"]:::test
+    GHA --> T4["📊 SonarQube<br/>Code Quality"]:::test
+    T1 & T2 & T3 & T4 --> BUILD["🐳 Docker Build<br/>Multi-arch images<br/>Push to ECR"]:::build
+    BUILD --> ARGO["⚙️ ArgoCD<br/>Detects new image<br/>Updates manifests"]:::argo
+    ARGO --> CANARY["🐤 Canary Deploy<br/>5% traffic<br/>10 minutes monitoring"]:::canary
+    CANARY --> CHECK{"📈 Metrics OK?"}:::check
+    CHECK -->|Yes| ROLL["🔄 Rolling Update<br/>100% traffic<br/>Zero downtime"]:::roll
+    CHECK -->|No| BACK["⏪ Auto Rollback<br/>Previous version"]:::back
+    ROLL --> PROD["✅ Production<br/>Live"]:::prod
+    BACK --> ALERT["🚨 Alert Team<br/>PagerDuty"]:::alert
+    classDef dev fill:#0284c7,stroke:#38bdf8,color:#ffffff,font-weight:bold
+    classDef pr fill:#0369a1,stroke:#38bdf8,color:#ffffff,font-weight:bold
+    classDef gha fill:#1e293b,stroke:#38bdf8,color:#ffffff,font-weight:bold
+    classDef test fill:#0c4a6e,stroke:#38bdf8,color:#ffffff,font-weight:bold
+    classDef build fill:#7c3aed,stroke:#c4b5fd,color:#ffffff,font-weight:bold
+    classDef argo fill:#0369a1,stroke:#38bdf8,color:#ffffff,font-weight:bold
+    classDef canary fill:#d97706,stroke:#fcd34d,color:#ffffff,font-weight:bold
+    classDef check fill:#1e293b,stroke:#38bdf8,color:#ffffff,font-weight:bold
+    classDef roll fill:#16a34a,stroke:#86efac,color:#ffffff,font-weight:bold
+    classDef back fill:#c53030,stroke:#fca5a5,color:#ffffff,font-weight:bold
+    classDef prod fill:#16a34a,stroke:#86efac,color:#ffffff,font-weight:bold
+    classDef alert fill:#c53030,stroke:#fca5a5,color:#ffffff,font-weight:bold
+  </div>
+</div>
+
+<h4>تفاصيل المراحل:</h4>
+
+<p><strong>المرحلة 1 — GitHub Actions (CI)</strong>: عند كل Pull Request، تُنفَّذ خطوط أنابيب موازية:</p>
+
+<ul>
+  <li><strong>Unit &amp; Integration Tests</strong>: pytest للـ Backend، Jest/Vitest للـ Frontend. الهدف: تغطية ≥ 85% للكود الحرج.</li>
+  <li><strong>Linting &amp; Formatting</strong>: ruff/black للـ Python، ESLint/Prettier للـ TypeScript.</li>
+  <li><strong>Security Scanning</strong>: Snyk لفحص dependencies، Trivy لفحص Docker images، Bandit للأمن في Python.</li>
+  <li><strong>SAST (Static Analysis)</strong>: SonarQube يكشف Code Smells و Bugs محتملة.</li>
+  <li><strong>Type Checking</strong>: mypy للـ Python، tsc للـ TypeScript.</li>
+</ul>
+
+<p><strong>المرحلة 2 — Docker Build &amp; Registry</strong>: عند نجاح جميع الفحوص، تُبنى صور Docker متعددة المعمارية (linux/amd64, linux/arm64) وتُرفع إلى Amazon ECR مع توقيع رقمي عبر Cosign.</p>
+
+<p><strong>المرحلة 3 — ArgoCD (GitOps CD)</strong>: ArgoCD يراقب مستودع منفصل (<code>k8s-manifests</code>) الذي يحتوي على Helm Charts و Kubernetes YAML. عند تحديث صورة Docker، يُحدَّث الـ image tag في الـ manifest تلقائياً عبر workflow، فيكتشف ArgoCD التغيير ويبدأ النشر.</p>
+
+<p><strong>المرحلة 4 — Canary Deployment</strong>: النشر يبدأ بـ 5% فقط من الترافيك على الإصدار الجديد، مع مراقبة فورية لمؤشرات:</p>
+
+<ul>
+  <li>Error Rate (يجب &lt; 0.1%).</li>
+  <li>P95 Latency (يجب لا يتجاوز baseline بأكثر من 10%).</li>
+  <li>CPU/Memory Usage.</li>
+  <li>Custom Business Metrics (مثل معدل التصعيد البشري).</li>
+</ul>
+
+<p><strong>المرحلة 5 — Rolling Update أو Auto-Rollback</strong>: إذا كانت المؤشرات سليمة بعد 10 دقائق، يتم التوسع إلى 100% تدريجياً. إذا تجاوز أي مؤشر العتبة، يُلغى النشر تلقائياً ويُعاد للإصدار السابق خلال أقل من 30 ثانية، مع تنبيه فوري لفريق العمليات.</p>
+
+<h3>2.9.3 استراتيجيات النشر (Deployment Strategies)</h3>
+
+<table>
+  <thead>
+    <tr>
+      <th>الاستراتيجية</th>
+      <th>الاستخدام</th>
+      <th>المزايا</th>
+      <th>العيوب</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td><strong>Rolling Update</strong></td>
+      <td>التحديثات اليومية للخدمات المعتادة</td>
+      <td>بسيط، لا حاجة لموارد إضافية، Zero-downtime</td>
+      <td>صعوبة الـ rollback السريع</td>
+    </tr>
+    <tr>
+      <td><strong>Blue-Green</strong></td>
+      <td>التحديثات الحرجة للـ Backend Workers</td>
+      <td>Rollback فوري، اختبار كامل قبل التبديل</td>
+      <td>يتطلب ضعف الموارد مؤقتاً</td>
+    </tr>
+    <tr>
+      <td><strong>Canary</strong></td>
+      <td>الميزات الجديدة عالية المخاطر (LLM models, RAG changes)</td>
+      <td>اختبار في الإنتاج بأقل مخاطرة</td>
+      <td>أكثر تعقيداً في التكوين</td>
+    </tr>
+    <tr>
+      <td><strong>Feature Flags</strong></td>
+      <td>تشغيل/إيقاف ميزات لمستأجرين محددين</td>
+      <td>تحكم دقيق، A/B Testing</td>
+      <td>يضيف تعقيداً للكود</td>
+    </tr>
+  </tbody>
+</table>
+
+<h3>2.9.4 الاختبار الحملي (Load Testing) — إثبات قدرة الـ 500K مستخدم</h3>
+
+<p>ادعاء "500K مستخدم متزامن من اليوم الأول" غير مقبول بدون <strong>إثبات تجريبي قبل الإطلاق</strong>. لذا، يُنفَّذ بروتوكول اختبار حملي صارم باستخدام <strong>k6</strong> و<strong>Locust</strong>:</p>
+
+<h4>سيناريوهات الاختبار الإلزامية:</h4>
+
+<ol>
+  <li><strong>Steady Load Test</strong>: 3,500 msg/sec ثابتة لمدة ساعة كاملة. الهدف: التأكد من استقرار الـ Latency والعدم وجود memory leaks.</li>
+  <li><strong>Spike Test</strong>: قفزة من 500 إلى 5,000 msg/sec خلال 30 ثانية. الهدف: قياس سرعة استجابة الـ Auto-Scaler.</li>
+  <li><strong>Stress Test</strong>: زيادة تدريجية حتى الانهيار. الهدف: تحديد الـ Breaking Point ووضع حدود واقعية.</li>
+  <li><strong>Soak Test</strong>: 2,000 msg/sec لمدة 24 ساعة متواصلة. الهدف: كشف Memory Leaks، Connection Leaks، File Descriptors.</li>
+  <li><strong>Multi-Tenant Concurrency Test</strong>: محاكاة 1,000 مستأجر متزامن، كل منهم يولِّد 3-4 msg/sec. الهدف: التأكد من عدم تأثير مستأجر على آخر.</li>
+</ol>
+
+<h4>مثال على سكريبت اختبار k6:</h4>
+
+<pre><code>import http from 'k6/http';
+import { check, sleep } from 'k6';
+import { Rate, Trend } from 'k6/metrics';
+
+const errorRate = new Rate('errors');
+const latencyTrend = new Trend('e2e_latency');
+
+export const options = {
+  scenarios: {
+    steady_load: {
+      executor: 'constant-arrival-rate',
+      rate: 3500,
+      timeUnit: '1s',
+      duration: '1h',
+      preAllocatedVUs: 5000,
+      maxVUs: 10000,
+    },
+  },
+  thresholds: {
+    'http_req_duration{type:webhook}': ['p(95)&lt;200'],
+    'e2e_latency': ['p(95)&lt;1500'],
+    'errors': ['rate&lt;0.001'],
+  },
+};
+
+export default function () {
+  const tenantId = generateRandomTenantId();
+  const payload = generateWhatsAppWebhookPayload(tenantId);
+  
+  const response = http.post(
+    'https://api.omniflow.ai/webhooks/whatsapp',
+    JSON.stringify(payload),
+    {
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Hub-Signature-256': generateSignature(payload),
+      },
+      tags: { type: 'webhook' },
+    }
+  );
+  
+  check(response, {
+    'status is 200': (r) =&gt; r.status === 200,
+    'response time &lt; 200ms': (r) =&gt; r.timings.duration &lt; 200,
+  }) || errorRate.add(1);
+  
+  latencyTrend.add(response.timings.duration);
+}</code></pre>
+
+<h4>تحسينات يكشفها الاختبار الحملي:</h4>
+
+<ul>
+  <li><strong>Kafka Partition Tuning</strong>: عدد الـ partitions الأمثل لكل topic بحسب الـ throughput.</li>
+  <li><strong>PostgreSQL Connection Pool Sizing</strong>: PgBouncer pool size الأمثل (عادةً 100-200 connection لكل instance).</li>
+  <li><strong>Redis Cluster Sharding</strong>: توزيع المفاتيح بحيث لا يصبح shard معين Hot Spot.</li>
+  <li><strong>Worker Pod Resource Limits</strong>: ضبط CPU/Memory requests &amp; limits لتفادي OOMKills.</li>
+  <li><strong>HPA Thresholds</strong>: ضبط عتبات التحجيم بحيث لا يكون التوسع متأخراً أو مفرطاً.</li>
+</ul>
+
+<div class="callout success">
+  <div class="callout-title">🎯 معيار النجاح للإطلاق</div>
+  <p style="margin: 0;">قبل Day-One، يجب أن يجتاز النظام <strong>3 جولات متتالية</strong> من جميع سيناريوهات الاختبار بـ 100% نجاح، بدون أي تدخل يدوي. أي فشل يستوجب تحقيقاً وإصلاحاً وإعادة اختبار كاملة.</p>
+</div>
+
+<hr>
+
+<h1 class="section-title">
+  القسم الثالث: العزل الصارم متعدد الإيجار والتشفير المعماري
+  <span class="english-tag">STALWART MULTI-TENANCY &amp; CRYPTOGRAPHIC DATA ISOLATION</span>
+</h1>
+
+<h2>3.1 المبدأ التوجيهي: Zero-Trust بين المستأجرين</h2>
+
+<p>الفلسفة الأساسية لـ OmniFlow AI هي أن كل مكتب عقاري مشترك يجب أن يعمل كما لو أنه المالك الوحيد للنظام بأكمله. لا يجب — تحت أي ظرف هندسي، ولا في أي طبقة تقنية — أن يطّلع مستأجر على بيانات مستأجر آخر، لا عن قصد، ولا حتى عبر ثغرة تقنية أو سوء تكوين. هذا يتطلب تطبيق العزل في <strong>ست طبقات متراصة</strong>:</p>
+
+<table>
+  <thead>
+    <tr>
+      <th>الطبقة</th>
+      <th>آلية العزل</th>
+      <th>التقنية المستخدمة</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr><td>1. الشبكة</td><td>Tenant-aware routing</td><td>API Gateway + JWT Claims</td></tr>
+    <tr><td>2. التطبيق</td><td>Tenant Context Injection</td><td>Middleware + Request-scoped Tenant_ID</td></tr>
+    <tr><td>3. قاعدة البيانات</td><td>Row-Level Security</td><td>PostgreSQL RLS + PgBouncer</td></tr>
+    <tr><td>4. القاعدة الشعاعية</td><td>Namespace Isolation</td><td>Qdrant Collections per Tenant</td></tr>
+    <tr><td>5. التخزين الكائني</td><td>Bucket Prefix + IAM</td><td>S3 + KMS per Tenant</td></tr>
+    <tr><td>6. الكاش</td><td>Key Prefixing</td><td>Redis key pattern: <code>tenant:{id}:*</code></td></tr>
+  </tbody>
+</table>
+
+<div class="diagram-wrapper">
+  <div class="diagram-title">طبقات العزل الست المتراصة لكل مستأجر</div>
+  <div class="mermaid" dir="ltr">
+flowchart LR
+    REQ["📥 Incoming Request"]:::req
+    REQ --> L1["🌐 Layer 1<br/>Network<br/>API Gateway + JWT"]:::iso
+    L1 --> L2["⚙️ Layer 2<br/>Application<br/>Middleware Inject"]:::iso
+    L2 --> L3["💾 Layer 3<br/>Database<br/>PostgreSQL RLS"]:::iso
+    L3 --> L4["🔍 Layer 4<br/>Vector DB<br/>Qdrant Namespaces"]:::iso
+    L4 --> L5["📦 Layer 5<br/>Object Storage<br/>S3 + KMS"]:::iso
+    L5 --> L6["⚡ Layer 6<br/>Cache<br/>Redis Key Prefix"]:::iso
+    L6 --> OUT["✅ Tenant-Safe<br/>Response"]:::out
+    classDef req fill:#0284c7,stroke:#38bdf8,color:#ffffff,font-weight:bold
+    classDef iso fill:#1e293b,stroke:#38bdf8,color:#ffffff,font-weight:bold
+    classDef out fill:#16a34a,stroke:#86efac,color:#ffffff,font-weight:bold
+  </div>
+</div>
+
+<h2>3.2 طبقة قاعدة البيانات: PostgreSQL RLS + PgBouncer</h2>
+
+<h3>3.2.1 تطبيق Row-Level Security</h3>
+
+<p>اعتماد PostgreSQL مع تفعيل <strong>Row-Level Security (RLS)</strong> هو القرار المعماري الأكثر حسماً في تحقيق العزل. لكل جدول يحتوي على بيانات حساسة، يتم:</p>
+
+<ol>
+  <li>إضافة عمود <code>tenant_id</code> كمفتاح أجنبي إلى جدول <code>tenants</code>.</li>
+  <li>تفعيل RLS عبر <code>ALTER TABLE ... ENABLE ROW LEVEL SECURITY</code>.</li>
+  <li>إنشاء سياسات (Policies) تفرض شرطاً ضمنياً على كل استعلام: <code>tenant_id = current_setting('app.current_tenant_id')::uuid</code>.</li>
+  <li>إجبار حتى مالك الجدول على الالتزام بالسياسة عبر <code>FORCE ROW LEVEL SECURITY</code>.</li>
+</ol>
+
+<p>السياق (Tenant_ID) يُحقن في كل اتصال قاعدة بيانات في بداية المعاملة عبر <code>SET LOCAL app.current_tenant_id = '...'</code>، مما يضمن أن أي استعلام لاحق، حتى لو كتبه مطور بشكل خاطئ، لا يمكنه عبور الحاجز.</p>
+
+<h3>3.2.2 معضلة PgBouncer والحل المعماري</h3>
+
+<p>استخدام <strong>PgBouncer</strong> لتجميع الاتصالات (Connection Pooling) أمر لا غنى عنه لتحمل 500K مستخدم؛ فبدونه، ستستنفد قاعدة البيانات حصص الاتصالات في ثوانٍ. لكن PgBouncer في وضع <code>transaction pooling</code> يخلق مشكلة: متغيرات الجلسة المُعيَّنة بـ <code>SET</code> تختفي بين المعاملات.</p>
+
+<p>الحل هندسياً:</p>
+
+<ul>
+  <li>استخدام <code>SET LOCAL</code> بدلاً من <code>SET</code>، حيث يكون السياق محدوداً بالمعاملة الواحدة فقط.</li>
+  <li>اعتماد نمط معماري حيث <strong>كل معاملة تبدأ بحقن <code>tenant_id</code> فوراً</strong>، وذلك عبر طبقة Repository موحدة لا يجوز تجاوزها.</li>
+  <li>مراقبة دائمة عبر استعلامات تدقيق دورية تضمن عدم وجود استعلام بدون <code>tenant_id</code> context.</li>
+</ul>
+
+<h3>3.2.3 منع التشابك في الجداول (Table Locking Prevention)</h3>
+
+<p>في الأحمال العالية، الكتابات المتزامنة قد تُسبب تشابكاً (Lock Contention). الحلول المُطبَّقة:</p>
+
+<ul>
+  <li>استخدام <strong>Optimistic Locking</strong> عبر عمود <code>version</code> بدلاً من <code>SELECT FOR UPDATE</code>.</li>
+  <li>تقسيم الجداول الكبيرة (مثل <code>messages</code>) أفقياً (Partitioning) بحسب <code>tenant_id</code> وتاريخ الإنشاء.</li>
+  <li>استخدام Read Replicas للاستعلامات القرائية، وفصل الكتابات على Primary Node.</li>
+</ul>
+
+<h2>3.3 طبقة قاعدة البيانات الشعاعية: Qdrant + Strict Metadata Filtering</h2>
+
+<h3>3.3.1 لماذا Qdrant عوضاً عن Pinecone في هذا السيناريو؟</h3>
+
+<p>كلا الخيارين قابلان للتطبيق، ولكن لـ OmniFlow AI:</p>
+
+<ul>
+  <li><strong>Qdrant</strong> يُتيح Self-Hosting كامل مع الحفاظ على البيانات داخل بنية NEOM/STC السحابية في المملكة، مما يلبي متطلبات SDAIA لتوطين البيانات.</li>
+  <li><strong>Qdrant Collections</strong> تدعم العزل الجامد على مستوى التخزين الفيزيائي.</li>
+  <li>التكلفة على نطاق 500K مستخدم أفضل بكثير من Pinecone Serverless.</li>
+</ul>
+
+<h3>3.3.2 استراتيجية العزل: Hybrid Namespace + Metadata Filter</h3>
+
+<p>لكل مستأجر، يتم إنشاء:</p>
+
+<ul>
+  <li><strong>Collection خاص</strong> بصيغة <code>tenant_{uuid}_documents</code> للوثائق الحساسة (الصكوك، تقارير الفحص، عقود العملاء).</li>
+  <li><strong>مشاركة Collection عام</strong> لقاعدة المعرفة المشتركة (كود البناء السعودي، اشتراطات البلديات، الأنظمة) لأنها بيانات عامة لا تنتمي لمستأجر.</li>
+</ul>
+
+<p>عند كل عملية بحث، يُفرض فلتر metadata صارم:</p>
+
+<pre><code>{
+  "must": [
+    {"key": "tenant_id", "match": {"value": "&lt;resolved_tenant_id&gt;"}}
+  ]
+}</code></pre>
+
+<p>حتى عند الخطأ البرمجي، إذا حاول استعلام الوصول إلى Collection خاص بمستأجر آخر، يُرفض على مستوى Qdrant ACL، وتُسجَّل المحاولة في نظام تدقيق أمني فوري.</p>
+
+<h2>3.4 محرك الهوية الموحدة (Unified Customer Profile Engine)</h2>
+
+<h3>3.4.1 المشكلة: العميل الواحد بهويات متعددة</h3>
+
+<p>عميل واحد قد يتواصل من خمس قنوات مختلفة، كل قناة تعطيه معرفاً مختلفاً:</p>
+
+<ul>
+  <li>واتساب: <code>+966501234567</code></li>
+  <li>تيك توك: <code>@user_handle_xyz</code></li>
+  <li>إنستغرام: <code>IG_user_id: 17841405822304914</code></li>
+  <li>تويتر/X: <code>X_user_id: 1234567890</code></li>
+  <li>سناب شات: <code>snapchat_user_id: abc-def-ghi</code></li>
+</ul>
+
+<p>بدون توحيد، النظام يتعامل مع خمسة عملاء وهميين، مما يُفسد سياق المحادثة وتجربة المستخدم.</p>
+
+<h3>3.4.2 محرك الـ Identity Resolution</h3>
+
+<p>النظام يبني <strong>Customer Resolution Graph</strong> يتدرج عبر أربع طبقات:</p>
+
+<ol>
+  <li><strong>Deterministic Matching</strong>: عند تطابق رقم الجوال بشكل صريح (مثلاً عميل أدخل رقمه يدوياً في تيك توك أو طلب رابط تأكيد عبر SMS).</li>
+  <li><strong>Probabilistic Matching</strong>: عبر مقارنة الأسماء، البريد الإلكتروني، أنماط الأسئلة، توقيت النشاط، والمواقع الجغرافية.</li>
+  <li><strong>Behavioral Fingerprinting</strong>: تحليل أنماط الكتابة، نوع الأسئلة المطروحة، وتفضيلات الأحياء العقارية.</li>
+  <li><strong>OTP-Based Linking</strong>: عند الشك، يُطلب من العميل تأكيد هويته عبر OTP يربط الحسابات.</li>
+</ol>
+
+<p>كل عميل يحصل في النهاية على <code>Master_Customer_ID</code> (UUID v4) يربط جميع هوياته الفرعية في جدول <code>identity_links</code>. هذا المعرف هو المُستخدم في جميع طبقات النظام لاحقاً، مما يحقق <strong>رؤية بانورامية موحدة (Single Customer View)</strong> عبر القنوات.</p>
+
+<h2>3.5 خزانة ومحفظة التقارير العقارية الدائمة <span class="growth-marker">محرك نمو</span></h2>
+<h3 style="margin-top: -8px; color: var(--accent-pink); font-size: 13pt;">The Digital Reports Vault — Permanent Retention Engine</h3>
+
+<div class="structural-note">
+  <strong>الموقع الهيكلي:</strong> هذا المحرك مُدمَج في القسم الثالث (الهوية الموحدة) لأن "الخزانة الرقمية" ليست ميزة جانبية، بل هي <em>الامتداد الطبيعي للملف الموحد للعميل</em>. كل ما يُولِّده النظام للعميل من قيمة دائمة (تقارير، فحوصات، استشارات) يجب أن يُحفظ بطريقة قابلة للاسترجاع الفوري.
+</div>
+
+<h3>3.5.1 الفلسفة التجارية: من تقرير لمرة واحدة إلى أصل دائم</h3>
+
+<p>المشكلة التشغيلية في معظم منصات الاستشارات الرقمية: العميل يدفع 29 ريالاً مقابل تقرير فحص صك، يُرسَل له PDF، ثم يضيع في عمق محادثاته على واتساب. بعد شهر، حين يحتاجه مجدداً، يجد نفسه يدفع مرة أخرى أو يبحث ساعات. هذا <strong>إهدار صريح لقيمة الأصل المُنتَج</strong>.</p>
+
+<div class="callout growth">
+  <div class="callout-title">💎 المبدأ التجاري للخزانة</div>
+  <p style="margin: 0;">كل تقرير دفع العميل ثمنه هو <strong>أصل دائم في ملكيته الرقمية</strong>. حقه في الوصول إليه يبقى مدى الحياة، وحقنا الهندسي هو أن نُسهِّل عليه استرجاعه في أي لحظة، من أي قناة، بأي لغة طبيعية يستخدمها. هذا يُحوِّل العلاقة من <em>"معاملة لمرة واحدة"</em> إلى <em>"شراكة طويلة الأمد"</em>.</p>
+</div>
+
+<h3>3.5.2 العائد التجاري: الاحتفاظ الفائق (Extreme User Retention)</h3>
+
+<table>
+  <thead>
+    <tr>
+      <th>المؤشر</th>
+      <th>بدون خزانة دائمة</th>
+      <th>مع خزانة OmniFlow</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr><td>معدل العودة بعد 30 يوماً</td><td>~12%</td><td>~58%</td></tr>
+    <tr><td>عدد التقارير لكل عميل سنوياً</td><td>1.3</td><td>4.7</td></tr>
+    <tr><td>زمن النشاط الإجمالي (Lifetime Value)</td><td>3-6 أشهر</td><td>2-4 سنوات</td></tr>
+    <tr><td>معدل التوصية لأقارب وأصدقاء</td><td>~8%</td><td>~34%</td></tr>
+  </tbody>
+</table>
+
+<h3>3.5.3 آلية ربط التقرير بالملف الموحد للعميل</h3>
+
+<p>عند كل توليد تقرير مدفوع، يتم تنفيذ سلسلة من العمليات الذرية المتكاملة:</p>
+
+<div class="diagram-wrapper">
+  <div class="diagram-title">رحلة التقرير من التوليد إلى الخزانة الدائمة</div>
+  <div class="mermaid" dir="ltr">
+flowchart TB
+    PAY["💳 Customer Payment<br/>29 SAR / 15 SAR"]:::pay
+    GEN["📄 PDF Report Generator<br/>Watermarked + Legal Disclaimer"]:::gen
+    SIGN["✍️ Digital Signature<br/>+ Timestamp Authority"]:::sign
+    ENC["🔐 AES-256 Encryption<br/>Per-Tenant KMS Key"]:::enc
+    S3["📦 S3 Vault Bucket<br/>tenant-{id}/reports/<br/>Object Lock + Versioning"]:::s3
+    DB["🗄️ PostgreSQL<br/>customer_reports table<br/>Linked to Master_Customer_ID"]:::db
+    IDX["🔍 Qdrant Index<br/>Searchable by content"]:::idx
+    NOTIFY["📲 Customer Notification<br/>+ Pre-signed URL<br/>15-minute TTL"]:::notify
+    PAY --> GEN
+    GEN --> SIGN
+    SIGN --> ENC
+    ENC --> S3
+    ENC --> DB
+    ENC --> IDX
+    DB --> NOTIFY
+    classDef pay fill:#16a34a,stroke:#86efac,color:#ffffff,font-weight:bold
+    classDef gen fill:#0284c7,stroke:#38bdf8,color:#ffffff,font-weight:bold
+    classDef sign fill:#0369a1,stroke:#38bdf8,color:#ffffff,font-weight:bold
+    classDef enc fill:#0c4a6e,stroke:#38bdf8,color:#ffffff,font-weight:bold
+    classDef s3 fill:#7c3aed,stroke:#c4b5fd,color:#ffffff,font-weight:bold
+    classDef db fill:#1e293b,stroke:#38bdf8,color:#ffffff,font-weight:bold
+    classDef idx fill:#d97706,stroke:#fcd34d,color:#ffffff,font-weight:bold
+    classDef notify fill:#db2777,stroke:#f9a8d4,color:#ffffff,font-weight:bold
+  </div>
+</div>
+
+<h3>3.5.4 الكلمة المفتاحية وآلية الاسترجاع متعدد القنوات</h3>
+
+<p>العميل لا يحتاج تطبيقاً جديداً، ولا حسابات، ولا كلمات مرور. كل ما عليه هو <strong>كتابة كلمة مفتاحية واحدة في أي من القنوات الست</strong>:</p>
+
+<table>
+  <thead>
+    <tr>
+      <th>الكلمات المفتاحية المُعتمَدة</th>
+      <th>المرادفات المقبولة</th>
+      <th>الإجراء</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td><code>تقاريري</code></td>
+      <td>تقريري، تقارير، التقارير</td>
+      <td>عرض كل التقارير المرتبطة بالعميل</td>
+    </tr>
+    <tr>
+      <td><code>خزنتي</code></td>
+      <td>خزنقتي، الخزنة، خزانة</td>
+      <td>عرض المحتوى الكامل (تقارير + استشارات + فواتير)</td>
+    </tr>
+    <tr>
+      <td><code>وثائقي</code></td>
+      <td>الوثائق، ملفاتي، أرشيفي</td>
+      <td>نفس النتيجة مع تركيز على الوثائق</td>
+    </tr>
+    <tr>
+      <td><code>my reports</code></td>
+      <td>my vault, my files</td>
+      <td>للعملاء غير الناطقين بالعربية</td>
+    </tr>
+  </tbody>
+</table>
+
+<h3>3.5.5 سير العمل التقني الكامل للاسترجاع</h3>
+
+<div class="diagram-wrapper">
+  <div class="diagram-title">آلية استرجاع التقارير من الخزانة عند طلب العميل</div>
+  <div class="mermaid" dir="ltr">
+sequenceDiagram
+    participant C as Customer (any channel)
+    participant CA as Channel Adapter
+    participant SR as Semantic Router
+    participant VW as Vault Retrieval Worker
+    participant DB as PostgreSQL
+    participant S3 as S3 Vault
+    participant OD as Outbound Dispatcher
+    C->>CA: "تقاريري" / "خزنتي"
+    CA->>SR: Normalized event + customer_id
+    SR->>SR: Detect VAULT_RETRIEVAL intent
+    SR->>VW: Invoke Vault Worker
+    VW->>DB: SELECT * FROM customer_reports<br/>WHERE master_customer_id = ?
+    DB-->>VW: Return report references
+    VW->>S3: Generate pre-signed URLs<br/>(TTL: 15 minutes)
+    S3-->>VW: URLs returned
+    VW->>OD: Format response with PDF attachments
+    OD->>C: Send interactive list with PDF previews
+  </div>
+</div>
+
+<h3>3.5.6 مخطط جدول قاعدة البيانات للخزانة</h3>
+
+<pre><code>-- ═══════════════════════════════════════════════════════════════
+-- جدول تقارير الخزانة الدائمة
+-- ═══════════════════════════════════════════════════════════════
+CREATE TABLE customer_reports (
+    report_id               UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    master_customer_id      UUID NOT NULL REFERENCES customers(customer_id),
+    tenant_id               UUID NOT NULL REFERENCES tenants(tenant_id),
+    report_type             VARCHAR(50) NOT NULL,
+                            -- deed_check_29 | municipal_consulting_15 | premium_consultation
+    report_title            VARCHAR(255) NOT NULL,
+    report_summary          TEXT,
+    s3_bucket               VARCHAR(100) NOT NULL,
+    s3_object_key           VARCHAR(500) NOT NULL,
+    s3_kms_key_id           VARCHAR(200) NOT NULL,
+    file_size_bytes         BIGINT NOT NULL,
+    file_hash_sha256        VARCHAR(64) NOT NULL,
+    digital_signature       TEXT NOT NULL,
+    signature_timestamp     TIMESTAMPTZ NOT NULL,
+    related_property        JSONB,
+                            -- {deed_number, district, city, etc.}
+    transaction_id          UUID REFERENCES transactions(transaction_id),
+    payment_amount_sar      DECIMAL(10,2) NOT NULL,
+    generated_by_worker     VARCHAR(100),
+    generated_at            TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    expires_at              TIMESTAMPTZ,
+                            -- NULL = permanent retention
+    access_count            INTEGER DEFAULT 0,
+    last_accessed_at        TIMESTAMPTZ,
+    metadata                JSONB DEFAULT '{}'::jsonb
+);
+
+CREATE INDEX idx_reports_customer ON customer_reports(master_customer_id, generated_at DESC);
+CREATE INDEX idx_reports_tenant ON customer_reports(tenant_id);
+CREATE INDEX idx_reports_type ON customer_reports(report_type);
+CREATE INDEX idx_reports_property_gin ON customer_reports USING GIN (related_property);
+
+-- Enable RLS
+ALTER TABLE customer_reports ENABLE ROW LEVEL SECURITY;
+ALTER TABLE customer_reports FORCE ROW LEVEL SECURITY;
+
+CREATE POLICY tenant_isolation_reports ON customer_reports
+    USING (tenant_id = current_setting('app.current_tenant_id')::UUID);
+
+-- ═══════════════════════════════════════════════════════════════
+-- جدول سجل الوصول للتقارير (Audit)
+-- ═══════════════════════════════════════════════════════════════
+CREATE TABLE report_access_log (
+    access_id           UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    report_id           UUID NOT NULL REFERENCES customer_reports(report_id),
+    master_customer_id  UUID NOT NULL,
+    tenant_id           UUID NOT NULL,
+    accessed_via_channel VARCHAR(30) NOT NULL,
+                        -- whatsapp | tiktok | instagram | x | snapchat | web
+    keyword_used        VARCHAR(100),
+    ip_address          INET,
+    user_agent          TEXT,
+    presigned_url_ttl_seconds INTEGER NOT NULL DEFAULT 900,
+    accessed_at         TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX idx_access_log_report ON report_access_log(report_id, accessed_at DESC);
+CREATE INDEX idx_access_log_customer ON report_access_log(master_customer_id);</code></pre>
+
+<h3>3.5.7 شكل الرد المُرسَل للعميل في واتساب</h3>
+
+<blockquote>
+🌹 أهلاً بك أبا الكرم، هذه خزانتك الرقمية في OmniFlow AI<br>
+لديك <strong>4 تقارير دائمة</strong>:<br><br>
+📄 <strong>تقرير فحص صك — حي الياسمين</strong><br>
+&nbsp;&nbsp;التاريخ: 2026-03-15 | السعر: 29 ريال<br>
+&nbsp;&nbsp;[تنزيل التقرير 🔗]<br><br>
+📄 <strong>استشارة بلدية — حي السفارات</strong><br>
+&nbsp;&nbsp;التاريخ: 2026-04-22 | السعر: 15 ريال<br>
+&nbsp;&nbsp;[تنزيل التقرير 🔗]<br><br>
+📄 <strong>تقرير فحص متقدم — مخطط النخيل</strong><br>
+&nbsp;&nbsp;التاريخ: 2026-05-08 | السعر: 29 ريال<br>
+&nbsp;&nbsp;[تنزيل التقرير 🔗]<br><br>
+📄 <strong>استشارة قانونية — صك مشترك</strong><br>
+&nbsp;&nbsp;التاريخ: 2026-05-19 | السعر: 15 ريال<br>
+&nbsp;&nbsp;[تنزيل التقرير 🔗]<br><br>
+⏱️ <em>الروابط صالحة لمدة 15 دقيقة. اكتب "تقاريري" في أي وقت لاسترجاعها مجدداً.</em>
+</blockquote>
+
+<h3>3.5.8 الأمان والامتثال للخزانة</h3>
+
+<ul>
+  <li><strong>Per-Tenant Encryption Keys</strong>: كل مستأجر له مفتاح KMS خاص لتشفير تقاريره. اختراق tenant واحد لا يفتح تقارير غيره.</li>
+  <li><strong>Pre-signed URL TTL = 15 minutes</strong>: الرابط ينتهي بسرعة لمنع المشاركة غير المسموح بها.</li>
+  <li><strong>Object Lock في S3</strong>: التقارير لا تُحذف ولا تُعدَّل، حتى من قبل المسؤول الأعلى للنظام، خلال فترة الاحتفاظ.</li>
+  <li><strong>Access Logging</strong>: كل عملية وصول مُسجَّلة كاملةً في <code>report_access_log</code> مع IP والقناة والتوقيت.</li>
+  <li><strong>Identity Re-verification</strong>: عند طلب من قناة جديدة لم يستخدمها العميل من قبل، يُطلب OTP إضافي.</li>
+</ul>
+
+<hr>
+<h1 class="section-title">
+  القسم الرابع: هندسة البيانات المتقدمة والطبقة الوكيلة للذكاء الاصطناعي
+  <span class="english-tag">ADVANCED DATA ENGINEERING &amp; AI AGENTIC LAYER</span>
+</h1>
+
+<h2>4.1 محرك التوجيه الدلالي وكفاءة التوكنز</h2>
+
+<h3>4.1.1 الهرم الاقتصادي للنماذج</h3>
+
+<p>ميزانية الـ LLM في OmniFlow AI لا تتعامل مع جميع الطلبات بنفس النموذج، بل تتبع <strong>هرماً اقتصادياً صارماً (Cost-Optimal Hierarchy)</strong>:</p>
+
+<div class="diagram-wrapper">
+  <div class="diagram-title">الهرم الرباعي للنماذج: التكلفة مقابل التعقيد</div>
+  <div class="mermaid" dir="ltr">
+flowchart TB
+    L0["🟢 L0 — Semantic Cache (45% of requests)<br/>Cost: $0 | Latency: less than 50ms"]:::l0
+    L1["🔵 L1 — Triage Model (35% of requests)<br/>Gemini 2.5 Flash-Lite / GPT-5.4-mini<br/>Cost: ~$0.0001/req | Latency: 300-600ms"]:::l1
+    L2["🟡 L2 — Specialized RAG Workflows (15% of requests)<br/>L1 model + RAG context + few-shot<br/>Cost: ~$0.0005/req | Latency: 800-1500ms"]:::l2
+    L3["🔴 L3 — Master Agent (5% of requests)<br/>Gemini 3.1 Pro / GPT-5.5<br/>Cost: ~$0.015/req | Latency: 2-5s"]:::l3
+    L0 --> L1
+    L1 --> L2
+    L2 --> L3
+    classDef l0 fill:#16a34a,stroke:#86efac,color:#ffffff,font-weight:bold
+    classDef l1 fill:#0284c7,stroke:#38bdf8,color:#ffffff,font-weight:bold
+    classDef l2 fill:#d97706,stroke:#fcd34d,color:#ffffff,font-weight:bold
+    classDef l3 fill:#c53030,stroke:#fca5a5,color:#ffffff,font-weight:bold
+  </div>
+</div>
+
+<h3>4.1.2 آلية اتخاذ قرار التوجيه (Routing Decision Engine)</h3>
+
+<p><strong>Semantic Router</strong> هو وكيل برمجي مخصص يُنفذ خوارزمية متعددة الإشارات:</p>
+
+<ol>
+  <li><strong>Intent Classification</strong>: تصنيف النية إلى فئات (Greeting, Listing_Search, Deep_Consultation, Report_Request, Booking, Escalation_Request, Vault_Retrieval, etc.) باستخدام نموذج تصنيف صغير (DistilBERT مُدرَّب على بيانات الميدان).</li>
+  <li><strong>Complexity Estimation</strong>: تقدير عمق المعالجة المطلوبة بناءً على عدد الكيانات المذكورة، وجود مصطلحات قانونية، طول الرسالة، وارتباطها بسياق سابق.</li>
+  <li><strong>Risk Scoring</strong>: تقييم إذا كانت الرسالة قد تستدعي تصعيداً (مثل ذكر مبالغ كبيرة، نزاعات، شكاوى).</li>
+  <li><strong>Cache Probe</strong>: استعلام Semantic Cache كخطوة أولى قبل أي شيء.</li>
+  <li><strong>Routing Decision</strong>: بناءً على النقاط السابقة، يُتخذ القرار:</li>
+</ol>
+
+<table>
+  <thead>
+    <tr>
+      <th>السيناريو</th>
+      <th>المسار</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr><td>تحية، سؤال شائع، رد تأكيدي بسيط</td><td>L0 (Cache) ← L1 (fallback)</td></tr>
+    <tr><td>استفسار عن عقار محدد، مواعيد، أسعار</td><td>L1 + Mini-RAG</td></tr>
+    <tr><td>فحص صك، استشارة قانونية، تقرير مدفوع</td><td>L2 (RAG كامل)</td></tr>
+    <tr><td>استشارة عميقة، صفقة عالية القيمة، تحليل قرار استثماري</td><td>L3 (Master)</td></tr>
+    <tr><td>إشارة تصعيد، شكوى، حالة طارئة</td><td>Human Escalation</td></tr>
+    <tr><td>كلمة مفتاحية للخزانة (تقاريري / خزنتي)</td><td>Vault Retrieval Worker (مباشر بدون LLM)</td></tr>
+  </tbody>
+</table>
+
+<h3>4.1.3 Context Caching للحصول على خصومات 90%</h3>
+
+<p>موردو LLM (مثل Gemini وOpenAI) يقدمون خصومات ضخمة عند تكرار استخدام نفس السياق الكبير عبر الطلبات. OmniFlow AI يستغل هذا عبر:</p>
+
+<ul>
+  <li>بناء <strong>System Prompt ثابت موحد</strong> للمستشار الرقمي، يتم تحميله مرة واحدة وحفظ مرجعه (Cache Key).</li>
+  <li>إعادة استخدام نفس المرجع في كل طلب لاحق ضمن نفس النموذج.</li>
+  <li>نتيجةً: التكاليف المرتبطة بالسياق الأساسي (التي قد تشكل 60-70% من إجمالي tokens المُرسلة) تنخفض بنسبة تصل إلى 90%.</li>
+</ul>
+
+<h2>4.2 هندسة RAG المتقدمة (Advanced RAG Architecture)</h2>
+
+<h3>4.2.1 المخزون المعرفي المزدوج</h3>
+
+<p>النظام يستند إلى نوعين متمايزين من المعرفة:</p>
+
+<p><strong>أ. المعرفة الثابتة (Static Knowledge)</strong>:</p>
+
+<ul>
+  <li>كود البناء السعودي بإصداراته الكاملة.</li>
+  <li>اشتراطات البلديات لكل منطقة (الرياض، جدة، الدمام، إلخ).</li>
+  <li>أنظمة الهيئة العامة للعقار.</li>
+  <li>أُطر التحليل الخاصة بالمستشار أحمد الصائغ (Reasoning Frameworks).</li>
+  <li>بنك النقاشات والحالات السابقة.</li>
+</ul>
+
+<p><strong>ب. المعرفة الديناميكية (Dynamic Knowledge)</strong>:</p>
+
+<ul>
+  <li>مخزون العقارات والشقق اليومية المُحدَّث آنياً من بوابة B2B.</li>
+  <li>تحديثات تنظيمية حكومية يتم استيرادها دورياً.</li>
+  <li>بيانات السوق اللحظية (الأسعار، الترندات).</li>
+</ul>
+
+<h3>4.2.2 خط أنابيب الاستيعاب (Ingestion ETL Pipeline)</h3>
+
+<p>عملية استيعاب وثيقة جديدة تمر بست مراحل:</p>
+
+<p><strong>المرحلة 1 — الاستخراج (Extraction)</strong>: استخدام مكتبات مثل <code>unstructured.io</code> أو <code>Apache Tika</code> لاستخراج النص من PDF، Word، صور (OCR للوثائق المُصوَّرة). للوثائق العربية، يُستخدم Tesseract مع نموذج مخصص للحروف العربية المتصلة.</p>
+
+<p><strong>المرحلة 2 — التنظيف والتطبيع (Cleansing &amp; Normalization)</strong>: إزالة الترقيمات الزائدة، توحيد علامات الترقيم، معالجة الكسرات والهمزات، إصلاح الأخطاء الإملائية الشائعة عبر قاموس عربي مخصص.</p>
+
+<p><strong>المرحلة 3 — التقسيم الذكي (Semantic Chunking)</strong>: عوضاً عن التقسيم الميكانيكي بعدد ثابت من الأحرف، يُستخدم <strong>Recursive Semantic Chunking</strong> الذي يحافظ على وحدات المعنى:</p>
+
+<ul>
+  <li>يبدأ بتقسيم على مستوى الفصول والأقسام.</li>
+  <li>ثم على مستوى الفقرات.</li>
+  <li>ثم على مستوى الجمل عند الحاجة.</li>
+  <li>مع <strong>Overlap بنسبة 15%</strong> بين القطع للحفاظ على السياق المتصل.</li>
+  <li>حجم القطعة المثالي: 300-500 token.</li>
+</ul>
+
+<p><strong>المرحلة 4 — إثراء البيانات الوصفية (Metadata Enrichment)</strong>:<br>
+كل قطعة (chunk) تُحفَظ مع metadata غنية:</p>
+
+<pre><code>{
+  "tenant_id": "&lt;uuid&gt;",
+  "source_type": "saudi_building_code | municipal_regulation | listing | consultation_archive",
+  "region": "riyadh | jeddah | dammam | ...",
+  "topic_tags": ["zoning", "setbacks", "height_restrictions"],
+  "issuance_date": "2024-03-15",
+  "validity_status": "active | superseded",
+  "legal_weight": "binding | advisory",
+  "embedding_model_version": "v2.3"
+}</code></pre>
+
+<p><strong>المرحلة 5 — توليد المتجهات (Embedding Generation)</strong>:<br>
+استخدام نموذج embedding متعدد اللغات مع تركيز على العربية (مثل <code>multilingual-e5-large</code> أو <code>Cohere embed-multilingual-v3</code>)، الذي يُظهر أداءً ممتازاً للنصوص القانونية العربية.</p>
+
+<p><strong>المرحلة 6 — الفهرسة (Indexing)</strong>:<br>
+حفظ المتجه + النص الأصلي + الـ metadata في Qdrant. لكل tenant، يتم الفهرسة في collection خاص أو مع metadata filter صارم.</p>
+
+<h3>4.2.3 استراتيجية الاسترجاع الهجين (Hybrid Retrieval)</h3>
+
+<p>البحث عند طلب RAG لا يعتمد على المتجهات فقط، بل على نهج هجين:</p>
+
+<ol>
+  <li><strong>Dense Retrieval</strong>: بحث متجهي يُرجع top-20 نتائج بناءً على Cosine Similarity.</li>
+  <li><strong>Sparse Retrieval (BM25)</strong>: بحث كلمات مفتاحية يُرجع top-20 نتائج بناءً على تطابق المصطلحات الدقيقة (مهم جداً للمصطلحات القانونية والأرقام).</li>
+  <li><strong>Fusion عبر Reciprocal Rank Fusion (RRF)</strong>: دمج النتائج بشكل ذكي.</li>
+  <li><strong>Re-ranking</strong>: استخدام نموذج Cross-Encoder خفيف (مثل <code>bge-reranker</code>) لإعادة ترتيب أفضل 20 نتيجة إلى أفضل 5.</li>
+  <li><strong>Context Window Construction</strong>: بناء سياق نهائي بحجم لا يتجاوز 4K token لتمريره إلى LLM.</li>
+</ol>
+
+<h2>4.3 محرك الشخصية وضمانات السلامة (Persona Engine &amp; Safety Guardrails)</h2>
+
+<h3>4.3.1 AI Gateway: المُقيِّم الفوري</h3>
+
+<p>قبل أن يصل أي رد من LLM إلى العميل، يمر عبر <strong>AI Gateway</strong> الذي يعمل كحارس أمن متعدد الطبقات:</p>
+
+<p><strong>الفحص الأمامي (Pre-LLM Inspection)</strong>:</p>
+
+<ul>
+  <li>Prompt Injection Detection: نموذج تصنيف مخصص يكتشف محاولات حقن (مثل "تجاهل التعليمات السابقة"، "أنت الآن نموذج بلا قيود"، إلخ).</li>
+  <li>PII Detection: كشف وإخفاء المعلومات الشخصية الحساسة قبل إرسالها لمزود LLM خارجي.</li>
+  <li>Tenant Context Verification: التأكد من حقن <code>tenant_id</code> الصحيح في الطلب.</li>
+</ul>
+
+<p><strong>الفحص الخلفي (Post-LLM Inspection)</strong>:</p>
+
+<ul>
+  <li>Hallucination Check: مقارنة المخرجات بسياق RAG، ورفع علم إذا ذكر النموذج أرقاماً أو حقائق غير موجودة في السياق.</li>
+  <li>Toxicity Filter: نموذج تصنيف عربي للكشف عن لغة غير لائقة.</li>
+  <li>Brand Compliance Check: التأكد من أن الرد يلتزم بنبرة وشخصية المستشار، خاصة في باقة Economic Tier.</li>
+  <li>Legal Disclaimer Enforcement: حقن إخلاء المسؤولية القانوني تلقائياً في التقارير الاستشارية والمدفوعة.</li>
+</ul>
+
+<h3>4.3.2 محاكاة الشخصية (Persona Mimicry Engine)</h3>
+
+<p>محاكاة شخصية المستشار أحمد الصائغ تتم عبر:</p>
+
+<ol>
+  <li><strong>System Prompt الأساسي</strong>: مكتوب بعناية فائقة، يتضمن:
+    <ul>
+      <li>النبرة (Tone): مهنية، ودودة، حازمة عند الضرورة.</li>
+      <li>الأُطر التحليلية: كيف يُقيّم العقار (الموقع، التشطيب، الجدوى، الصكوك).</li>
+      <li>عبارات مفتاحية مميزة للمستشار.</li>
+      <li>السلوك المتوقع في حالات مختلفة.</li>
+    </ul>
+  </li>
+  <li><strong>Few-Shot Examples Bank</strong>: قاعدة بيانات من 500+ مثال مُصنَّف ومُراجَع شخصياً تُمثل ردوداً نموذجية للمستشار في سيناريوهات متنوعة. عند كل طلب، يُختار 3-5 أمثلة الأقرب دلالياً للسؤال وتُحقَن في الـ Prompt.</li>
+  <li><strong>Style Transfer Layer</strong>: في النسخ المخصصة للباقات الاقتصادية، تظل الشخصية الأصلية مهيمنة. في باقات Tier 2-3، يُطبَّق Style Mask جزئي يُعدِّل العبارات الرسمية لتطابق هوية المكتب، مع الإبقاء على نواة الاستدلال الأصلية كما هي.</li>
+</ol>
+
+<h2>4.4 مسار معالجة الوسائط المتعددة <span class="new-layer-marker">طبقة جديدة</span></h2>
+<h3 style="margin-top: -8px; color: var(--accent-purple); font-size: 13pt;">Multimodal Processing Pipeline (Voice + Vision)</h3>
+
+<div class="structural-note">
+  <strong>الموقع الهيكلي:</strong> هذا المسار مُدمَج في القسم الرابع كامتداد للطبقة الوكيلة للذكاء الاصطناعي. السبب: السوق السعودي/الخليجي يُهيمن عليه استخدام <em>الرسائل الصوتية</em> و<em>صور العقارات والصكوك</em> بشكل يفوق المتوسط العالمي. منظومة لا تتعامل مع هذين النوعين بنفس كفاءة النص هي منظومة معطوبة بمعايير السوق المحلي.
+</div>
+
+<h3>4.4.1 الواقع السوقي: لماذا الوسائط ليست ميزة بل ضرورة</h3>
+
+<p>الإحصائيات الميدانية تكشف:</p>
+
+<ul>
+  <li><strong>60%+ من رسائل العملاء العقاريين في السعودية صوتية</strong>، خاصة من فئة كبار السن والمستثمرين الذين يفضلون السرعة على الكتابة.</li>
+  <li><strong>صور الصكوك والمخططات هي المرفق الأساسي</strong> لأي استشارة فحص جدية.</li>
+  <li><strong>صور العقارات والتشطيبات</strong> هي الواجهة الأولى للسمسرة، ومن لا يحلِّلها بصرياً يفقد فرصاً ذهبية لاستخراج بيانات السوق.</li>
+</ul>
+
+<div class="callout new-layer">
+  <div class="callout-title">⚡ المبدأ التشغيلي</div>
+  <p style="margin: 0;">كل ملف صوتي أو صورة وارد يجب أن يُعامَل <strong>بنفس مستوى الفهم والاستخراج كأنه نص مكتوب من قِبَل خبير</strong>، ولكن مع توضيح زمن المعالجة الأطول للعميل في الحالات الكبيرة.</p>
+</div>
+
+<h3>4.4.2 مسار الصوت: Voice Pipeline (Speech-to-Text)</h3>
+
+<p>عندما تصل رسالة صوتية عبر Webhook من واتساب أو منصات التواصل، يُنفَّذ التدفق التالي:</p>
+
+<div class="diagram-wrapper">
+  <div class="diagram-title">مسار معالجة الرسائل الصوتية الكامل</div>
+  <div class="mermaid" dir="ltr">
+flowchart TB
+    WA["📱 WhatsApp Voice Note<br/>(.ogg / .opus)"]:::ch
+    CA["📥 Channel Adapter<br/>Detects audio MIME type"]:::ca
+    S3["📦 Temp Storage S3<br/>Pre-signed download URL"]:::s3
+    K["📨 Kafka Topic<br/>multimodal.audio.v1"]:::k
+    MM["🎙️ Multimodal Worker<br/>GPU Node Pool"]:::mm
+    DEC{"⚖️ Length Check"}:::dec
+    WAPI["☁️ OpenAI Whisper API<br/>(less than 30 seconds)"]:::api
+    WSH["🖥️ Self-hosted Whisper-large-v3<br/>(longer files)"]:::sh
+    NORM["🔤 Arabic Text Normalization<br/>Diacritics + Dialect handling"]:::norm
+    SR["🎯 Semantic Router<br/>Same path as text"]:::sr
+    WA --> CA
+    CA --> S3
+    CA --> K
+    K --> MM
+    MM --> DEC
+    DEC -->|less than 30s| WAPI
+    DEC -->|more than 30s| WSH
+    WAPI --> NORM
+    WSH --> NORM
+    NORM --> SR
+    classDef ch fill:#0284c7,stroke:#38bdf8,color:#ffffff,font-weight:bold
+    classDef ca fill:#0369a1,stroke:#38bdf8,color:#ffffff,font-weight:bold
+    classDef s3 fill:#1e293b,stroke:#38bdf8,color:#ffffff,font-weight:bold
+    classDef k fill:#0c4a6e,stroke:#38bdf8,color:#ffffff,font-weight:bold
+    classDef mm fill:#7c3aed,stroke:#c4b5fd,color:#ffffff,font-weight:bold
+    classDef dec fill:#d97706,stroke:#fcd34d,color:#ffffff,font-weight:bold
+    classDef api fill:#0369a1,stroke:#38bdf8,color:#ffffff,font-weight:bold
+    classDef sh fill:#334155,stroke:#38bdf8,color:#ffffff,font-weight:bold
+    classDef norm fill:#0284c7,stroke:#38bdf8,color:#ffffff,font-weight:bold
+    classDef sr fill:#16a34a,stroke:#86efac,color:#ffffff,font-weight:bold
+  </div>
+</div>
+
+<h4>تفاصيل تقنية:</h4>
+
+<ol>
+  <li><strong>Channel Adapter</strong> يكشف نوع الملف الصوتي، يقوم بتنزيل الـ Media URL من ميتا (المُؤقَّتة الصلاحية)، ويرفعه إلى S3 خاص للوسائط.</li>
+  <li><strong>ينشر حدثاً</strong> على Kafka topic <code>multimodal.audio.v1</code> مع <code>media_id</code> و <code>tenant_id</code> و <code>customer_id</code>.</li>
+  <li><strong>Multimodal Worker</strong> (يعمل على GPU node pool منفصل) يستهلك الحدث ويقرر:
+    <ul>
+      <li>إذا كان الملف &lt; 30 ثانية → استخدام <strong>OpenAI Whisper API</strong> (أسرع، تكلفة معقولة، لا حاجة لإدارة GPU).</li>
+      <li>إذا كان الملف &gt; 30 ثانية → استخدام نموذج <strong>Whisper-large-v3 المُستضاف ذاتياً</strong> على GPU (أرخص للملفات الطويلة، يحافظ على البيانات داخل بنية المنصة).</li>
+    </ul>
+  </li>
+  <li><strong>تطبيع النص العربي</strong>: معالجة الكسرات، الفتحات، اللهجة الخليجية، تصحيح الأخطاء الإملائية الشائعة في النسخ التلقائي.</li>
+  <li><strong>تمرير النص الناتج</strong> إلى Semantic Router كأنه رسالة نصية عادية، فيستفيد من كل البنية التحتية الموجودة.</li>
+</ol>
+
+<div class="callout warning">
+  <div class="callout-title">⚠️ سياسات الخصوصية للملفات الصوتية</div>
+  <p style="margin: 0;">الملف الصوتي الأصلي يُحذَف من S3 بعد <strong>24 ساعة</strong> من المعالجة. النص المُستخرَج فقط هو ما يُحفَظ في PostgreSQL، مع إشارة في <code>messages.metadata</code> بأنه أصله صوتي.</p>
+</div>
+
+<h3>4.4.3 مسار الصورة: Vision Pipeline (Vision LLM)</h3>
+
+<p>الصور أكثر تنوعاً من الصوت — قد تكون صك ملكية، مخطط، صورة لتشطيب داخلي، صورة للواجهة، أو حتى لقطة شاشة لإعلان منافس. لذا، يستخدم النظام <strong>Vision Models متخصصة</strong> (مثل Gemini 1.5 Pro أو GPT-4o) مع برومبتات صارمة تستخرج metadata محددة:</p>
+
+<div class="diagram-wrapper">
+  <div class="diagram-title">مسار معالجة الصور الكامل مع التصنيف الذكي</div>
+  <div class="mermaid" dir="ltr">
+flowchart TB
+    IMG["📸 Incoming Image<br/>JPEG/PNG/HEIC"]:::img
+    CA["📥 Channel Adapter"]:::ca
+    S3["📦 Encrypted S3 Storage"]:::s3
+    K["📨 Kafka Topic<br/>multimodal.vision.v1"]:::k
+    MMW["🖼️ Vision Worker<br/>GPU Node Pool"]:::mmw
+    CLS["🔍 Image Classifier<br/>What is this?"]:::cls
+    DEED["📜 Deed/Official Doc<br/>OCR + Structured Extraction"]:::deed
+    LAYOUT["📐 Property Layout<br/>Room count + Area estimation"]:::layout
+    FIN["🎨 Interior Finish<br/>Quality rating + Style"]:::fin
+    FAC["🏠 Exterior/Facade<br/>Architectural style + Condition"]:::fac
+    OTHER["❓ Other<br/>Generic description"]:::other
+    META["🏷️ Structured Metadata<br/>JSON output"]:::meta
+    QDRANT["🔍 Qdrant Index<br/>Searchable vision tags"]:::qdrant
+    IMG --> CA
+    CA --> S3
+    CA --> K
+    K --> MMW
+    MMW --> CLS
+    CLS --> DEED
+    CLS --> LAYOUT
+    CLS --> FIN
+    CLS --> FAC
+    CLS --> OTHER
+    DEED & LAYOUT & FIN & FAC & OTHER --> META
+    META --> QDRANT
+    classDef img fill:#0284c7,stroke:#38bdf8,color:#ffffff,font-weight:bold
+    classDef ca fill:#0369a1,stroke:#38bdf8,color:#ffffff,font-weight:bold
+    classDef s3 fill:#1e293b,stroke:#38bdf8,color:#ffffff,font-weight:bold
+    classDef k fill:#0c4a6e,stroke:#38bdf8,color:#ffffff,font-weight:bold
+    classDef mmw fill:#7c3aed,stroke:#c4b5fd,color:#ffffff,font-weight:bold
+    classDef cls fill:#d97706,stroke:#fcd34d,color:#ffffff,font-weight:bold
+    classDef deed fill:#c53030,stroke:#fca5a5,color:#ffffff,font-weight:bold
+    classDef layout fill:#0369a1,stroke:#38bdf8,color:#ffffff,font-weight:bold
+    classDef fin fill:#16a34a,stroke:#86efac,color:#ffffff,font-weight:bold
+    classDef fac fill:#0284c7,stroke:#38bdf8,color:#ffffff,font-weight:bold
+    classDef other fill:#475569,stroke:#94a3b8,color:#ffffff,font-weight:bold
+    classDef meta fill:#7c3aed,stroke:#c4b5fd,color:#ffffff,font-weight:bold
+    classDef qdrant fill:#16a34a,stroke:#86efac,color:#ffffff,font-weight:bold
+  </div>
+</div>
+
+<h4>برومبتات متخصصة لكل نوع:</h4>
+
+<table>
+  <thead>
+    <tr>
+      <th>نوع الصورة</th>
+      <th>برومبت الاستخراج</th>
+      <th>المخرج المتوقع</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td><strong>صك ملكية</strong></td>
+      <td>استخرج: رقم الصك، تاريخ الإصدار، اسم المالك، رقم المخطط، المساحة، الحدود، أي ملاحظات.</td>
+      <td>JSON منظم + OCR كامل</td>
+    </tr>
+    <tr>
+      <td><strong>مخطط عقاري</strong></td>
+      <td>حدد: عدد الغرف، توزيعها، المساحة التقريبية لكل غرفة، التوجيه، النمط المعماري.</td>
+      <td>Room count, dimensions, layout type</td>
+    </tr>
+    <tr>
+      <td><strong>تشطيب داخلي</strong></td>
+      <td>قيّم: جودة التشطيب (ممتاز/جيد/متوسط/يحتاج تجديد)، النمط (كلاسيكي/مودرن/فاخر)، حالة الأرضيات والإضاءة.</td>
+      <td>Quality rating, style classification</td>
+    </tr>
+    <tr>
+      <td><strong>واجهة خارجية</strong></td>
+      <td>صف: النمط المعماري، عدد الأدوار، حالة الواجهة، نوع المواد المستخدمة.</td>
+      <td>Architectural style, condition</td>
+    </tr>
+  </tbody>
+</table>
+
+<h4>مثال على مخرَج Vision LLM لصورة صك:</h4>
+
+<pre><code>{
+  "image_id": "img_a7b8c9d0",
+  "tenant_id": "8f3d4e9a-2c5b-4a1f-9e8d-7b6c5a4d3e2f",
+  "classification": "official_deed",
+  "confidence": 0.97,
+  "extracted_data": {
+    "deed_number": "330107012345",
+    "issue_date": "2023-04-15",
+    "owner_name": "[REDACTED_PII]",
+    "plot_number": "MK-2018-RUH-44521",
+    "area_sqm": 450,
+    "land_use": "residential",
+    "boundaries": {
+      "north": "شارع عرض 15م",
+      "south": "ملك خاص",
+      "east": "ملك خاص",
+      "west": "شارع عرض 20م"
+    },
+    "notes": "خالٍ من الرهون",
+    "ocr_full_text": "[Full OCR text...]"
+  },
+  "metadata_tags": [
+    "type:deed",
+    "region:riyadh",
+    "area_class:medium",
+    "land_use:residential",
+    "rights_status:clean"
+  ],
+  "processing_time_ms": 2340,
+  "model_used": "gemini-1.5-pro-vision"
+}</code></pre>
+
+<h3>4.4.4 الفهرسة في Qdrant: الصور كمعرفة قابلة للبحث</h3>
+
+<p>المخرَج المنظم من Vision LLM لا يُحفَظ فقط في PostgreSQL، بل يُفهرس أيضاً في Qdrant كـ vector embedding لوصف الصورة. هذا يفتح قدرات بحث متقدمة:</p>
+
+<ul>
+  <li><strong>البحث المتشابه بصرياً</strong>: "أرني عقارات بتشطيب مشابه لهذه الصورة" → النظام يستخرج التشطيبات المتطابقة من المخزون.</li>
+  <li><strong>التحليل التاريخي</strong>: "ما متوسط جودة التشطيبات في حي الياسمين؟" → استعلام تحليلي على metadata tags.</li>
+  <li><strong>كشف التزوير</strong>: مقارنة صكوك مرفوعة جديدة مع صكوك متشابهة في النظام لكشف الاستنساخ غير المشروع.</li>
+</ul>
+
+<h2>4.5 مستودع البيانات التحليلي والذكاء التجاري <span class="new-layer-marker">طبقة جديدة</span></h2>
+<h3 style="margin-top: -8px; color: var(--accent-purple); font-size: 13pt;">Analytical Data Warehouse via ClickHouse (OLAP)</h3>
+
+<div class="structural-note">
+  <strong>الموقع الهيكلي:</strong> هذه الطبقة مُدمَجة في القسم الرابع لأنها امتداد طبيعي لطبقة البيانات. PostgreSQL ممتاز للمعاملات (OLTP)، لكنه يعجز عن تحليلات ملايين الصفوف في الوقت الحقيقي. ClickHouse يكمل المنظومة بمحرك OLAP مخصص.
+</div>
+
+<h3>4.5.1 المشكلة: لماذا PostgreSQL وحده لا يكفي؟</h3>
+
+<p>PostgreSQL هو محرك معاملات (OLTP — Online Transaction Processing) ممتاز: يكتب صفاً واحداً، يُحدِّث صفاً، يقرأ صفاً بمعرف معين. لكنه يصبح بطيئاً جداً عندما تقول له:</p>
+
+<blockquote>
+"ما متوسط معدل تحويل المحادثات إلى تقارير مدفوعة، مُقسَّم بحسب حي + ساعة من اليوم + نوع العقار، آخر 30 يوماً، لكل مستأجر؟"
+</blockquote>
+
+<p>هذا الاستعلام في PostgreSQL على ملايين الصفوف قد يستغرق <strong>دقائق</strong>. في ClickHouse، نفس الاستعلام ينتهي في <strong>أقل من ثانية</strong>. السبب: ClickHouse هو OLAP (Online Analytical Processing) Columnar Database، مُصمَّم خصيصاً للاستعلامات التجميعية على بيانات ضخمة.</p>
+
+<table>
+  <thead>
+    <tr>
+      <th>المعيار</th>
+      <th>PostgreSQL (OLTP)</th>
+      <th>ClickHouse (OLAP)</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr><td>التخزين</td><td>Row-based</td><td>Column-based</td></tr>
+    <tr><td>سرعة الكتابة (Single Row)</td><td>ممتاز</td><td>متوسط</td></tr>
+    <tr><td>سرعة الكتابة الجماعية (Batch)</td><td>جيد</td><td>ممتاز جداً (مليون صف/ثانية)</td></tr>
+    <tr><td>استعلامات تجميعية</td><td>بطيء على البيانات الضخمة</td><td>سريع جداً (مليارات الصفوف)</td></tr>
+    <tr><td>دعم المعاملات (ACID)</td><td>كامل</td><td>محدود</td></tr>
+    <tr><td>الضغط</td><td>متوسط</td><td>عالٍ جداً (10:1+)</td></tr>
+    <tr><td>الاستخدام المناسب</td><td>عمليات المنصة الحية</td><td>التحليلات والـ BI</td></tr>
+  </tbody>
+</table>
+
+<h3>4.5.2 معمارية التدفق: من Kafka إلى ClickHouse</h3>
+
+<p>كل حدث في النظام (رسالة واردة، رد آلي، تصعيد، دفع، تحقق REGA) يُنشر على Kafka. <strong>ClickHouse يستهلك هذه الأحداث بالتوازي مع باقي الخدمات</strong>، دون التأثير على الأداء التشغيلي:</p>
+
+<div class="diagram-wrapper">
+  <div class="diagram-title">تدفق البيانات المزدوج: العمليات + التحليلات</div>
+  <div class="mermaid" dir="ltr">
+flowchart LR
+    SRC["📥 Event Sources<br/>Messages · Payments<br/>Escalations · Verifications"]:::src
+    K["📨 Kafka Topics<br/>(Single Source of Truth)"]:::k
+    K --> OPS["⚙️ Operational Workers"]:::ops
+    K --> CHC["📊 ClickHouse Consumer<br/>(Kafka Engine Table)"]:::chc
+    OPS --> PG["🗄️ PostgreSQL<br/>OLTP - Live Operations"]:::pg
+    OPS --> RD["⚡ Redis<br/>Session Cache"]:::rd
+    OPS --> QD["🔍 Qdrant<br/>Vector Search"]:::qd
+    CHC --> CH["📊 ClickHouse Cluster<br/>OLAP - Analytics<br/>Compressed Columnar"]:::ch
+    CH --> MV["🔄 Materialized Views<br/>Pre-aggregated Metrics"]:::mv
+    CH --> DASH["📈 B2B Dashboard<br/>Analytics Tab<br/>Real-time Charts"]:::dash
+    classDef src fill:#0284c7,stroke:#38bdf8,color:#ffffff,font-weight:bold
+    classDef k fill:#1e293b,stroke:#38bdf8,color:#ffffff,font-weight:bold
+    classDef ops fill:#334155,stroke:#38bdf8,color:#ffffff,font-weight:bold
+    classDef chc fill:#7c3aed,stroke:#c4b5fd,color:#ffffff,font-weight:bold
+    classDef pg fill:#0369a1,stroke:#38bdf8,color:#ffffff,font-weight:bold
+    classDef rd fill:#c53030,stroke:#fca5a5,color:#ffffff,font-weight:bold
+    classDef qd fill:#0c4a6e,stroke:#38bdf8,color:#ffffff,font-weight:bold
+    classDef ch fill:#d97706,stroke:#fcd34d,color:#ffffff,font-weight:bold
+    classDef mv fill:#16a34a,stroke:#86efac,color:#ffffff,font-weight:bold
+    classDef dash fill:#7c3aed,stroke:#c4b5fd,color:#ffffff,font-weight:bold
+  </div>
+</div>
+
+<h3>4.5.3 مخططات الجداول في ClickHouse</h3>
+
+<p>أهم جدول هو <code>events_raw</code> الذي يستقبل كل الأحداث، ثم تُبنى عليه Materialized Views للتحليلات السريعة:</p>
+
+<pre><code>-- جدول الأحداث الخام (يستقبل من Kafka مباشرة)
+CREATE TABLE events_raw (
+    event_id            UUID,
+    event_type          LowCardinality(String),
+    tenant_id           UUID,
+    customer_id         Nullable(UUID),
+    conversation_id     Nullable(UUID),
+    channel             LowCardinality(String),
+    district            LowCardinality(String),
+    city                LowCardinality(String),
+    intent              LowCardinality(String),
+    routing_tier        LowCardinality(String),
+    tokens_in           UInt32,
+    tokens_out          UInt32,
+    cost_usd            Float64,
+    latency_ms          UInt32,
+    sentiment_score     Float32,
+    escalation_flag     UInt8,
+    payment_amount_sar  Nullable(Float64),
+    occurred_at         DateTime64(3, 'Asia/Riyadh'),
+    inserted_at         DateTime DEFAULT now()
+)
+ENGINE = MergeTree
+PARTITION BY toYYYYMM(occurred_at)
+ORDER BY (tenant_id, occurred_at, event_type)
+TTL occurred_at + INTERVAL 2 YEAR;
+
+-- Materialized View: تحويل المحادثات بحسب الحي والساعة
+CREATE MATERIALIZED VIEW mv_conversion_by_district_hour
+ENGINE = SummingMergeTree
+PARTITION BY toYYYYMM(hour_bucket)
+ORDER BY (tenant_id, district, hour_bucket)
+AS
+SELECT
+    tenant_id,
+    district,
+    toStartOfHour(occurred_at) AS hour_bucket,
+    countIf(event_type = 'conversation_started') AS conversations_started,
+    countIf(event_type = 'report_purchased') AS reports_purchased,
+    sumIf(payment_amount_sar, event_type = 'report_purchased') AS revenue_sar
+FROM events_raw
+GROUP BY tenant_id, district, hour_bucket;
+
+-- Materialized View: استهلاك التوكنز بحسب المستأجر والساعة
+CREATE MATERIALIZED VIEW mv_token_consumption_hourly
+ENGINE = SummingMergeTree
+PARTITION BY toYYYYMM(hour_bucket)
+ORDER BY (tenant_id, hour_bucket, routing_tier)
+AS
+SELECT
+    tenant_id,
+    routing_tier,
+    toStartOfHour(occurred_at) AS hour_bucket,
+    sum(tokens_in) AS total_tokens_in,
+    sum(tokens_out) AS total_tokens_out,
+    sum(cost_usd) AS total_cost_usd,
+    count() AS request_count,
+    avg(latency_ms) AS avg_latency_ms
+FROM events_raw
+GROUP BY tenant_id, routing_tier, hour_bucket;
+
+-- Materialized View: تحليل المشاعر والتصعيد
+CREATE MATERIALIZED VIEW mv_sentiment_escalation_daily
+ENGINE = AggregatingMergeTree
+PARTITION BY toYYYYMM(day_bucket)
+ORDER BY (tenant_id, day_bucket)
+AS
+SELECT
+    tenant_id,
+    toDate(occurred_at) AS day_bucket,
+    avgState(sentiment_score) AS avg_sentiment_state,
+    sumState(escalation_flag) AS total_escalations_state,
+    countState() AS total_events_state
+FROM events_raw
+GROUP BY tenant_id, day_bucket;
+
+-- Materialized View: ترندات الاستفسارات بحسب نوع العقار
+CREATE MATERIALIZED VIEW mv_property_inquiry_trends
+ENGINE = SummingMergeTree
+PARTITION BY toYYYYMM(day_bucket)
+ORDER BY (tenant_id, district, day_bucket)
+AS
+SELECT
+    tenant_id,
+    district,
+    city,
+    intent,
+    toDate(occurred_at) AS day_bucket,
+    count() AS inquiry_count
+FROM events_raw
+WHERE event_type IN ('inquiry_received', 'listing_search')
+GROUP BY tenant_id, district, city, intent, day_bucket;</code></pre>
+
+<h3>4.5.4 الاستعلامات الجاهزة للوحة التحكم</h3>
+
+<p>الـ Analytics Tab في B2B Dashboard يستعلم من ClickHouse عبر API محدد، بحيث ترى المكاتب — في الوقت الحقيقي — مؤشراتها الحيوية:</p>
+
+<pre><code>-- معدل تحويل المحادثات إلى تقارير مدفوعة (آخر 24 ساعة)
+SELECT
+    district,
+    sum(conversations_started) AS total_convs,
+    sum(reports_purchased) AS purchases,
+    round(sum(reports_purchased) / sum(conversations_started) * 100, 2) AS conversion_rate_pct,
+    sum(revenue_sar) AS revenue
+FROM mv_conversion_by_district_hour
+WHERE tenant_id = {tenant_id:UUID}
+  AND hour_bucket &gt;= now() - INTERVAL 24 HOUR
+GROUP BY district
+ORDER BY revenue DESC
+LIMIT 10;
+
+-- ترند الاستفسارات بحسب الحي (آخر 30 يوماً)
+SELECT
+    district,
+    toString(day_bucket) AS date,
+    sum(inquiry_count) AS inquiries
+FROM mv_property_inquiry_trends
+WHERE tenant_id = {tenant_id:UUID}
+  AND day_bucket &gt;= today() - 30
+GROUP BY district, day_bucket
+ORDER BY day_bucket, inquiries DESC;
+
+-- إجمالي إنفاق التوكنز هذا الشهر (مُقسَّم بحسب الـ Tier)
+SELECT
+    routing_tier,
+    sum(total_tokens_in + total_tokens_out) AS total_tokens,
+    round(sum(total_cost_usd), 4) AS total_cost_usd,
+    sum(request_count) AS requests,
+    round(avg(avg_latency_ms), 0) AS avg_latency_ms
+FROM mv_token_consumption_hourly
+WHERE tenant_id = {tenant_id:UUID}
+  AND hour_bucket &gt;= toStartOfMonth(now())
+GROUP BY routing_tier
+ORDER BY total_cost_usd DESC;
+
+-- اكتشاف ارتفاع المشاعر السلبية
+SELECT
+    day_bucket,
+    avgMerge(avg_sentiment_state) AS avg_sentiment,
+    sumMerge(total_escalations_state) AS escalations
+FROM mv_sentiment_escalation_daily
+WHERE tenant_id = {tenant_id:UUID}
+  AND day_bucket &gt;= today() - 14
+GROUP BY day_bucket
+ORDER BY day_bucket;</code></pre>
+
+<h3>4.5.5 لوحة المؤشرات الحية في الـ Dashboard</h3>
+
+<p>المكتب المشترك يرى — مباشرة على شاشته — لوحة مُحدَّثة كل 30 ثانية تعرض:</p>
+
+<ul>
+  <li><strong>مؤشرات اليوم</strong>: عدد المحادثات، التحويلات، الإيرادات، معدل التصعيد.</li>
+  <li><strong>الترندات الأسبوعية</strong>: خرائط حرارية للأحياء الأكثر استفساراً.</li>
+  <li><strong>تحليل المشاعر</strong>: رسم بياني لمتوسط رضا العملاء عبر الزمن.</li>
+  <li><strong>استهلاك التوكنز</strong>: تكلفة AI للمكتب، مُقسَّمة على مستويات النموذج (L0/L1/L2/L3).</li>
+  <li><strong>ترتيب أداء الموظفين</strong>: عند تفعيل Human Takeover، أيهم أسرع في الاستجابة وأعلى في الإغلاق.</li>
+  <li><strong>توقعات ذكية</strong>: نماذج تنبؤية تُخبر المكتب: "تتوقع زيادة 23% في الاستفسارات الأسبوع القادم بناءً على ترند مشابه العام الماضي."</li>
+</ul>
+
+<div class="callout success">
+  <div class="callout-title">💎 القيمة التجارية الفريدة</div>
+  <p style="margin: 0;">هذه التحليلات تُحوِّل المكتب من <strong>"رد فعلي على الاستفسارات"</strong> إلى <strong>"استباقي في استهداف السوق"</strong>. مكتب يعرف أن حي معين شهد زيادة 40% في الاستفسارات هذا الأسبوع سيُركِّز إعلاناته هناك. هذا وحده يُبرر اشتراك المكتب أضعاف ثمنه.</p>
+</div>
+
+<hr>
+
+<h1 class="section-title">
+  القسم الخامس: المحركات اللوجستية وتكاملات الطرف الثالث
+  <span class="english-tag">LOGISTICAL ENGINES &amp; THIRD-PARTY INTEGRATIONS</span>
+</h1>
+
+<h2>5.1 محرك حوكمة الجودة وتوثيق العروض (Quality Control Engine)</h2>
+
+<h3>5.1.1 إشكالية العروض الوهمية</h3>
+
+<p>في السوق العقاري السعودي، العروض الوهمية المتكررة هي آفة مدمرة للثقة. <strong>OmniFlow AI</strong> يحل هذه المشكلة جذرياً عبر <strong>التحقق الإلزامي والآلي</strong> من رخصة فال (FAL License) ورقم الإعلان العقاري لكل عرض قبل ظهوره في المخزون.</p>
+
+<h3>5.1.2 سير العمل التقني للتحقق</h3>
+
+<p>عندما يُحاول مكتب مشترك رفع عرض جديد، يمر العرض بالخطوات التالية:</p>
+
+<p><strong>الخطوة 1 — التحقق من الصيغة (Format Validation)</strong>: التأكد أن رخصة فال تتبع النمط الصحيح (عدد الأرقام، البادئة، إلخ).</p>
+
+<p><strong>الخطوة 2 — استدعاء API الهيئة العامة للعقار (REGA API)</strong>: إرسال طلب verify إلى نقطة النهاية الرسمية:</p>
+
+<ul>
+  <li>التحقق من سريان الرخصة.</li>
+  <li>مطابقة بيانات الوسيط مع المسجَّل في الهيئة.</li>
+  <li>التحقق من نوع العقار المُعلَن.</li>
+  <li>التحقق من رقم الإعلان وارتباطه بالمعلِن.</li>
+</ul>
+
+<p><strong>الخطوة 3 — Idempotency &amp; Caching</strong>: لتفادي استدعاءات API المتكررة، تُخزَّن نتائج التحقق في Redis لمدة 7 أيام (TTL)، مع إعادة التحقق الدوري للرخص الحساسة.</p>
+
+<p><strong>الخطوة 4 — Status Management</strong>:</p>
+
+<ul>
+  <li><code>PENDING_VERIFICATION</code>: عرض مرفوع، قيد التحقق.</li>
+  <li><code>VERIFIED_ACTIVE</code>: عرض مُتحقَّق، ظاهر في المخزون.</li>
+  <li><code>VERIFICATION_FAILED</code>: عرض مرفوض، مع سبب الرفض.</li>
+  <li><code>SUSPENDED</code>: عرض كان نشطاً ثم انتهت رخصته أو أُلغيت.</li>
+</ul>
+
+<p><strong>الخطوة 5 — Continuous Monitoring</strong>: مهمة مجدولة (Cron Job) تعمل يومياً وتعيد التحقق من العروض النشطة بشكل عينات عشوائية لضمان عدم انتهاء صلاحيتها.</p>
+
+<h3>5.1.3 آلية الاحتيال على API (Resilience to API Failures)</h3>
+
+<p>في حال تعطل REGA API:</p>
+
+<ul>
+  <li>Circuit Breaker pattern يمنع استنزاف الموارد.</li>
+  <li>Queue للطلبات المعلقة مع إعادة محاولة تدريجية (Exponential Backoff).</li>
+  <li>إشعار المكتب المشترك أن العرض في قائمة الانتظار، مع TTL أقصى 48 ساعة قبل الرفض.</li>
+</ul>
+
+<h2>5.2 محرك الجدولة وحاسبة الانتداب اللوجستي</h2>
+
+<h3>5.2.1 المنطق الجوهري</h3>
+
+<p>عندما يطلب عميل معاينة ميدانية، النظام يحسب آلياً:</p>
+
+<ol>
+  <li>نوع الفحص المطلوب (تصوير، فحص فني، زيارة المستشار شخصياً).</li>
+  <li>الموقع الجغرافي للعقار.</li>
+  <li>التوافر الزمني للمستشار/الفاحص (تكامل مع Google Calendar API).</li>
+  <li>تكاليف السفر والإقامة إذا كان العقار خارج الرياض.</li>
+</ol>
+
+<h3>5.2.2 خوارزمية الانتداب الذكية</h3>
+
+<pre><code>الإدخالات: location_coordinates, inspection_type, requested_date
+
+1. حساب المسافة من الرياض عبر OSRM/Google Distance Matrix.
+
+2. إذا كانت المسافة &lt; 100 كم → فحص يومي بدون مبيت
+   - تكلفة الانتقال: distance_km × per_km_rate
+   - رسوم الفحص الأساسية: حسب نوع الفحص
+   - إجمالي = base_fee + transportation_cost
+
+3. إذا كانت المسافة 100-500 كم → فحص يوم واحد مع احتمال مبيت
+   - حساب وقت الوصول والعودة
+   - إذا تجاوز إجمالي وقت الزيارة 12 ساعة → إضافة ليلة إقامة
+   - تكلفة الإقامة: تُسحب من جدول fixed_rates بحسب المدينة
+
+4. إذا كانت المسافة &gt; 500 كم → سفر جوي مفترض
+   - استعلام عن أرخص رحلة في التاريخ المحدد
+   - حساب ليلتي إقامة كحد أدنى
+   - بدل يومي للمستشار
+
+5. تطبيق هامش طوارئ 15%.
+
+6. توليد فاتورة موحدة للعميل دون كشف تفاصيل التكاليف الداخلية.</code></pre>
+
+<h3>5.2.3 تكامل التقويم وإدارة الحجوزات</h3>
+
+<p>استخدام بروتوكول CalDAV مع Google Calendar/Outlook لكل مستشار وفاحص، مع:</p>
+
+<ul>
+  <li><strong>Conflict Detection</strong>: منع الحجز المزدوج.</li>
+  <li><strong>Buffer Time</strong>: 30 دقيقة بين الزيارات لاستيعاب التأخيرات.</li>
+  <li><strong>Reminder System</strong>: تنبيهات تلقائية للعميل قبل الموعد بـ 24 ساعة وساعة.</li>
+</ul>
+
+<h2>5.3 البنية التحتية لتقسيم المدفوعات (Payment Split Infrastructure)</h2>
+
+<h3>5.3.1 ثلاثة تدفقات مالية متمايزة</h3>
+
+<p>النظام يدير ثلاثة أنواع من المعاملات المالية، كل منها يحتاج إلى منطق مالي مختلف:</p>
+
+<table>
+  <thead>
+    <tr>
+      <th>نوع المعاملة</th>
+      <th>المثال</th>
+      <th>البوابة الموصى بها</th>
+      <th>النموذج</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr><td>اشتراكات متكررة B2B</td><td>شهرية، سنوية</td><td>Moyasar / Tap</td><td>Recurring Subscription</td></tr>
+    <tr><td>رسوم تقارير B2C</td><td>29/15 ريال</td><td>Moyasar / Tap</td><td>One-time Charge</td></tr>
+    <tr><td>عمولات السمسرة</td><td>متغيرة</td><td>Tap Marketplace (Split)</td><td>Split Payment</td></tr>
+  </tbody>
+</table>
+
+<h3>5.3.2 تكامل Tap/Moyasar</h3>
+
+<p>كلا البوابتين تدعمان السوق السعودي، بطاقات مدى، Apple Pay، STC Pay. الاختيار النهائي يعتمد على:</p>
+
+<ul>
+  <li><strong>Moyasar</strong>: واجهة برمجية أبسط، رسوم تنافسية لـ MENA.</li>
+  <li><strong>Tap</strong>: قدرات Marketplace Split أقوى، مهمة للعمولات متعددة الأطراف.</li>
+</ul>
+
+<p>التوصية الهندسية: استخدام <strong>Tap للعمولات المعقدة</strong> و<strong>Moyasar للاشتراكات والتقارير البسيطة</strong>، مع طبقة تجريد داخلية (Payment Abstraction Layer) تخفي تعقيد البوابتين عن المنطق التجاري.</p>
+
+<h3>5.3.3 دفتر التسوية (Settlement Ledger)</h3>
+
+<p>كل معاملة مالية تُسجَّل في دفتر تسوية مالي مزدوج القيد (Double-Entry Ledger) في PostgreSQL:</p>
+
+<ul>
+  <li><strong>transactions table</strong>: السجل الأولي للمعاملة.</li>
+  <li><strong>journal_entries table</strong>: قيود الدائن/المدين لكل طرف (المنصة، المكتب، المستشار، الفاحص).</li>
+  <li><strong>payouts table</strong>: تجميع المستحقات لكل طرف للتسوية الدورية.</li>
+  <li><strong>reconciliation_logs</strong>: مطابقة دورية مع كشوف البوابات البنكية.</li>
+</ul>
+
+<h3>5.3.4 معالجة الـ Webhooks المالية بنظام Idempotency</h3>
+
+<p>كل webhook قادم من البوابة يحمل <code>idempotency_key</code>. النظام يحفظ هذا المفتاح في Redis مع TTL 7 أيام لمنع المعالجة المزدوجة. كل تحديث لحالة المعاملة يمر عبر <strong>Saga Pattern</strong> لضمان الاتساق عبر الخدمات.</p>
+
+<h2>5.4 مسار التصعيد البشري (Human Escalation Path)</h2>
+
+<h3>5.4.1 الشروط الحتمية للتصعيد</h3>
+
+<p>النظام يُصعّد العميل آلياً إلى فريق بشري في الحالات التالية:</p>
+
+<ol>
+  <li><strong>High-Value Deal Detection</strong>: عند ذكر صفقة تتجاوز عتبة مالية معينة (يحددها كل tenant)، مثل عقار يتجاوز 3 ملايين ريال.</li>
+  <li><strong>Consultation Complexity (استعصاء استشاري)</strong>: عند تجاوز 5 جولات حوار دون تقدم نحو حل، أو ظهور كلمات مفتاحية معقدة قانونياً (نزاع، تحكيم، خلاف ورثة، صك مُعارض).</li>
+  <li><strong>Negative Sentiment Spike</strong>: تحليل المشاعر يكشف غضباً متصاعداً أو شكوى حادة.</li>
+  <li><strong>Explicit User Request</strong>: العميل يطلب صراحة التحدث مع إنسان.</li>
+  <li><strong>Confidence Threshold Breach</strong>: ثقة النموذج في إجابته أقل من 70% بعد محاولتين.</li>
+</ol>
+
+<h3>5.4.2 منطق التحويل السلس</h3>
+
+<p>عند رصد شرط التصعيد:</p>
+
+<ol>
+  <li><strong>Pause AI Session</strong>: النظام يوقف توليد الردود فوراً.</li>
+  <li><strong>Context Packaging</strong>: تجميع ملخص للمحادثة، النقاط المثارة، البيانات المُجمَّعة عن العميل، والمخاوف المرصودة.</li>
+  <li><strong>Routing Decision</strong>:
+    <ul>
+      <li>في B2C: التحويل لفريق المستشار أحمد الصائغ البشري.</li>
+      <li>في B2B: التحويل لفريق المكتب المشترك (حسب إعداداته في الـ Dashboard).</li>
+    </ul>
+  </li>
+  <li><strong>Notification Dispatch</strong>: إشعار فوري عبر:
+    <ul>
+      <li>Dashboard notification (في الواجهة).</li>
+      <li>Push notification (للتطبيق).</li>
+      <li>WhatsApp Business Notification template (للموظف المختص).</li>
+    </ul>
+  </li>
+  <li><strong>SLA Timer</strong>: تشغيل عداد استجابة (يجب أن يرد البشري خلال X دقيقة)، مع escalation إلى مدير إذا تأخر — يُجدول عبر <strong>Celery Beat</strong> (راجع 2.2.1)، وليس عبر Kafka.</li>
+  <li><strong>User-Facing Message</strong>: رسالة مهنية للعميل: "نُحوّلك الآن إلى فريقنا المتخصص لمتابعة طلبك القيّم..."</li>
+</ol>
+
+<h2>5.5 محرك الكرت الرقمي والحجز المشروط <span class="growth-marker">محرك نمو</span></h2>
+<h3 style="margin-top: -8px; color: var(--accent-pink); font-size: 13pt;">The Digital Contact VCard Gatekeeper</h3>
+
+<div class="structural-note">
+  <strong>الموقع الهيكلي:</strong> هذا المحرك مُدمَج في القسم الخامس داخل الـ <em>Initial Inbound Handshake</em> الذي يُنفِّذه الـ Channel Adapter. السبب: لحظة استقبال أول رسالة من عميل جديد هي الفرصة الأثمن استراتيجياً لتثبيت العلامة التجارية في هاتفه، وهذه اللحظة تحدث على مستوى Channel Adapter قبل أي شيء آخر.
+</div>
+
+<h3>5.5.1 المنطق التجاري: لماذا الكرت الرقمي مفصلي؟</h3>
+
+<p>تخيّل أن العميل تواصل مع المنصة، حصل على استشارة ممتازة، أغلق المحادثة. بعد أسبوع يحتاجك مجدداً — لكنه لا يتذكر الرقم. يبحث في واتسابه عن "أحمد" أو "عقار" فلا يجد شيئاً. النتيجة: <strong>فقدت العميل لمنافس آخر</strong>.</p>
+
+<div class="callout growth">
+  <div class="callout-title">💡 الحل الاستراتيجي</div>
+  <p style="margin: 0;">بدلاً من ترك تخزين الرقم لحسن نية العميل، نُرسل له <strong>كرتاً رقمياً (VCard)</strong> في أول دقيقة من تواصله، ونجعل ميزات المنصة المتقدمة <em>مشروطة بحفظ الجهة</em>. هذا يحوّل آلاف العملاء العابرين إلى أصول دائمة في دفاتر جهات الاتصال لديهم، ويصنع <strong>حضوراً علامياً لا يُمحى من حياتهم اليومية</strong>.</p>
+</div>
+
+<h3>5.5.2 محتوى الكرت الرقمي (VCard 3.0 Specification)</h3>
+
+<p>لكل مستأجر (Tenant) في نظام B2B، أو للهوية الأم في B2C، يُولَّد ملف VCard ثابت يتم تخزينه ضمن إعدادات المستأجر. مثال على الكرت الخاص بالبوابة الأم (B2C):</p>
+
+<pre><code>BEGIN:VCARD
+VERSION:3.0
+FN:المستشار أحمد الصائغ — الرقمي
+N:الصائغ;أحمد;;المستشار;
+ORG:OmniFlow AI — استشارات عقارية ذكية
+TITLE:الذكاء العقاري الاستشاري
+TEL;TYPE=CELL,VOICE,WORK:+966500000000
+TEL;TYPE=WORK,FAX:+96611000000
+EMAIL;TYPE=WORK:advisor@ahmed-alsayegh.ai
+URL:https://omniflow.ai
+ADR;TYPE=WORK:;;طريق الملك فهد;الرياض;;;المملكة العربية السعودية
+NOTE:المستشار العقاري الذكي على مدار الساعة\nفحص صكوك · استشارات تنموية · سمسرة محترفة
+PHOTO;ENCODING=BASE64;TYPE=JPEG:[base64_logo_data...]
+X-WHATSAPP:+966500000000
+CATEGORIES:Real Estate,Consulting,Saudi Arabia
+END:VCARD</code></pre>
+
+<p>للباقات B2B، يُعدَّل المحتوى ديناميكياً حسب <code>brand_overlay</code> الخاص بالمستأجر:</p>
+
+<ul>
+  <li><strong>Economic Tier</strong>: يظل اسم "المستشار أحمد الصائغ الرقمي" مع إضافة "في مكتب [اسم المكتب]".</li>
+  <li><strong>Professional Tier</strong>: اسم المكتب يتقدم، مع إشارة "بتقنية المستشار أحمد الصائغ الرقمي".</li>
+  <li><strong>Enterprise Tier</strong>: تخصيص كامل، اسم وعلامة المكتب فقط.</li>
+</ul>
+
+<h3>5.5.3 منطق البوابة المشروطة (Gatekeeping Logic)</h3>
+
+<div class="callout warning">
+  <div class="callout-title">⚠️ القيد التقني الحرج من Meta WhatsApp Cloud API</div>
+  <p style="margin: 0;">واجهة Meta لا تُوفّر أي <strong>Webhook callback</strong> يُخبرنا إذا حفظ العميل جهة الاتصال أم لا. لا يوجد حدث "Contact Saved Event" في API. لذا، الحل هو <strong>بوابة محادثاتية (Conversational Gate)</strong> تعتمد على إجابة العميل صراحةً ككلمة تحقق.</p>
+</div>
+
+<h3>5.5.4 آلة الحالات (State Machine) للعميل الجديد</h3>
+
+<div class="diagram-wrapper">
+  <div class="diagram-title">آلة حالات العميل الجديد عبر بوابة الكرت الرقمي</div>
+  <div class="mermaid" dir="ltr">
+stateDiagram-v2
+    [*] --> STATE_NEW: First message received
+    STATE_NEW --> STATE_VCARD_SENT: Auto-send VCard + welcome
+    STATE_VCARD_SENT --> STATE_AWAITING_VALIDATION: Wait for validation word
+    STATE_AWAITING_VALIDATION --> STATE_AWAITING_VALIDATION: Other messages (limited reply)
+    STATE_AWAITING_VALIDATION --> STATE_CONTACT_SAVED_VERIFIED: تم / حفظت / saved
+    STATE_CONTACT_SAVED_VERIFIED --> [*]: Unlock full pipeline
+    STATE_AWAITING_VALIDATION --> STATE_REMINDER_1: After 1 hour silence
+    STATE_REMINDER_1 --> STATE_REMINDER_2: After 24 hours silence
+    STATE_REMINDER_2 --> STATE_DORMANT: After 7 days no validation
+    STATE_DORMANT --> STATE_CONTACT_SAVED_VERIFIED: Late validation accepted
+  </div>
+</div>
+
+<h3>5.5.5 سير العمل الكامل في Channel Adapter</h3>
+
+<div class="diagram-wrapper">
+  <div class="diagram-title">معالجة الرسالة الأولى عبر بوابة VCard</div>
+  <div class="mermaid" dir="ltr">
+sequenceDiagram
+    participant C as New Customer
+    participant CA as Channel Adapter
+    participant R as Redis State
+    participant DB as PostgreSQL
+    participant K as Kafka
+    participant OD as Outbound Dispatcher
+    C->>CA: First message (any text)
+    CA->>R: GET state for customer_id
+    R-->>CA: No state (new user)
+    CA->>DB: Lookup tenant_vcard_template
+    DB-->>CA: VCard content + welcome msg
+    CA->>R: SET state = STATE_VCARD_SENT
+    CA->>K: Publish welcome event
+    K->>OD: Consume
+    OD->>C: Send welcome text
+    OD->>C: Send VCard attachment
+    OD->>C: Send validation instructions
+    Note over C: Customer saves contact
+    C->>CA: تم / حفظت
+    CA->>R: GET state
+    R-->>CA: STATE_VCARD_SENT
+    CA->>R: SET state = STATE_CONTACT_SAVED_VERIFIED
+    CA->>OD: Send unlock confirmation
+    OD->>C: Welcome to premium features
+    Note over CA: Now all advanced AI features unlocked
+  </div>
+</div>
+
+<h3>5.5.6 خوارزمية التحقق من كلمة التأكيد</h3>
+
+<p>الكلمات المقبولة كتحقق صريح:</p>
+
+<table>
+  <thead>
+    <tr>
+      <th>العربية الفصحى</th>
+      <th>اللهجات</th>
+      <th>الإنجليزية</th>
+      <th>الإيموجي</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>تم، حفظت، حفظته، أُكَّد</td>
+      <td>تمام، تم تمام، يا هلا حفظت</td>
+      <td>saved, done, ok, confirmed</td>
+      <td>✅ ✔️ 👍 🙌</td>
+    </tr>
+  </tbody>
+</table>
+
+<p>الفحص يتم عبر:</p>
+
+<ol>
+  <li><strong>Exact Match List</strong>: قاموس كلمات صريحة (سريع، تكلفة صفر).</li>
+  <li><strong>Fuzzy Match</strong>: مقارنة Levenshtein للأخطاء الإملائية البسيطة (تنم، حفت).</li>
+  <li><strong>Semantic Intent Detection</strong>: لو فشل ما سبق، يُمرَّر لنموذج تصنيف صغير يكتشف "نية التأكيد".</li>
+  <li><strong>Anti-Gaming</strong>: لو حاول العميل كتابة "تم" بدون أن يحفظ، النظام لا يستطيع التحقق فعلياً (قيد API)، لكنه يفترض حسن النية ويفتح الميزات. مع ذلك، إذا كرر العميل نفس السؤال خلال 24 ساعة دون تفاعل سلوكي يشير لحفظ الرقم، يُعاد التذكير.</li>
+</ol>
+
+<h3>5.5.7 الميزات المُقفَلة قبل التحقق</h3>
+
+<table>
+  <thead>
+    <tr>
+      <th>الميزة</th>
+      <th>قبل التحقق</th>
+      <th>بعد التحقق</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr><td>الرد على الترحيب</td><td>✅ متاح</td><td>✅ متاح</td></tr>
+    <tr><td>إرسال VCard</td><td>✅ تلقائي</td><td>—</td></tr>
+    <tr><td>أسئلة عامة بسيطة</td><td>⚠️ رد مختصر + تذكير بالحفظ</td><td>✅ كامل</td></tr>
+    <tr><td>استشارة عقارية مفصلة</td><td>🔒 مقفَلة</td><td>✅ متاحة</td></tr>
+    <tr><td>البحث في مخزون العروض</td><td>🔒 مقفَلة</td><td>✅ متاحة</td></tr>
+    <tr><td>تقارير مدفوعة (29/15 ريال)</td><td>🔒 مقفَلة</td><td>✅ متاحة</td></tr>
+    <tr><td>خزانة التقارير</td><td>🔒 مقفَلة</td><td>✅ متاحة</td></tr>
+    <tr><td>الانضمام لقوائم VIP</td><td>🔒 مقفَلة</td><td>✅ متاحة</td></tr>
+    <tr><td>الحجز اللوجستي</td><td>🔒 مقفَلة</td><td>✅ متاحة</td></tr>
+  </tbody>
+</table>
+
+<h3>5.5.8 رسالة الترحيب الموحدة</h3>
+
+<blockquote>
+🌹 <strong>أهلاً وسهلاً بك في مكتب [اسم المكتب]</strong><br>
+معك <strong>المستشار أحمد الصائغ الرقمي</strong> — توأمك الذكي في القرارات العقارية.<br><br>
+لتحصل على <strong>كامل الخدمات الاستشارية</strong> (فحص الصكوك، التقارير المدفوعة، البحث في الشقق اليومية، وتنبيهات العروض الحصرية):<br><br>
+1️⃣ احفظ بطاقة جهة الاتصال المُرفَقة 📇<br>
+2️⃣ أرسل لي كلمة <strong>"تم"</strong> أو <strong>"حفظت"</strong> للتأكيد<br><br>
+بعدها سأكون معك على مدار الساعة لخدمتك. ✨
+</blockquote>
+
+<h2>5.6 محرك البث الحصري وقوائم الـ VIP <span class="growth-marker">محرك نمو</span></h2>
+<h3 style="margin-top: -8px; color: var(--accent-pink); font-size: 13pt;">VIP Broadcast Engine &amp; Opt-in Infrastructure</h3>
+
+<div class="structural-note">
+  <strong>الموقع الهيكلي:</strong> هذا المحرك مُدمَج في القسم الخامس كنظام فرعي مستقل لأنه يربط ثلاثة عناصر: قرار تجاري (المكتب يفجّر حملة)، تدفق Kafka، وتكامل صارم مع <em>Marketing Message Templates</em> الرسمية من Meta.
+</div>
+
+<h3>5.6.1 القيد المعماري الحاسم: انعدام WhatsApp Statuses في الـ Enterprise API</h3>
+
+<div class="callout critical">
+  <div class="callout-title">🚫 محدودية واجهة Meta المؤسسية</div>
+  <p style="margin: 0;">على عكس تطبيق واتساب الشخصي، فإن <strong>WhatsApp Cloud API (Enterprise)</strong> لا يدعم نشر "الحالات (Statuses)" نهائياً. لا يوجد endpoint لنشر حالة، ولا webhook لمشاهديها، ولا حتى صلاحية محدودة. هذه ميزة <em>مستحيلة معمارياً</em> في API الرسمي.</p>
+</div>
+
+<p>بدلاً من إنكار هذا القيد، نُحوِّله إلى ميزة استراتيجية: نُهندس النظام بحيث يُقدِّم <strong>تجربة أرقى من "الحالات" تماماً</strong> — نظام قوائم VIP مع رسائل مستهدفة شخصياً.</p>
+
+<h3>5.6.2 الفلسفة التجارية للـ VIP Lists</h3>
+
+<p>قوائم VIP في OmniFlow AI ليست قوائم بريدية تقليدية. هي <strong>قوائم اشتراك مدروسة سلوكياً</strong> تجمع العملاء الأكثر تفاعلاً والأعلى استعداداً للشراء، وتُقدِّم لهم <em>عروضاً لا يراها الجمهور العام</em>:</p>
+
+<ul>
+  <li><strong>"الشقق اليومية الذهبية"</strong>: شقق فاخرة بأسعار خاصة لا تُنشر إعلانياً.</li>
+  <li><strong>"تصفيات بيعية حصرية"</strong>: ملاك مستعجلون يطرحون عقاراتهم بأسعار 15-25% أقل من السوق، يُعرض حصرياً على VIP لـ 24 ساعة قبل النشر العام.</li>
+  <li><strong>"فرص استثمارية مُؤكَّدة"</strong>: عقارات مع تقييم رسمي ودراسة جدوى مُختصرة.</li>
+  <li><strong>"تنبيهات تنظيمية مبكرة"</strong>: تغييرات في كود البناء أو اشتراطات البلديات قبل صدورها رسمياً.</li>
+</ul>
+
+<h3>5.6.3 آلية الاشتراك (Opt-in Flow)</h3>
+
+<p>الـ AI Agent يُحلِّل سلوك العميل، ويعرض الاشتراك في اللحظة المثالية:</p>
+
+<div class="diagram-wrapper">
+  <div class="diagram-title">آلية تحديد واستهداف العملاء للاشتراك في VIP</div>
+  <div class="mermaid" dir="ltr">
+flowchart TB
+    EVENTS["📊 Customer Behavior Signals"]:::ev
+    EVENTS --> SIG1["💰 Asked about 3+ properties<br/>in price range"]:::sig
+    EVENTS --> SIG2["📄 Purchased paid report"]:::sig
+    EVENTS --> SIG3["🔄 Returned 2+ times<br/>within 14 days"]:::sig
+    EVENTS --> SIG4["💎 Asked about premium districts"]:::sig
+    SIG1 & SIG2 & SIG3 & SIG4 --> SCORE["🎯 Engagement Score<br/>Calculator"]:::score
+    SCORE --> CHK{"Score &gt;= threshold?"}:::chk
+    CHK -->|Yes| INVITE["✨ AI Agent dynamically<br/>generates VIP invitation"]:::inv
+    CHK -->|No| WAIT["⏳ Continue tracking"]:::wait
+    INVITE --> SEND["📲 Send opt-in message<br/>with Quick Reply buttons"]:::send
+    SEND --> RESP{"Customer response"}:::resp
+    RESP -->|Accept| OPTIN["✅ Add to vip_subscribers<br/>table"]:::optin
+    RESP -->|Decline| TAG["🏷️ Tag: declined_vip<br/>Wait 90 days before re-ask"]:::tag
+    RESP -->|No reply| FOLLOW["🔔 Single follow-up<br/>after 7 days<br/>(Celery Beat — راجع 2.2.1)"]:::fol
+    classDef ev fill:#0284c7,stroke:#38bdf8,color:#ffffff,font-weight:bold
+    classDef sig fill:#1e293b,stroke:#38bdf8,color:#ffffff
+    classDef score fill:#7c3aed,stroke:#c4b5fd,color:#ffffff,font-weight:bold
+    classDef chk fill:#d97706,stroke:#fcd34d,color:#ffffff,font-weight:bold
+    classDef inv fill:#db2777,stroke:#f9a8d4,color:#ffffff,font-weight:bold
+    classDef wait fill:#475569,stroke:#94a3b8,color:#ffffff
+    classDef send fill:#0369a1,stroke:#38bdf8,color:#ffffff,font-weight:bold
+    classDef resp fill:#1e293b,stroke:#38bdf8,color:#ffffff,font-weight:bold
+    classDef optin fill:#16a34a,stroke:#86efac,color:#ffffff,font-weight:bold
+    classDef tag fill:#c53030,stroke:#fca5a5,color:#ffffff,font-weight:bold
+    classDef fol fill:#0c4a6e,stroke:#38bdf8,color:#ffffff
+  </div>
+</div>
+
+<h3>5.6.4 نموذج رسالة الدعوة (Opt-in Invitation Template)</h3>
+
+<blockquote>
+✨ <strong>دعوة خاصة لك</strong><br><br>
+لاحظت أبا الكرم اهتمامك المتميز بسوق العقارات. لدينا قائمة <strong>VIP</strong> مغلقة تستلم فيها:<br><br>
+🏢 شقق يومية فاخرة بأسعار خاصة (قبل النشر العام)<br>
+💎 صفقات بيع تصفيوية بـ 15-25% أقل من السوق<br>
+📊 تنبيهات تنظيمية مبكرة من البلديات<br><br>
+عدد الرسائل: <strong>2-3 رسائل أسبوعياً فقط</strong>. لا إزعاج.<br><br>
+هل تود الانضمام؟
+</blockquote>
+
+<p>مع أزرار <strong>Quick Reply</strong> تفاعلية:</p>
+
+<ul>
+  <li>✅ نعم، أضمني الآن</li>
+  <li>📅 ذكِّرني لاحقاً</li>
+  <li>❌ لا، شكراً</li>
+</ul>
+
+<h3>5.6.5 المعمارية الهندسية لإطلاق حملة بث</h3>
+
+<p>عندما يُريد المستأجر إطلاق حملة، يستخدم لوحة التحكم لاختيار الجمهور وصياغة الرسالة، ثم النظام يُنفِّذ التدفق التالي:</p>
+
+<div class="diagram-wrapper">
+  <div class="diagram-title">معمارية إطلاق وتنفيذ حملة بث VIP</div>
+  <div class="mermaid" dir="ltr">
+flowchart TB
+    DASH["🖥️ B2B Dashboard<br/>Tenant creates broadcast"]:::dash
+    APPR["⚖️ Compliance Check<br/>Anti-spam Rules + Template Validation"]:::appr
+    K["📨 Kafka Topic<br/>broadcast.marketing.v1"]:::k
+    BWORK["⚙️ Broadcast Workers<br/>Rate-Limited Pool"]:::bw
+    SEG["🎯 Audience Segmentation<br/>Filter VIP subscribers"]:::seg
+    META["☁️ Meta Marketing<br/>Message Template API"]:::meta
+    TRACK["📊 Delivery Tracking<br/>+ Quick Reply Capture"]:::track
+    CH["📊 ClickHouse Events<br/>Campaign Analytics"]:::ch
+    DASH --> APPR
+    APPR --> K
+    K --> BWORK
+    BWORK --> SEG
+    SEG --> META
+    META --> TRACK
+    TRACK --> CH
+    classDef dash fill:#7c3aed,stroke:#c4b5fd,color:#ffffff,font-weight:bold
+    classDef appr fill:#d97706,stroke:#fcd34d,color:#ffffff,font-weight:bold
+    classDef k fill:#1e293b,stroke:#38bdf8,color:#ffffff,font-weight:bold
+    classDef bw fill:#0369a1,stroke:#38bdf8,color:#ffffff,font-weight:bold
+    classDef seg fill:#0c4a6e,stroke:#38bdf8,color:#ffffff,font-weight:bold
+    classDef meta fill:#16a34a,stroke:#86efac,color:#ffffff,font-weight:bold
+    classDef track fill:#db2777,stroke:#f9a8d4,color:#ffffff,font-weight:bold
+    classDef ch fill:#d97706,stroke:#fcd34d,color:#ffffff,font-weight:bold
+  </div>
+</div>
+
+<h4>تفاصيل المراحل:</h4>
+
+<ol>
+  <li><strong>إنشاء الحملة في لوحة التحكم</strong>: المستأجر يختار من Templates مُعتمَدة مسبقاً من Meta (شرط Meta الإلزامي)، يُخصِّص المتغيرات (المنطقة، السعر، نوع العقار)، ويختار الجمهور المستهدف بفلاتر سلوكية.</li>
+  <li><strong>فحص الامتثال (Compliance Check)</strong>:
+    <ul>
+      <li>التأكد أن الـ Template مُعتمَد من Meta.</li>
+      <li>التأكد أن عدد الرسائل لا يتجاوز <strong>3 رسائل أسبوعياً</strong> لكل عميل (سياسة OmniFlow ضد الإزعاج).</li>
+      <li>التأكد أن العملاء المستهدفين فعلاً في قائمة VIP (Opt-in موثق).</li>
+      <li>فحص الـ Content Filter للتأكد من خلوه من المخالفات.</li>
+    </ul>
+  </li>
+  <li><strong>نشر الحدث على Kafka</strong>: <code>broadcast.marketing.v1</code> مع تفاصيل الحملة كاملة.</li>
+  <li><strong>Broadcast Workers</strong>: عمال متخصصون يستهلكون الحملة، مع Rate Limiter (50 msg/sec لكل tenant) لاحترام حدود Meta API.</li>
+  <li><strong>الإرسال عبر Meta Marketing Templates</strong>: استخدام endpoint الرسمي مع توقيع رقمي وتتبع كامل.</li>
+  <li><strong>التتبع الفوري (Delivery Tracking)</strong>: استقبال webhooks من Meta عن حالة كل رسالة (Sent, Delivered, Read, Replied).</li>
+  <li><strong>التحليلات في ClickHouse</strong>: كل حدث يُسجَّل في events_raw، فتظهر للمستأجر إحصائيات الحملة في الوقت الحقيقي.</li>
+</ol>
+
+<h3>5.6.6 آلية حماية الـ Opt-out (إلزامية بقوانين Meta)</h3>
+
+<p>كل رسالة تسويقية يجب أن تحتوي على آلية واضحة للخروج:</p>
+
+<ul>
+  <li><strong>زر Quick Reply ثابت</strong>: "إيقاف التنبيهات".</li>
+  <li><strong>كلمات مفتاحية للإلغاء</strong>: "ايقاف"، "stop"، "إلغاء"، "unsubscribe".</li>
+  <li><strong>تنفيذ فوري</strong>: بمجرد استقبال أي من هذه الإشارات، يُحدَّث <code>vip_subscribers.status = 'opted_out'</code> فوراً، ولا يستلم أي رسالة تسويقية مستقبلاً.</li>
+  <li><strong>تسجيل في الـ Audit Log</strong>: لإثبات الامتثال أمام أي تدقيق من Meta أو الجهات التنظيمية.</li>
+</ul>
+
+<h3>5.6.7 مؤشرات أداء الحملة (Campaign KPIs)</h3>
+
+<table>
+  <thead>
+    <tr>
+      <th>المؤشر</th>
+      <th>الهدف الجيد</th>
+      <th>الهدف الممتاز</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr><td>Delivery Rate</td><td>≥ 95%</td><td>≥ 98%</td></tr>
+    <tr><td>Read Rate</td><td>≥ 60%</td><td>≥ 80%</td></tr>
+    <tr><td>Quick Reply Engagement</td><td>≥ 15%</td><td>≥ 30%</td></tr>
+    <tr><td>Conversion to Paid Action</td><td>≥ 3%</td><td>≥ 8%</td></tr>
+    <tr><td>Opt-out Rate (انخفاض هو الأفضل)</td><td>&lt; 2%</td><td>&lt; 0.5%</td></tr>
+  </tbody>
+</table>
+
+<hr>
+
+<h1 class="section-title">
+  القسم السادس: المواصفات التقنية والعقود البرمجية
+  <span class="english-tag">TECHNICAL SPECIFICATIONS &amp; CONTRACTS</span>
+</h1>
+
+<h2>6.1 المخطط المفاهيمي لقاعدة البيانات (PostgreSQL Conceptual Schema)</h2>
+
+<pre><code>-- ═══════════════════════════════════════════════════════════════
+-- جدول المستأجرين الرئيسي
+-- ═══════════════════════════════════════════════════════════════
+CREATE TABLE tenants (
+    tenant_id           UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    legal_name          VARCHAR(255) NOT NULL,
+    commercial_name     VARCHAR(255) NOT NULL,
+    cr_number           VARCHAR(50) UNIQUE NOT NULL,
+    tier                VARCHAR(20) NOT NULL 
+                        CHECK (tier IN ('economic','professional','enterprise')),
+    subscription_status VARCHAR(20) NOT NULL DEFAULT 'trial',
+    brand_overlay       JSONB,
+    vcard_template      JSONB,
+    onboarded_at        TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    metadata            JSONB DEFAULT '{}'::jsonb
+);
+
+CREATE INDEX idx_tenants_status ON tenants(subscription_status);
+
+-- ═══════════════════════════════════════════════════════════════
+-- جدول مستخدمي لوحة التحكم (B2B Dashboard Users / Agents)
+-- ═══════════════════════════════════════════════════════════════
+CREATE TABLE tenant_users (
+    user_id             UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    tenant_id           UUID NOT NULL REFERENCES tenants(tenant_id) ON DELETE CASCADE,
+    full_name           VARCHAR(255) NOT NULL,
+    email               VARCHAR(255) UNIQUE NOT NULL,
+    password_hash       VARCHAR(255) NOT NULL,
+    role                VARCHAR(50) NOT NULL DEFAULT 'agent',
+                        -- admin | agent | auditor
+    is_active           BOOLEAN DEFAULT TRUE,
+    last_login_at       TIMESTAMPTZ,
+    created_at          TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX idx_tenant_users_tenant ON tenant_users(tenant_id);
+
+-- ═══════════════════════════════════════════════════════════════
+-- جدول العملاء النهائيين (Master Identity)
+-- ═══════════════════════════════════════════════════════════════
+CREATE TABLE customers (
+    customer_id         UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    tenant_id           UUID NOT NULL REFERENCES tenants(tenant_id),
+    primary_phone       VARCHAR(20),
+    primary_email       VARCHAR(255),
+    display_name        VARCHAR(255),
+    locale              VARCHAR(10) DEFAULT 'ar-SA',
+    risk_profile        JSONB DEFAULT '{}'::jsonb,
+    behavioral_tags     TEXT[],
+    vcard_state         VARCHAR(40) DEFAULT 'STATE_NEW',
+                        -- STATE_NEW | STATE_VCARD_SENT | STATE_AWAITING_VALIDATION
+                        -- STATE_CONTACT_SAVED_VERIFIED | STATE_DORMANT
+    vcard_verified_at   TIMESTAMPTZ,
+    engagement_score    INTEGER DEFAULT 0,
+    created_at          TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    last_activity_at    TIMESTAMPTZ,
+    erased_at           TIMESTAMPTZ,
+    erasure_reason      VARCHAR(100),
+    is_processing_restricted BOOLEAN DEFAULT FALSE -- امتثالاً لـ PDPL (الحق في تقييد المعالجة — راجع 8.3.1)
+);
+
+CREATE INDEX idx_customers_tenant ON customers(tenant_id);
+CREATE INDEX idx_customers_phone ON customers(primary_phone) 
+    WHERE primary_phone IS NOT NULL;
+CREATE INDEX idx_customers_vcard_state ON customers(vcard_state);
+
+-- ═══════════════════════════════════════════════════════════════
+-- جدول الربط متعدد القنوات
+-- ═══════════════════════════════════════════════════════════════
+CREATE TABLE identity_links (
+    link_id             UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    customer_id         UUID NOT NULL REFERENCES customers(customer_id),
+    tenant_id           UUID NOT NULL REFERENCES tenants(tenant_id),
+    channel             VARCHAR(30) NOT NULL,
+                        -- whatsapp | tiktok | instagram | x | snapchat | web
+    external_id         VARCHAR(255) NOT NULL,
+    confidence_score    DECIMAL(3,2) NOT NULL DEFAULT 1.00,
+    verification_method VARCHAR(50),
+                        -- deterministic | probabilistic | otp
+    linked_at           TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    UNIQUE (channel, external_id, tenant_id)
+);
+
+CREATE INDEX idx_identity_customer ON identity_links(customer_id);
+CREATE INDEX idx_identity_lookup ON identity_links(channel, external_id);
+
+-- ═══════════════════════════════════════════════════════════════
+-- جدول المحادثات
+-- ═══════════════════════════════════════════════════════════════
+CREATE TABLE conversations (
+    conversation_id     UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    tenant_id           UUID NOT NULL REFERENCES tenants(tenant_id),
+    customer_id         UUID NOT NULL REFERENCES customers(customer_id),
+    channel             VARCHAR(30) NOT NULL,
+    status              VARCHAR(20) NOT NULL DEFAULT 'active',
+                        -- active | escalated | human_active | closed | abandoned
+    started_at          TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    last_message_at     TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    escalation_reason   VARCHAR(100),
+    assigned_agent_id   UUID REFERENCES tenant_users(user_id),
+    summary             TEXT
+) PARTITION BY RANGE (started_at);
+
+CREATE TABLE conversations_2026_q1 PARTITION OF conversations
+    FOR VALUES FROM ('2026-01-01') TO ('2026-04-01');
+
+CREATE INDEX idx_conversations_customer ON conversations(customer_id, last_message_at DESC);
+CREATE INDEX idx_conversations_tenant_status ON conversations(tenant_id, status);
+
+-- ═══════════════════════════════════════════════════════════════
+-- جدول الرسائل
+-- ═══════════════════════════════════════════════════════════════
+CREATE TABLE messages (
+    message_id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    conversation_id     UUID NOT NULL,
+    tenant_id           UUID NOT NULL REFERENCES tenants(tenant_id),
+    direction           VARCHAR(10) NOT NULL CHECK (direction IN ('inbound','outbound')),
+    sender_type         VARCHAR(20) NOT NULL,
+                        -- customer | ai_agent | human_agent | system
+    content_type        VARCHAR(20) NOT NULL DEFAULT 'text',
+                        -- text | audio | image | vcard | template | document
+    content             TEXT NOT NULL,
+    media_url           TEXT,
+    llm_metadata        JSONB,
+    routing_decision    VARCHAR(30),
+    confidence_score    DECIMAL(3,2),
+    agent_id            UUID REFERENCES tenant_users(user_id),
+    created_at          TIMESTAMPTZ NOT NULL DEFAULT NOW()
+) PARTITION BY RANGE (created_at);
+
+CREATE INDEX idx_messages_conversation ON messages(conversation_id, created_at);
+CREATE INDEX idx_messages_agent ON messages(agent_id) WHERE agent_id IS NOT NULL;
+
+-- ═══════════════════════════════════════════════════════════════
+-- جدول العروض العقارية
+-- ═══════════════════════════════════════════════════════════════
+CREATE TABLE listings (
+    listing_id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    tenant_id               UUID NOT NULL REFERENCES tenants(tenant_id),
+    listing_type            VARCHAR(30) NOT NULL,
+                            -- daily_rental | sale | annual_rental
+    title                   VARCHAR(500) NOT NULL,
+    description             TEXT,
+    region                  VARCHAR(50) NOT NULL,
+    city                    VARCHAR(50) NOT NULL,
+    district                VARCHAR(100),
+    coordinates             GEOGRAPHY(POINT, 4326),
+    price_amount            DECIMAL(12,2) NOT NULL,
+    price_currency          VARCHAR(3) DEFAULT 'SAR',
+    fal_license_number      VARCHAR(50) NOT NULL,
+    rega_ad_number          VARCHAR(50) NOT NULL,
+    verification_status     VARCHAR(30) NOT NULL DEFAULT 'pending',
+                            -- pending | verified_active | failed | suspended
+    verification_payload    JSONB,
+    verified_at             TIMESTAMPTZ,
+    media_urls              TEXT[],
+    attributes              JSONB,
+    is_vip_exclusive        BOOLEAN DEFAULT FALSE,
+    vip_release_at          TIMESTAMPTZ,
+    created_at              TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at              TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX idx_listings_tenant_status ON listings(tenant_id, verification_status);
+CREATE INDEX idx_listings_geo ON listings USING GIST(coordinates);
+CREATE INDEX idx_listings_type_region ON listings(listing_type, region, city);
+CREATE INDEX idx_listings_vip ON listings(is_vip_exclusive, vip_release_at) 
+    WHERE is_vip_exclusive = TRUE;
+
+-- ═══════════════════════════════════════════════════════════════
+-- جدول المعاملات المالية
+-- ═══════════════════════════════════════════════════════════════
+CREATE TABLE transactions (
+    transaction_id      UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    tenant_id           UUID NOT NULL REFERENCES tenants(tenant_id),
+    customer_id         UUID REFERENCES customers(customer_id),
+    transaction_type    VARCHAR(30) NOT NULL,
+                        -- subscription | report_fee | commission | refund
+    amount              DECIMAL(12,2) NOT NULL,
+    currency            VARCHAR(3) DEFAULT 'SAR',
+    payment_gateway     VARCHAR(20) NOT NULL,
+    gateway_reference   VARCHAR(100) UNIQUE NOT NULL,
+    idempotency_key     VARCHAR(100) UNIQUE NOT NULL,
+    status              VARCHAR(20) NOT NULL,
+    split_breakdown     JSONB,
+    metadata            JSONB,
+    created_at          TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    completed_at        TIMESTAMPTZ
+);
+
+CREATE INDEX idx_transactions_tenant_date ON transactions(tenant_id, created_at DESC);
+CREATE INDEX idx_transactions_status ON transactions(status) 
+    WHERE status IN ('pending','failed');
+
+-- ═══════════════════════════════════════════════════════════════
+-- جدول تقارير الخزانة الدائمة (Reports Vault)
+-- ⚠️ التعريف الكامل (DDL + RLS + Indexes): راجع القسم 3.5.6 فقط.
+--    لا تُكرَّر CREATE TABLE هنا — تشغيلها مرتين يُفشل migration.
+-- ═══════════════════════════════════════════════════════════════
+
+-- ═══════════════════════════════════════════════════════════════
+-- جدول مشتركي قوائم VIP
+-- ═══════════════════════════════════════════════════════════════
+CREATE TABLE vip_subscribers (
+    subscription_id     UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    customer_id         UUID NOT NULL REFERENCES customers(customer_id),
+    tenant_id           UUID NOT NULL REFERENCES tenants(tenant_id),
+    list_type           VARCHAR(50) NOT NULL,
+                        -- daily_rentals | hot_sales | regulatory_alerts | premium_investments
+    status              VARCHAR(20) NOT NULL DEFAULT 'active',
+                        -- active | paused | opted_out
+    opted_in_at         TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    opted_in_method     VARCHAR(30),
+                        -- ai_suggestion | dashboard | direct_request
+    opted_out_at        TIMESTAMPTZ,
+    opted_out_reason    VARCHAR(100),
+    preferences         JSONB DEFAULT '{}'::jsonb,
+                        -- {districts: [], price_range: {}, property_types: []}
+    messages_sent_count INTEGER DEFAULT 0,
+    last_message_at     TIMESTAMPTZ,
+    UNIQUE (customer_id, tenant_id, list_type)
+);
+
+CREATE INDEX idx_vip_tenant_status ON vip_subscribers(tenant_id, status);
+CREATE INDEX idx_vip_customer ON vip_subscribers(customer_id);
+CREATE INDEX idx_vip_list_type ON vip_subscribers(list_type) WHERE status = 'active';
+
+-- ═══════════════════════════════════════════════════════════════
+-- جدول حملات البث (Broadcast Campaigns)
+-- ═══════════════════════════════════════════════════════════════
+CREATE TABLE broadcast_campaigns (
+    campaign_id         UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    tenant_id           UUID NOT NULL REFERENCES tenants(tenant_id),
+    created_by_user_id  UUID NOT NULL REFERENCES tenant_users(user_id),
+    campaign_name       VARCHAR(255) NOT NULL,
+    campaign_type       VARCHAR(50) NOT NULL,
+                        -- daily_rentals | hot_sales | regulatory | property_launch
+    meta_template_id    VARCHAR(100) NOT NULL,
+    template_variables  JSONB,
+    target_audience     JSONB NOT NULL,
+                        -- {list_type, districts, price_range, etc.}
+    estimated_recipients INTEGER,
+    status              VARCHAR(20) NOT NULL DEFAULT 'draft',
+                        -- draft | compliance_review | scheduled | sending 
+                        -- | completed | cancelled | failed
+    scheduled_at        TIMESTAMPTZ,
+    started_at          TIMESTAMPTZ,
+    completed_at        TIMESTAMPTZ,
+    delivery_stats      JSONB DEFAULT '{}'::jsonb,
+                        -- {sent, delivered, read, replied, opted_out}
+    created_at          TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX idx_campaigns_tenant_status ON broadcast_campaigns(tenant_id, status);
+CREATE INDEX idx_campaigns_scheduled ON broadcast_campaigns(scheduled_at) 
+    WHERE status = 'scheduled';
+
+-- ═══════════════════════════════════════════════════════════════
+-- جدول إيصالات البث (Broadcast Delivery Records)
+-- ═══════════════════════════════════════════════════════════════
+CREATE TABLE broadcast_deliveries (
+    delivery_id         UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    campaign_id         UUID NOT NULL REFERENCES broadcast_campaigns(campaign_id),
+    customer_id         UUID NOT NULL REFERENCES customers(customer_id),
+    tenant_id           UUID NOT NULL,
+    meta_message_id     VARCHAR(255),
+    status              VARCHAR(20) NOT NULL,
+                        -- queued | sent | delivered | read | failed | opted_out
+    quick_reply_action  VARCHAR(100),
+    sent_at             TIMESTAMPTZ,
+    delivered_at        TIMESTAMPTZ,
+    read_at             TIMESTAMPTZ,
+    replied_at          TIMESTAMPTZ,
+    failure_reason      TEXT
+) PARTITION BY RANGE (sent_at);
+
+CREATE INDEX idx_deliveries_campaign ON broadcast_deliveries(campaign_id, status);
+CREATE INDEX idx_deliveries_customer ON broadcast_deliveries(customer_id);
+
+-- ═══════════════════════════════════════════════════════════════
+-- سجل الوصول للتقارير (report_access_log)
+-- ⚠️ التعريف الكامل: راجع القسم 3.5.6 — لا تُكرَّر CREATE TABLE هنا.
+-- ═══════════════════════════════════════════════════════════════
+
+-- ═══════════════════════════════════════════════════════════════
+-- سجل التدقيق الأمني العام
+-- ═══════════════════════════════════════════════════════════════
+CREATE TABLE security_audit_log (
+    event_id            UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    event_type          VARCHAR(50) NOT NULL,
+    tenant_id           UUID,
+    actor_id            VARCHAR(100),
+    actor_type          VARCHAR(30),
+    table_name          VARCHAR(100),
+    record_id           UUID,
+    action              VARCHAR(30),
+    ip_address          INET,
+    user_agent          TEXT,
+    metadata            JSONB,
+    occurred_at         TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX idx_audit_tenant_time ON security_audit_log(tenant_id, occurred_at DESC);
+CREATE INDEX idx_audit_event_type ON security_audit_log(event_type, occurred_at DESC);
+
+-- ═══════════════════════════════════════════════════════════════
+-- سجل تدقيق الحذف (PDPL Erasure Log)
+-- ═══════════════════════════════════════════════════════════════
+CREATE TABLE erasure_audit_log (
+    erasure_id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    customer_id         UUID NOT NULL,
+    tenant_id           UUID NOT NULL,
+    erased_at           TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    requestor_ip        INET,
+    verification_method VARCHAR(50),
+                        -- otp_verified | id_verified | api_verified
+    scope               VARCHAR(50),
+                        -- full_pdpl_erasure | partial_anonymization
+    systems_affected    JSONB,
+                        -- {postgresql: true, qdrant: true, redis: true, ...}
+    retained_data       JSONB,
+                        -- {financial_records: "SAMA compliance", ...}
+    certificate_id      VARCHAR(100) UNIQUE,
+    completed_at        TIMESTAMPTZ
+);
+
+CREATE INDEX idx_erasure_customer ON erasure_audit_log(customer_id);
+CREATE INDEX idx_erasure_tenant ON erasure_audit_log(tenant_id, erased_at DESC);
+
+-- ═══════════════════════════════════════════════════════════════
+-- تفعيل Row-Level Security
+-- ═══════════════════════════════════════════════════════════════
+ALTER TABLE tenant_users        ENABLE ROW LEVEL SECURITY;
+ALTER TABLE customers           ENABLE ROW LEVEL SECURITY;
+ALTER TABLE identity_links      ENABLE ROW LEVEL SECURITY;
+ALTER TABLE conversations       ENABLE ROW LEVEL SECURITY;
+ALTER TABLE messages            ENABLE ROW LEVEL SECURITY;
+ALTER TABLE listings            ENABLE ROW LEVEL SECURITY;
+ALTER TABLE transactions        ENABLE ROW LEVEL SECURITY;
+ALTER TABLE customer_reports    ENABLE ROW LEVEL SECURITY;
+ALTER TABLE vip_subscribers     ENABLE ROW LEVEL SECURITY;
+ALTER TABLE broadcast_campaigns ENABLE ROW LEVEL SECURITY;
+ALTER TABLE broadcast_deliveries ENABLE ROW LEVEL SECURITY;
+
+ALTER TABLE tenant_users        FORCE ROW LEVEL SECURITY;
+ALTER TABLE customers           FORCE ROW LEVEL SECURITY;
+ALTER TABLE identity_links      FORCE ROW LEVEL SECURITY;
+ALTER TABLE conversations       FORCE ROW LEVEL SECURITY;
+ALTER TABLE messages            FORCE ROW LEVEL SECURITY;
+ALTER TABLE listings            FORCE ROW LEVEL SECURITY;
+ALTER TABLE transactions        FORCE ROW LEVEL SECURITY;
+ALTER TABLE customer_reports    FORCE ROW LEVEL SECURITY;
+ALTER TABLE vip_subscribers     FORCE ROW LEVEL SECURITY;
+ALTER TABLE broadcast_campaigns FORCE ROW LEVEL SECURITY;
+ALTER TABLE broadcast_deliveries FORCE ROW LEVEL SECURITY;
+
+-- ═══════════════════════════════════════════════════════════════
+-- سياسات RLS الموحدة
+-- ═══════════════════════════════════════════════════════════════
+CREATE POLICY tenant_isolation_tenant_users ON tenant_users
+    USING (tenant_id = current_setting('app.current_tenant_id')::UUID);
+
+CREATE POLICY tenant_isolation_customers ON customers
+    USING (tenant_id = current_setting('app.current_tenant_id')::UUID);
+
+CREATE POLICY tenant_isolation_identity ON identity_links
+    USING (tenant_id = current_setting('app.current_tenant_id')::UUID);
+
+CREATE POLICY tenant_isolation_conversations ON conversations
+    USING (tenant_id = current_setting('app.current_tenant_id')::UUID);
+
+CREATE POLICY tenant_isolation_messages ON messages
+    USING (tenant_id = current_setting('app.current_tenant_id')::UUID);
+
+CREATE POLICY tenant_isolation_listings ON listings
+    USING (tenant_id = current_setting('app.current_tenant_id')::UUID);
+
+CREATE POLICY tenant_isolation_transactions ON transactions
+    USING (tenant_id = current_setting('app.current_tenant_id')::UUID);
+
+CREATE POLICY tenant_isolation_reports ON customer_reports
+    USING (tenant_id = current_setting('app.current_tenant_id')::UUID);
+
+CREATE POLICY tenant_isolation_vip ON vip_subscribers
+    USING (tenant_id = current_setting('app.current_tenant_id')::UUID);
+
+CREATE POLICY tenant_isolation_campaigns ON broadcast_campaigns
+    USING (tenant_id = current_setting('app.current_tenant_id')::UUID);
+
+CREATE POLICY tenant_isolation_deliveries ON broadcast_deliveries
+    USING (tenant_id = current_setting('app.current_tenant_id')::UUID);
+
+-- ═══════════════════════════════════════════════════════════════
+-- Trigger لتدقيق محاولات تجاوز RLS
+-- ═══════════════════════════════════════════════════════════════
+CREATE OR REPLACE FUNCTION audit_tenant_access()
+RETURNS TRIGGER AS $$
+BEGIN
+    IF current_setting('app.current_tenant_id', true) IS NULL THEN
+        INSERT INTO security_audit_log (event_type, table_name, occurred_at)
+        VALUES ('MISSING_TENANT_CONTEXT', TG_TABLE_NAME, NOW());
+        RAISE EXCEPTION 'Tenant context required for table %', TG_TABLE_NAME;
+    END IF;
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+CREATE TRIGGER enforce_tenant_context_listings
+    BEFORE INSERT OR UPDATE ON listings
+    FOR EACH ROW EXECUTE FUNCTION audit_tenant_access();
+
+CREATE TRIGGER enforce_tenant_context_reports
+    BEFORE INSERT OR UPDATE ON customer_reports
+    FOR EACH ROW EXECUTE FUNCTION audit_tenant_access();
+
+CREATE TRIGGER enforce_tenant_context_vip
+    BEFORE INSERT OR UPDATE ON vip_subscribers
+    FOR EACH ROW EXECUTE FUNCTION audit_tenant_access();</code></pre>
+
+<h2>6.2 مواصفات JSON Payloads للواجهات</h2>
+
+<h3>6.2.1 العقد A: Webhook الوارد من WhatsApp Cloud API</h3>
+
+<pre><code>{
+  "object": "whatsapp_business_account",
+  "entry": [
+    {
+      "id": "WHATSAPP
+_BUSINESS_ACCOUNT_ID",
+      "changes": [
+        {
+          "value": {
+            "messaging_product": "whatsapp",
+            "metadata": {
+              "display_phone_number": "966500000000",
+              "phone_number_id": "PHONE_NUMBER_ID"
+            },
+            "contacts": [
+              {
+                "profile": { "name": "محمد العتيبي" },
+                "wa_id": "966501234567"
+              }
+            ],
+            "messages": [
+              {
+                "from": "966501234567",
+                "id": "wamid.HBgLOTY2NTAxMjM0NTY3FQIAEhggMDA4ODcz",
+                "timestamp": "1716124800",
+                "type": "text",
+                "text": {
+                  "body": "السلام عليكم، أبحث عن شقة يومية في حي الياسمين بالرياض لمدة 3 ليالٍ، الميزانية لا تتجاوز 1500 ريال في الليلة."
+                }
+              }
+            ]
+          },
+          "field": "messages"
+        }
+      ]
+    }
+  ],
+  
+  "_omniflow_internal_normalization": {
+    "schema_version": "2.0",
+    "received_at_utc": "2026-05-19T14:23:45.123Z",
+    "tenant_id_resolution": {
+      "method": "phone_number_id_lookup",
+      "resolved_tenant_id": "8f3d4e9a-2c5b-4a1f-9e8d-7b6c5a4d3e2f"
+    },
+    "customer_resolution": {
+      "method": "deterministic_phone_match",
+      "master_customer_id": "a1b2c3d4-5e6f-7g8h-9i0j-1k2l3m4n5o6p",
+      "is_new_customer": false,
+      "vcard_state": "STATE_CONTACT_SAVED_VERIFIED",
+      "engagement_score": 47
+    },
+    "signature_verification": {
+      "algorithm": "HMAC-SHA256",
+      "header_signature": "sha256=abc123...",
+      "verified": true
+    },
+    "next_action": "publish_to_kafka",
+    "kafka_topic": "messages.incoming.v1",
+    "kafka_partition_key": "tenant_8f3d4e9a-2c5b-4a1f-9e8d-7b6c5a4d3e2f"
+  }
+}</code></pre>
+
+<h3>6.2.2 العقد B: Payload وكيل التوجيه LLM</h3>
+
+<pre><code>{
+  "routing_request": {
+    "request_id": "req_01HXY2K9MQ4N5P6R7S8T9U0V1W",
+    "correlation_id": "conv_8f3d4e9a_a1b2c3d4_msg_72",
+    "timestamp_utc": "2026-05-19T14:23:46.547Z",
+    "tenant_context": {
+      "tenant_id": "8f3d4e9a-2c5b-4a1f-9e8d-7b6c5a4d3e2f",
+      "tenant_tier": "economic",
+      "brand_overlay": {
+        "office_name": "مكتب الإنجاز العقاري",
+        "use_ahmed_persona": true,
+        "persona_lock_level": "full"
+      }
+    },
+    "customer_context": {
+      "master_customer_id": "a1b2c3d4-5e6f-7g8h-9i0j-1k2l3m4n5o6p",
+      "locale": "ar-SA",
+      "behavioral_tags": ["price_sensitive", "short_term_rental_seeker"],
+      "previous_interactions_count": 3,
+      "last_topic": "daily_rentals_riyadh",
+      "vcard_state": "STATE_CONTACT_SAVED_VERIFIED",
+      "vip_subscriptions": ["daily_rentals"],
+      "reports_purchased_count": 2
+    },
+    "message": {
+      "content": "السلام عليكم، أبحث عن شقة يومية في حي الياسمين بالرياض لمدة 3 ليالٍ، الميزانية لا تتجاوز 1500 ريال في الليلة.",
+      "channel": "whatsapp",
+      "language_detected": "ar",
+      "length_chars": 112,
+      "length_tokens_estimated": 38
+    },
+    "preliminary_classification": {
+      "intent": "listing_search",
+      "sub_intent": "daily_rental_inquiry",
+      "entities_extracted": {
+        "property_type": "apartment",
+        "rental_type": "daily",
+        "district": "الياسمين",
+        "city": "الرياض",
+        "duration_nights": 3,
+        "budget_per_night_sar": 1500
+      },
+      "complexity_score": 0.32,
+      "risk_score": 0.05,
+      "escalation_flag": false,
+      "vault_keyword_detected": false
+    },
+    "semantic_cache_probe": {
+      "embedding_model": "text-embedding-3-small",
+      "top_match": {
+        "cached_response_id": "cache_xyz789",
+        "similarity_score": 0.78,
+        "decision": "cache_miss_proceed_to_llm"
+      }
+    },
+    "routing_decision": {
+      "selected_tier": "L2_specialized_rag",
+      "selected_model": "gemini-2.5-flash-lite",
+      "reasoning": "Specific listing search with clear filters requires RAG over listings inventory but doesn't warrant master agent.",
+      "rag_pipeline": {
+        "collection": "listings_active",
+        "filters": {
+          "tenant_id": "any_active",
+          "city": "الرياض",
+          "district": "الياسمين",
+          "listing_type": "daily_rental",
+          "price_max_sar": 1500,
+          "verification_status": "verified_active",
+          "include_vip_exclusive": true
+        },
+        "top_k": 5,
+        "rerank_enabled": true
+      },
+      "context_caching": {
+        "system_prompt_cache_id": "sys_persona_ahmed_v3.2",
+        "estimated_token_savings": 1850
+      }
+    },
+    "expected_cost_usd": 0.00041,
+    "expected_latency_ms": 1200,
+    "fallback_strategy": {
+      "on_timeout_ms": 4000,
+      "on_failure": "queue_for_retry_with_l1_model"
+    }
+  }
+}</code></pre>
+
+<h3>6.2.3 العقد C: طلب التحقق من الهيئة العامة للعقار (REGA)</h3>
+
+<pre><code>{
+  "verification_request": {
+    "request_id": "verify_01HXY3M5N7Q8R9S0T1U2V3W4X",
+    "submitted_at_utc": "2026-05-19T15:04:12.083Z",
+    "tenant_context": {
+      "tenant_id": "8f3d4e9a-2c5b-4a1f-9e8d-7b6c5a4d3e2f",
+      "submitted_by_user_id": "user_internal_456",
+      "office_cr_number": "1010123456"
+    },
+    "listing_reference": {
+      "internal_listing_id": "listing_a1b2c3d4e5f6",
+      "submission_attempt": 1
+    },
+    "credentials_to_verify": {
+      "fal_license_number": "1100123456",
+      "rega_advertisement_number": "7200987654",
+      "advertiser_national_id": "1012345678",
+      "property_type": "residential_apartment",
+      "transaction_type": "daily_rental"
+    },
+    "property_details_declared": {
+      "region_code": "SA-01",
+      "city_code": "RUH",
+      "district_name": "الياسمين",
+      "building_permit_number": "BP-2023-RUH-08-44521",
+      "deed_number": "330107012345"
+    },
+    "outbound_api_call": {
+      "endpoint": "https://api.rega.gov.sa/v2/advertisements/verify",
+      "method": "POST",
+      "headers": {
+        "Authorization": "Bearer &lt;REGA_API_TOKEN&gt;",
+        "X-Client-Id": "OMNIFLOW-AI-PROD",
+        "X-Idempotency-Key": "verify_01HXY3M5N7Q8R9S0T1U2V3W4X",
+        "Accept-Language": "ar"
+      },
+      "timeout_seconds": 8,
+      "retry_policy": {
+        "max_attempts": 3,
+        "backoff_strategy": "exponential",
+        "base_delay_ms": 500
+      }
+    },
+    "expected_response_schema": {
+      "verification_status": "valid | invalid | expired | not_found",
+      "fal_details": {
+        "issue_date": "ISO-8601",
+        "expiry_date": "ISO-8601",
+        "license_status": "active | suspended | revoked",
+        "licensee_full_name": "string",
+        "licensee_cr": "string"
+      },
+      "advertisement_details": {
+        "advertisement_status": "active | expired | withdrawn",
+        "publication_date": "ISO-8601",
+        "valid_until": "ISO-8601",
+        "property_type_confirmed": "string",
+        "discrepancies": ["array of mismatch reasons if any"]
+      }
+    },
+    "post_verification_actions": {
+      "on_valid": [
+        "update_listing.verification_status = 'verified_active'",
+        "cache_verification_result_ttl_days = 7",
+        "publish_event: listings.verified.v1",
+        "index_into_vector_db: listings_active collection",
+        "notify_tenant_dashboard: success"
+      ],
+      "on_invalid": [
+        "update_listing.verification_status = 'failed'",
+        "store_failure_reason in verification_payload",
+        "publish_event: listings.verification_failed.v1",
+        "notify_tenant_dashboard: failure_with_reason",
+        "increment_tenant_fraud_score: +1"
+      ],
+      "on_api_timeout": [
+        "enqueue_for_retry: verification_retry_queue",
+        "update_listing.verification_status = 'pending_retry'",
+        "circuit_breaker_check: rega_api_health"
+      ]
+    },
+    "audit_trail": {
+      "log_destination": "security_audit_log",
+      "retention_years": 7,
+      "compliance_tags": ["SDAIA_PDPL", "REGA_Disclosure_Requirements"]
+    }
+  }
+}</code></pre>
+
+<hr>
+
+<h1 class="section-title">
+  القسم السابع: طبقة المراقبة والملاحظة الإنتاجية
+  <span class="english-tag">PRODUCTION-GRADE OBSERVABILITY STACK</span>
+</h1>
+
+<div class="structural-note">
+  <strong>الموقع الهيكلي:</strong> تم وضع هذا القسم كقسم رئيسي مستقل لأن المراقبة الإنتاجية إطار تشغيلي عابر لكل الطبقات المعمارية. البنية التحتية بدون طبقة ملاحظة شاملة تُشبه قيادة طائرة بدون لوحة قيادة.
+</div>
+
+<h2>7.1 الفلسفة التشغيلية: الأعمدة الثلاثة للملاحظة</h2>
+
+<p>النظام يعتمد على <strong>Three Pillars of Observability</strong> المعيار الصناعي الذي يجمع بين القياس، التسجيل، والتتبع في منظومة واحدة متكاملة، تُمكِّن فريق العمليات من اكتشاف أي خلل، تشخيصه، وحله قبل أن يصل أثره إلى العميل النهائي.</p>
+
+<h2>7.2 العمود الأول: Metrics (Prometheus + Grafana)</h2>
+
+<p>Prometheus يقوم بسحب (Pull) المقاييس من كل خدمة دقيقة عبر <code>/metrics</code> endpoint قياسي كل 15 ثانية، ويُخزِّنها في قاعدة بياناته الزمنية فائقة الكفاءة. Grafana يعرضها في لوحات قيادة تفاعلية مُصمَّمة لكل دور وظيفي (CTO، DevOps، Customer Success، Finance).</p>
+
+<h4>المؤشرات التي يجب مراقبتها على مدار الساعة:</h4>
+
+<table>
+  <thead>
+    <tr>
+      <th>فئة المقاييس</th>
+      <th>المؤشرات الرئيسية</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr><td><strong>Business Metrics</strong></td><td>عدد الرسائل/ساعة، معدل التحويل لتقارير مدفوعة، معدل التصعيد البشري، Cache Hit Rate، نسبة العروض المُتحقَّقة، معدل تأكيد VCard، حجم قوائم VIP النشطة.</td></tr>
+    <tr><td><strong>Application Metrics</strong></td><td>زمن استجابة كل microservice (P50/P95/P99)، معدل الأخطاء، عمق طوابير Kafka.</td></tr>
+    <tr><td><strong>Infrastructure Metrics</strong></td><td>استهلاك CPU/Memory/Disk لكل Pod، حالة Kubernetes nodes، استخدام Connection Pools.</td></tr>
+    <tr><td><strong>LLM Cost Metrics</strong></td><td>التكلفة لكل tenant/ساعة، توزيع الطلبات بين L0/L1/L2/L3، معدل توفير Semantic Cache.</td></tr>
+    <tr><td><strong>Growth Engine Metrics</strong></td><td>معدل تحول جلب VCard للتحقق، معدل الانضمام لـ VIP، معدل Delivery للحملات، معدل Opt-out.</td></tr>
+  </tbody>
+</table>
+
+<div class="callout success">
+  <div class="callout-title">ميزة استراتيجية</div>
+  <p style="margin: 0;">مقاييس LLM Cost على مستوى tenant تسمح بحساب <strong>هامش الربح الحقيقي لكل مكتب مشترك</strong>، مما يفتح إمكانيات تسعير ديناميكي ذكي مستقبلاً.</p>
+</div>
+
+<h2>7.3 العمود الثاني: Logging (Loki + ELK Stack)</h2>
+
+<p>التسجيل لا يكون عشوائياً، بل يتبع منهجاً صارماً يضمن قابلية البحث، الامتثال، وحماية الخصوصية:</p>
+
+<ul>
+  <li><strong>Structured Logging</strong> بصيغة JSON مع حقول إلزامية: <code>tenant_id</code>, <code>customer_id</code>, <code>correlation_id</code>, <code>service_name</code>, <code>severity</code>.</li>
+  <li><strong>PII Redaction Layer</strong>: قبل أي logging، يمر السجل عبر فلتر يُخفي أرقام الجوال، الصكوك، أرقام الهوية. هذا ليس اختياراً، بل التزام صارم بمتطلبات PDPL، ويتم تنفيذه على مستوى Sidecar Container لكل Pod لمنع تسرب أي بيانات شخصية حتى لو حاول مطور كتابتها بالخطأ.</li>
+  <li><strong>Retention Policy</strong>:
+    <ul>
+      <li><strong>30 يوماً hot</strong>: تخزين سريع للوصول الفوري للسجلات الحديثة في Loki.</li>
+      <li><strong>180 يوماً cold</strong>: تخزين في Elasticsearch لتحقيقات أعمق.</li>
+      <li><strong>7 سنوات للسجلات الأمنية والمالية</strong>: أرشيف WORM في Glacier Deep Archive لمتطلبات الامتثال.</li>
+    </ul>
+  </li>
+</ul>
+
+<h2>7.4 العمود الثالث: Distributed Tracing (Jaeger + OpenTelemetry)</h2>
+
+<p>كل طلب يحمل <code>trace_id</code> يتتبع رحلته الكاملة، مما يُحوِّل عملية تشخيص بطء طلب واحد من تخمين عبثي إلى تحقيق علمي دقيق:</p>
+
+<div class="ascii-art">WhatsApp Webhook → Channel Adapter → Kafka → Worker → Semantic Router 
+                  → Cache → LLM → AI Gateway → Outbound Dispatcher</div>
+
+<p>هذا يسمح بتحديد عنق الزجاجة بدقة جراحية عند حدوث أي بطء. مثلاً، إذا كان P95 latency يرتفع من 1.2 ثانية إلى 3.5 ثانية، فإن Jaeger يكشف فوراً إذا كان السبب هو Cache lookup أم استدعاء LLM أم اتصال قاعدة البيانات.</p>
+
+<h2>7.5 نظام التنبيهات (Alerting via PagerDuty)</h2>
+
+<p>تنبيهات متدرجة حسب الخطورة، تضمن أن الإنذارات الصاخبة لا تُغرق فريق العمليات في ضوضاء، بينما الحوادث الحرجة تصل فوراً للمسؤولين الصحيحين:</p>
+
+<table class="metrics-table">
+  <thead>
+    <tr>
+      <th>المستوى</th>
+      <th>الحالات التي تطلقه</th>
+      <th>قناة التنبيه</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr><td><strong>P1 (Critical)</strong></td><td>تعطل خدمة أساسية، تسرب بيانات محتمل، فقدان WAL replication.</td><td>اتصال هاتفي فوري عبر PagerDuty</td></tr>
+    <tr><td><strong>P2 (High)</strong></td><td>ارتفاع زمن الاستجابة فوق SLO، فشل تكرار payments، انخفاض Cache Hit Rate تحت 30%.</td><td>Slack + Email</td></tr>
+    <tr><td><strong>P3 (Medium)</strong></td><td>تنبيهات استباقية (مساحة قرص قاربت 80%، token budget قارب الحد).</td><td>Email فقط</td></tr>
+  </tbody>
+</table>
+
+<hr>
+
+<h1 class="section-title">
+  القسم الثامن: الأمان السيبراني والامتثال التنظيمي
+  <span class="english-tag">CYBERSECURITY &amp; REGULATORY COMPLIANCE FRAMEWORK</span>
+</h1>
+
+<div class="structural-note">
+  <strong>الموقع الهيكلي:</strong> تم وضع هذا القسم كقسم رئيسي مستقل لأن الأمن إطار شامل عابر لكل الطبقات المعمارية، ومتطلبات الامتثال السعودية (PDPL، SAMA، REGA) تستوجب توثيقاً مستقلاً قابلاً للتدقيق من الجهات التنظيمية.
+</div>
+
+<h2>8.1 إطار الأمان متعدد الطبقات (Defense in Depth)</h2>
+
+<p>فلسفة Defense in Depth تعني أن لا توجد طبقة أمنية واحدة يُعتمد عليها كلياً؛ بل كل طبقة تفترض أن الطبقات السابقة لها قد اختُرقت، وتفرض دفاعها الخاص. هذا يضمن أن المهاجم — حتى لو تمكن من اختراق طبقة واحدة — يصطدم بثلاث طبقات أخرى مستقلة.</p>
+
+<div class="diagram-wrapper">
+  <div class="diagram-title">طبقات الدفاع الأربع — Defense in Depth Architecture</div>
+  <div class="mermaid" dir="ltr">
+flowchart TB
+    ATK["⚔️ Potential Attacker"]:::atk
+    ATK --> S1["🛡️ Layer 1: Network Perimeter<br/>WAF (OWASP Top 10) · DDoS Protection · Geo-blocking"]:::s1
+    S1 --> S2["🔑 Layer 2: IAM &amp; Authentication<br/>OAuth 2.0 + OIDC · MFA · Short-lived JWT · RBAC"]:::s2
+    S2 --> S3["🔐 Layer 3: Data Encryption<br/>TLS 1.3 · AES-256 · Field-Level Encryption · KMS Rotation"]:::s3
+    S3 --> S4["👁️ Layer 4: Threat Detection<br/>SIEM · AI Anomaly Detection · Quarterly Pen-testing"]:::s4
+    S4 --> VAULT["💎 Protected Asset<br/>Customer Data + Business Logic"]:::vault
+    classDef atk fill:#7c2d12,stroke:#fca5a5,color:#ffffff,font-weight:bold
+    classDef s1 fill:#0284c7,stroke:#38bdf8,color:#ffffff,font-weight:bold
+    classDef s2 fill:#0369a1,stroke:#38bdf8,color:#ffffff,font-weight:bold
+    classDef s3 fill:#0c4a6e,stroke:#38bdf8,color:#ffffff,font-weight:bold
+    classDef s4 fill:#1e293b,stroke:#38bdf8,color:#ffffff,font-weight:bold
+    classDef vault fill:#16a34a,stroke:#86efac,color:#ffffff,font-weight:bold
+  </div>
+</div>
+
+<h3>8.1.1 الطبقة 1 — حدود الشبكة (Network Perimeter)</h3>
+
+<ul>
+  <li><strong>WAF (AWS WAF أو Cloudflare)</strong> مع قواعد <strong>OWASP Top 10</strong> للحماية من هجمات SQL Injection، XSS، CSRF، وSSRF.</li>
+  <li><strong>DDoS Protection</strong> على مستوى L3/L4 (الحماية من هجمات فيضان الحزم) وL7 (الحماية من هجمات طبقة التطبيق).</li>
+  <li><strong>Geo-blocking</strong> للمناطق غير المُستهدفة تجارياً، مما يُقلِّص سطح الهجوم بشكل دراماتيكي.</li>
+</ul>
+
+<h3>8.1.2 الطبقة 2 — IAM والمصادقة</h3>
+
+<ul>
+  <li><strong>OAuth 2.0 + OIDC</strong> للوصول إلى لوحات التحكم، مع معايير أمنية معاصرة.</li>
+  <li><strong>MFA إلزامي</strong> لجميع موظفي المنصة والمشتركين بصلاحيات إدارية. لا استثناءات.</li>
+  <li><strong>Short-lived JWT (15 دقيقة) + Refresh Tokens آمنة</strong>: تقليل نافذة الاستغلال إذا تم تسريب رمز ما.</li>
+  <li><strong>Role-Based Access Control (RBAC) دقيق</strong> على كل API endpoint، مع مبدأ الصلاحية الأدنى (Principle of Least Privilege).</li>
+</ul>
+
+<h3>8.1.3 الطبقة 3 — تشفير البيانات</h3>
+
+<table>
+  <thead>
+    <tr>
+      <th>نوع التشفير</th>
+      <th>المعيار</th>
+      <th>التطبيق</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr><td><strong>In-Transit</strong></td><td>TLS 1.3 إلزامي، Perfect Forward Secrecy، HSTS preload.</td><td>كل اتصال داخل وخارج النظام.</td></tr>
+    <tr><td><strong>At-Rest</strong></td><td>AES-256 لجميع قواعد البيانات، KMS-managed keys.</td><td>PostgreSQL, Qdrant, Redis, S3.</td></tr>
+    <tr><td><strong>Field-Level Encryption</strong></td><td>للحقول فائقة الحساسية (أرقام الصكوك، الهويات) — مفتاح تشفير مستقل لكل tenant.</td><td>deed_number, national_id, financial PII.</td></tr>
+    <tr><td><strong>Key Rotation</strong></td><td>كل 90 يوماً تلقائياً عبر AWS KMS / HashiCorp Vault.</td><td>جميع المفاتيح بدون استثناء.</td></tr>
+  </tbody>
+</table>
+
+<div class="callout">
+  <div class="callout-title">الأهمية الاستراتيجية لـ Field-Level Encryption</div>
+  <p style="margin: 0;">حتى لو حصل مهاجم على نسخة كاملة من قاعدة البيانات، الحقول الحساسة تبقى مشفرة، ولا يمكن فك تشفيرها إلا بمفتاح المستأجر المعني المُخزَّن في KMS منفصلاً تماماً.</p>
+</div>
+
+<h3>8.1.4 الطبقة 4 — مراقبة التهديدات (Threat Detection)</h3>
+
+<ul>
+  <li><strong>SIEM مركزي</strong> يجمع سجلات الأمن من كل الطبقات في منصة واحدة لربط الأحداث (Event Correlation) وكشف الأنماط المعقدة.</li>
+  <li><strong>AI-based anomaly detection</strong> للسلوكيات الشاذة: محاولة دخول من جغرافيا غير معتادة، استعلامات غير منطقية، أنماط زمنية شاذة، تسرب بيانات محتمل.</li>
+  <li><strong>Pen-testing ربع سنوي</strong> بواسطة طرف ثالث معتمد، مع إصلاح كل الثغرات المُكتشَفة قبل الإصدار التالي.</li>
+</ul>
+
+<h2>8.2 الامتثال التنظيمي السعودي</h2>
+
+<p>النظام مُصمَّم للامتثال الكامل مع المنظومة التنظيمية للمملكة العربية السعودية، وهذا الامتثال ليس وعداً تسويقياً، بل <strong>التزام قانوني موثَّق ومُدقَّق</strong>:</p>
+
+<ul>
+  <li><strong>نظام حماية البيانات الشخصية (PDPL)</strong> الصادر عن <strong>SDAIA</strong>: حقوق الموضوع، التعديل، المسح، النقل، مع آليات تنفيذ تقني واضحة لكل حق.</li>
+  <li><strong>اشتراطات الهيئة العامة للعقار</strong> بخصوص الإعلانات الإلكترونية ورخص فال: تكامل API مباشر وتحقق آلي إلزامي.</li>
+  <li><strong>متطلبات البنك المركزي السعودي (SAMA)</strong> للمعاملات المالية الإلكترونية: تشفير، إبلاغ عن الحوادث، احتفاظ بالسجلات.</li>
+  <li><strong>نظام مكافحة غسل الأموال</strong> عبر <strong>KYC</strong> للمعاملات التي تتجاوز عتبات معينة، مع تكامل آلي مع أنظمة الفحص.</li>
+  <li><strong>توطين البيانات (Data Localization)</strong>: جميع بيانات المواطنين السعوديين مُخزَّنة فيزيائياً داخل المملكة، مع توثيق محل التخزين لكل جدول.</li>
+</ul>
+
+<div class="callout critical">
+  <div class="callout-title">سجل التدقيق غير القابل للتعديل</div>
+  <p style="margin: 0;">سجل تدقيق غير قابل للتعديل (<strong>Immutable Audit Log</strong>) يُحفظ في تخزين <strong>WORM (Write-Once-Read-Many)</strong> لمدة <strong>7 سنوات</strong> لكل عملية حساسة. هذا السجل لا يمكن تعديله ولا حذفه، حتى من قِبَل أعلى صلاحية في النظام، ويُعد دليلاً قانونياً مقبولاً في المحاكم.</p>
+</div>
+
+<h2>8.3 الآلية التشغيلية لامتثال البيانات وحقوق المستخدمين <span class="new-layer-marker">طبقة جديدة</span></h2>
+<h3 style="margin-top: -8px; color: var(--accent-purple); font-size: 13pt;">SDAIA PDPL Operational Compliance &amp; Data Subject Rights Engine</h3>
+
+<div class="structural-note">
+  <strong>الموقع الهيكلي:</strong> هذا القسم الفرعي مُدمَج في القسم الثامن لأن الامتثال لـ PDPL ليس وثيقة سياسة جامدة، بل <em>سلسلة من العمليات التقنية القابلة للتنفيذ والإثبات</em>. ادعاء الامتثال بدون آلية تشغيلية موثقة هو ادعاء قابل للسقوط أمام أي تدقيق من SDAIA.
+</div>
+
+<h3>8.3.1 حقوق صاحب البيانات (Data Subject Rights) المنصوص عليها في PDPL</h3>
+
+<p>نظام حماية البيانات الشخصية السعودي (PDPL) يكفل لصاحب البيانات (Data Subject — أي شخص طبيعي تعالج بياناته) مجموعة حقوق إلزامية، وكل منها يجب أن يُترجم إلى مسار تقني تنفيذي في OmniFlow AI:</p>
+
+<table>
+  <thead>
+    <tr>
+      <th>الحق</th>
+      <th>الوصف القانوني</th>
+      <th>التنفيذ التقني</th>
+      <th>زمن الاستجابة</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td><strong>الحق في الإفصاح</strong></td>
+      <td>معرفة ما تُجمع من بيانات وكيف تُستخدم.</td>
+      <td>صفحة "بياناتي" في الـ Dashboard + سياسة خصوصية شفافة.</td>
+      <td>فوري</td>
+    </tr>
+    <tr>
+      <td><strong>الحق في الوصول</strong></td>
+      <td>طلب نسخة من البيانات الشخصية المُخزَّنة.</td>
+      <td>زر "تنزيل بياناتي" يولِّد ملف JSON/CSV عبر مهمة async.</td>
+      <td>خلال 30 يوماً</td>
+    </tr>
+    <tr>
+      <td><strong>الحق في التصحيح</strong></td>
+      <td>تعديل البيانات غير الدقيقة.</td>
+      <td>API endpoints للتحديث مع تسجيل التغييرات في audit log.</td>
+      <td>فوري</td>
+    </tr>
+    <tr>
+      <td><strong>الحق في النسيان</strong></td>
+      <td>طلب الحذف الكامل من السجلات.</td>
+      <td><strong>محرك Cascade Delete</strong> (راجع 8.3.2)</td>
+      <td>خلال 30 يوماً</td>
+    </tr>
+    <tr>
+      <td><strong>الحق في تقييد المعالجة</strong></td>
+      <td>إيقاف مؤقت لاستخدام البيانات.</td>
+      <td>Flag في جدول customers يُوقف معالجة الـ AI لرسائله.</td>
+      <td>فوري</td>
+    </tr>
+    <tr>
+      <td><strong>الحق في النقل</strong></td>
+      <td>نقل بياناته لمزود خدمة آخر.</td>
+      <td>تصدير منظم بصيغة قياسية (JSON Schema موثَّق).</td>
+      <td>خلال 30 يوماً</td>
+    </tr>
+    <tr>
+      <td><strong>الحق في الاعتراض</strong></td>
+      <td>رفض الاستخدام لأغراض تسويقية.</td>
+      <td>Marketing opt-out flag + إيقاف push notifications.</td>
+      <td>فوري</td>
+    </tr>
+  </tbody>
+</table>
+
+<h3>8.3.2 محرك "الحق في النسيان" — بروتوكول الحذف التتالي</h3>
+
+<p>الحق في النسيان هو الأكثر تعقيداً تقنياً، لأن بيانات العميل الواحد متناثرة في عدة أنظمة. OmniFlow AI يُنفِّذ <strong>Cascade Delete Worker</strong> غير متزامن يضمن الحذف الكامل دون كسر النظام:</p>
+
+<div class="diagram-wrapper">
+  <div class="diagram-title">بروتوكول الحذف التتالي الكامل عند طلب النسيان</div>
+  <div class="mermaid" dir="ltr">
+flowchart TB
+    REQ["📨 Customer Erasure Request<br/>(Dashboard / Email / API)"]:::req
+    VAL["🔐 Identity Verification<br/>OTP + ID Match"]:::val
+    APPR["⚖️ Compliance Officer Approval<br/>Legal Holds Check"]:::appr
+    QUEUE["📨 Kafka Topic<br/>compliance.erasure.requests.v1"]:::queue
+    WORK["⚙️ Erasure Worker<br/>Async Cascade Executor"]:::work
+    REQ --> VAL
+    VAL --> APPR
+    APPR --> QUEUE
+    QUEUE --> WORK
+    WORK --> STEP1["📍 Step 1: PostgreSQL<br/>Hard delete PII<br/>Anonymize references"]:::step
+    WORK --> STEP2["📍 Step 2: Qdrant<br/>Delete vector points<br/>by Master_Customer_ID"]:::step
+    WORK --> STEP3["📍 Step 3: Redis<br/>FLUSH all session keys<br/>conversation contexts"]:::step
+    WORK --> STEP4["📍 Step 4: S3<br/>Delete media files<br/>voice notes + images"]:::step
+    WORK --> STEP5["📍 Step 5: ClickHouse<br/>Anonymize analytics<br/>preserve aggregates"]:::step
+    WORK --> RETAIN["⚠️ EXCEPTION:<br/>Financial Ledgers<br/>SAMA-required retention"]:::retain
+    STEP1 & STEP2 & STEP3 & STEP4 & STEP5 --> VERIFY["✅ Verification Audit<br/>Confirm zero PII traces"]:::verify
+    VERIFY --> CERT["📜 Issue Erasure Certificate<br/>Email Customer + Audit Log"]:::cert
+    classDef req fill:#0284c7,stroke:#38bdf8,color:#ffffff,font-weight:bold
+    classDef val fill:#d97706,stroke:#fcd34d,color:#ffffff,font-weight:bold
+    classDef appr fill:#7c3aed,stroke:#c4b5fd,color:#ffffff,font-weight:bold
+    classDef queue fill:#1e293b,stroke:#38bdf8,color:#ffffff,font-weight:bold
+    classDef work fill:#0369a1,stroke:#38bdf8,color:#ffffff,font-weight:bold
+    classDef step fill:#0c4a6e,stroke:#38bdf8,color:#ffffff,font-weight:bold
+    classDef retain fill:#c53030,stroke:#fca5a5,color:#ffffff,font-weight:bold
+    classDef verify fill:#16a34a,stroke:#86efac,color:#ffffff,font-weight:bold
+    classDef cert fill:#7c3aed,stroke:#c4b5fd,color:#ffffff,font-weight:bold
+  </div>
+</div>
+
+<h4>التفاصيل التشغيلية لكل خطوة:</h4>
+
+<p><strong>الخطوة 0 — التحقق من الهوية (Identity Verification)</strong>: قبل أي حذف، يجب التحقق أن مُقدِّم الطلب هو فعلاً صاحب البيانات. هذا يتم عبر OTP إلى الهاتف المُسجَّل، أو تحدي معرفي (مثل تأكيد آخر عملية، بريد إلكتروني، إلخ). أي طلب حذف بدون تحقق صارم يُرفض.</p>
+
+<p><strong>الخطوة 1 — حذف PII في PostgreSQL</strong>:</p>
+
+<pre><code>-- Cascade erasure procedure with anonymization strategy
+BEGIN;
+
+-- Set tenant context for RLS
+SET LOCAL app.current_tenant_id = '8f3d4e9a-2c5b-4a1f-9e8d-7b6c5a4d3e2f';
+
+-- 1. Hard delete identity links (no analytical value)
+DELETE FROM identity_links
+WHERE customer_id = 'a1b2c3d4-5e6f-7g8h-9i0j-1k2l3m4n5o6p';
+
+-- 2. Anonymize customer record (preserve referential integrity)
+UPDATE customers
+SET 
+    primary_phone = NULL,
+    primary_email = NULL,
+    display_name = 'ERASED_USER_' || customer_id::text,
+    risk_profile = '{}'::jsonb,
+    behavioral_tags = ARRAY[]::TEXT[],
+    erased_at = NOW(),
+    erasure_reason = 'pdpl_right_to_be_forgotten'
+WHERE customer_id = 'a1b2c3d4-5e6f-7g8h-9i0j-1k2l3m4n5o6p';
+
+-- 3. Anonymize message content (preserve conversation structure for audit)
+UPDATE messages
+SET 
+    content = '[ERASED_PDPL]',
+    media_url = NULL,
+    llm_metadata = jsonb_strip_nulls(
+        llm_metadata - 'user_input' - 'response_text'
+    )
+WHERE conversation_id IN (
+    SELECT conversation_id FROM conversations
+    WHERE customer_id = 'a1b2c3d4-5e6f-7g8h-9i0j-1k2l3m4n5o6p'
+);
+
+-- 4. Remove from VIP subscribers
+DELETE FROM vip_subscribers
+WHERE customer_id = 'a1b2c3d4-5e6f-7g8h-9i0j-1k2l3m4n5o6p';
+
+-- 5. Anonymize broadcast deliveries (keep stats anonymous)
+UPDATE broadcast_deliveries
+SET customer_id = NULL
+WHERE customer_id = 'a1b2c3d4-5e6f-7g8h-9i0j-1k2l3m4n5o6p';
+
+-- 6. Erasure audit record (preserved for compliance proof)
+INSERT INTO erasure_audit_log (
+    customer_id, tenant_id, erased_at, 
+    requestor_ip, verification_method, scope
+) VALUES (
+    'a1b2c3d4-5e6f-7g8h-9i0j-1k2l3m4n5o6p',
+    '8f3d4e9a-2c5b-4a1f-9e8d-7b6c5a4d3e2f',
+    NOW(),
+    '203.0.113.45',
+    'otp_verified',
+    'full_pdpl_erasure'
+);
+
+COMMIT;</code></pre>
+
+<p><strong>الخطوة 2 — حذف المتجهات في Qdrant</strong>:</p>
+
+<pre><code># Python Worker — Qdrant cascade deletion
+from qdrant_client import QdrantClient
+from qdrant_client.http import models
+
+client = QdrantClient(url=QDRANT_URL, api_key=QDRANT_API_KEY)
+
+# Find tenant-specific collection
+collection_name = f"tenant_{tenant_id}_documents"
+
+# Delete all vector points belonging to this customer
+client.delete(
+    collection_name=collection_name,
+    points_selector=models.FilterSelector(
+        filter=models.Filter(
+            must=[
+                models.FieldCondition(
+                    key="master_customer_id",
+                    match=models.MatchValue(value=str(master_customer_id))
+                )
+            ]
+        )
+    )
+)
+
+# Verify deletion (count must return 0)
+remaining = client.count(
+    collection_name=collection_name,
+    count_filter=models.Filter(
+        must=[
+            models.FieldCondition(
+                key="master_customer_id",
+                match=models.MatchValue(value=str(master_customer_id))
+            )
+        ]
+    )
+)
+assert remaining.count == 0, f"Erasure incomplete: {remaining.count} vectors remain"</code></pre>
+
+<p><strong>الخطوة 3 — مسح Redis كاملاً</strong>:</p>
+
+<pre><code># Python Worker — Redis full cache purge for customer
+import redis
+
+r = redis.Redis(cluster_mode=True)
+
+# Pattern-based deletion for all customer-related keys
+patterns = [
+    f"tenant:{tenant_id}:session:{master_customer_id}:*",
+    f"tenant:{tenant_id}:conversation:{master_customer_id}:*",
+    f"tenant:{tenant_id}:context:{master_customer_id}:*",
+    f"tenant:{tenant_id}:ratelimit:{master_customer_id}:*",
+    f"tenant:{tenant_id}:semcache:user:{master_customer_id}:*",
+    f"tenant:{tenant_id}:vcard_state:{master_customer_id}",
+    f"tenant:{tenant_id}:vip_engagement:{master_customer_id}"
+]
+
+for pattern in patterns:
+    # SCAN + DELETE in batches (avoid blocking Redis)
+    for key in r.scan_iter(match=pattern, count=100):
+        r.delete(key)
+
+# Verify cleanup
+for pattern in patterns:
+    remaining = list(r.scan_iter(match=pattern, count=1))
+    assert len(remaining) == 0, f"Redis erasure incomplete: {pattern}"</code></pre>
+
+<p><strong>الخطوة 4 — حذف الوسائط في S3</strong>: جميع الملفات الصوتية، الصور، التقارير المُولَّدة المرتبطة بالعميل تُحذف نهائياً من S3 مع تفعيل خاصية <code>Object Lock</code> Bypass للحذف القاطع.</p>
+
+<p><strong>الخطوة 5 — تجريد البيانات التحليلية في ClickHouse</strong>: في ClickHouse، الصفوف لا تُحذف فردياً (لأسباب أداء)، لكن يتم تنفيذ <code>ALTER TABLE ... UPDATE</code> لإزالة المعرفات الشخصية:</p>
+
+<pre><code>-- ClickHouse: Anonymize while preserving aggregate analytical value
+ALTER TABLE events_raw
+UPDATE 
+    customer_id = NULL,
+    conversation_id = NULL
+WHERE customer_id = 'a1b2c3d4-5e6f-7g8h-9i0j-1k2l3m4n5o6p';
+
+-- Aggregated MVs are not affected since they don't store PII
+-- Only district/city/intent level metrics are preserved</code></pre>
+
+<h3>8.3.3 استثناء الامتثال الحرج: السجلات المالية محفوظة</h3>
+
+<div class="callout critical">
+  <div class="callout-title">⚠️ استثناء قانوني إلزامي</div>
+  <p style="margin: 0;">سجلات المعاملات المالية (<strong>Settlement Ledgers</strong>) في جدول <code>transactions</code> و<code>journal_entries</code> <strong>لا تُحذف ولا تُجرَّد من المعرفات</strong>. هذا ليس انتهاكاً للـ PDPL، بل <strong>التزام بنظام البنك المركزي السعودي (SAMA)</strong> الذي يفرض الاحتفاظ بسجلات المعاملات المالية لمدة <strong>10 سنوات</strong> لأغراض مكافحة غسل الأموال والتدقيق المالي.</p>
+</div>
+
+<p>المعمارية تفصل بين نوعين من البيانات بشكل صارم:</p>
+
+<table>
+  <thead>
+    <tr>
+      <th>نوع البيانات</th>
+      <th>التطبيق على طلب النسيان</th>
+      <th>السند القانوني</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td><strong>بيانات شخصية تشغيلية</strong> (محادثات، تفضيلات، استفسارات)</td>
+      <td>تُحذف/تُجرَّد بالكامل</td>
+      <td>PDPL — حق النسيان</td>
+    </tr>
+    <tr>
+      <td><strong>سجلات مالية</strong> (مدفوعات، تقارير مدفوعة، عمولات)</td>
+      <td>تبقى مع تفاصيلها</td>
+      <td>SAMA + نظام مكافحة غسل الأموال — احتفاظ 10 سنوات</td>
+    </tr>
+    <tr>
+      <td><strong>سجلات التحقق الحكومي</strong> (REGA verifications)</td>
+      <td>تبقى لمدة التزام REGA</td>
+      <td>الهيئة العامة للعقار — متطلبات الإفصاح</td>
+    </tr>
+    <tr>
+      <td><strong>سجلات تدقيق أمنية</strong></td>
+      <td>تبقى مع إشارة للحذف</td>
+      <td>SDAIA — حق التدقيق التنظيمي</td>
+    </tr>
+  </tbody>
+</table>
+
+<h3>8.3.4 شهادة الحذف وتأكيد الامتثال</h3>
+
+<p>عند اكتمال الحذف، يصدر النظام تلقائياً <strong>Erasure Certificate</strong> رسمي يحتوي على:</p>
+
+<ul>
+  <li>معرف فريد للعملية (UUID).</li>
+  <li>الزمن الدقيق لبدء وانتهاء الحذف.</li>
+  <li>قائمة بكل الأنظمة التي تم الحذف منها (مع timestamps).</li>
+  <li>قائمة بالبيانات المُستثناة قانونياً (مع السند القانوني لكل بند).</li>
+  <li>توقيع رقمي للنظام (لمنع التزوير).</li>
+</ul>
+
+<p>الشهادة تُرسَل للعميل عبر بريده الإلكتروني، وتُحفظ في <code>erasure_audit_log</code> كدليل قانوني قابل للتقديم لـ SDAIA عند الطلب.</p>
+
+<h3>8.3.5 SLAs قانونية ملزمة</h3>
+
+<table class="metrics-table">
+  <thead>
+    <tr>
+      <th>المؤشر</th>
+      <th>الهدف القانوني (PDPL)</th>
+      <th>هدف OmniFlow AI</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr><td>زمن الاستجابة لطلب وصول</td><td>30 يوماً</td><td>&lt; 48 ساعة</td></tr>
+    <tr><td>زمن إكمال طلب النسيان</td><td>30 يوماً</td><td>&lt; 72 ساعة</td></tr>
+    <tr><td>زمن إصدار شهادة الحذف</td><td>30 يوماً</td><td>فوري بعد إكمال الحذف</td></tr>
+    <tr><td>نسبة الطلبات المُكتمَلة دون نزاع</td><td>—</td><td>≥ 99%</td></tr>
+    <tr><td>زمن الإبلاغ عن خرق بيانات</td><td>72 ساعة</td><td>&lt; 24 ساعة</td></tr>
+  </tbody>
+</table>
+
+<hr>
+
+<h1 class="section-title">خاتمة الوثيقة: المنطق النهائي للجاهزية الإنتاجية</h1>
+
+<p>هذه الوثيقة لا تمثل تصميماً نظرياً، بل <strong>خارطة هندسية تنفيذية قابلة للترميز المباشر</strong>. كل قسم من أقسامها يُترجم إلى Sprint محدد، وكل مكون يُلتقط في Backlog item قابل للقياس. النظام كما هو موصوف بالنسخة V2.0 الموحدة النهائية:</p>
+
+<ul class="checklist">
+  <li><strong>يُحقق العزل الكامل</strong> عبر ست طبقات متراصة لا يمكن لأي تسرب أن يخترقها.</li>
+  <li><strong>يصمد أمام 500K مستخدم متزامن</strong> عبر بنية EDMA المُقسَّمة أفقياً مع Kafka كعمود فقري، ومُثبَت بـ Load Testing صارم قبل الإطلاق.</li>
+  <li><strong>يُحقق كفاءة اقتصادية مذهلة</strong> عبر الهرم الرباعي للنماذج، مع توفير يتجاوز 80% مقارنة بالنماذج التقليدية.</li>
+  <li><strong>يحمي المنصة قانونياً وأخلاقياً</strong> عبر AI Gateway متعدد الطبقات يكشف الحقن، الهلوسات، والمحتوى الضار.</li>
+  <li><strong>يدمج لوجستياً مع المنظومة الحكومية السعودية</strong> عبر تكامل مباشر مع REGA APIs والبنوك السعودية ومُسجِّلي الأراضي.</li>
+  <li><strong>يضمن استمرارية الأعمال</strong> عبر بنية Multi-Region Active-Passive مع RPO ≤ 60s وRTO ≤ 15min، ونسخ احتياطية متعددة المستويات تمتد لـ 7 سنوات.</li>
+  <li><strong>يوفر شفافية تشغيلية كاملة</strong> عبر طبقة مراقبة ثلاثية الأعمدة (Metrics + Logs + Tracing) مع تنبيهات متدرجة عبر PagerDuty.</li>
+  <li><strong>يحقق امتثالاً تنظيمياً صارماً</strong> مع PDPL، SAMA، REGA، ومكافحة غسل الأموال، مع سجل تدقيق غير قابل للتعديل في تخزين WORM لـ 7 سنوات.</li>
+  <li><strong>🆕 يُقدم تجربة مستأجر حية فورية</strong> عبر Next.js 14 + SSE/WebSocket مع قدرة Human Takeover سلس بلا انقطاع.</li>
+  <li><strong>🆕 يستوعب الوسائط المتعددة</strong> (صوت + صورة) عبر Whisper وVision LLMs لخدمة الواقع الميداني للسوق السعودي/الخليجي.</li>
+  <li><strong>🆕 يُنفَّذ عبر CI/CD محكوم بـ GitOps</strong> مع IaC كامل عبر Terraform، ونشر Canary آمن مع Auto-Rollback.</li>
+  <li><strong>🆕 يُنفِّذ حقوق صاحب البيانات الكاملة</strong> عبر محرك Cascade Delete موثَّق مع استثناءات SAMA الحرجة.</li>
+  <li><strong>🆕 يُمكِّن البصيرة التجارية الحية</strong> عبر ClickHouse OLAP لتحويل البيانات إلى قرارات سوقية استباقية.</li>
+  <li><strong>🆕 يبني خزانة تقارير دائمة</strong> ترفع معدل عودة العميل من 12% إلى 58%، ويحوّل كل عملية شراء إلى أصل دائم.</li>
+  <li><strong>🆕 يضمن تثبيت العلامة التجارية</strong> عبر محرك VCard Gatekeeper الذي يحوّل العملاء العابرين إلى جهات اتصال دائمة في هواتفهم.</li>
+  <li><strong>🆕 يُدير حملات تسويق VIP احترافية</strong> ضمن قيود Meta الصارمة، مع تتبع كامل ومعدلات opt-out محمية.</li>
+</ul>
+
+<p>البناء على هذا التصميم يُنتج لا مجرد منتج SaaS، بل <strong>بنية تحتية رقمية للقطاع العقاري السعودي</strong>، تُعيد تعريف معنى "المستشار العقاري" في عصر الذكاء الاصطناعي التطبيقي.</p>
+
+<div class="signature-table">
+  <h3>التوقيع المعماري النهائي</h3>
+  <table>
+    <tbody>
+      <tr><td><strong>رقم الإصدار</strong></td><td>SRS-OMNI-2026-V2.0 FINAL (Unified Enterprise Edition)</td></tr>
+      <tr><td><strong>عدد الأقسام الرئيسية</strong></td><td>8 أقسام</td></tr>
+      <tr><td><strong>الطبقات الإنتاجية الجديدة</strong></td><td>5 طبقات (Frontend · Multimodal · CI/CD · PDPL · ClickHouse)</td></tr>
+      <tr><td><strong>محركات النمو الجديدة</strong></td><td>3 محركات (Reports Vault · VCard Gatekeeper · VIP Broadcast)</td></tr>
+      <tr><td><strong>الحالة</strong></td><td>✅ ELITE / GLOBAL STANDARD / READY FOR ENGINEERING SPRINT 0</td></tr>
+      <tr><td><strong>التصنيف الأمني</strong></td><td>Production-Grade | Confidential | Compliance-Verified</td></tr>
+      <tr><td><strong>الجاهزية للتنفيذ</strong></td><td>100% — كل بند موثَّق وقابل للتنفيذ المباشر</td></tr>
+    </tbody>
+  </table>
+</div>
+
+<p style="text-align: center; margin-top: 40px; padding: 20px; color: var(--gray-500); font-style: italic; border-top: 1px solid var(--gray-200);">
+  <strong style="color: var(--cyan-dark);">نهاية الوثيقة الموحدة الرسمية النهائية — الإصدار V2.0 FINAL</strong><br>
+  © OmniFlow AI 2026 — التوأم الرقمي للمستشار أحمد الصائغ<br>
+  جميع الحقوق محفوظة | إعداد فريق القيادة التقنية والمنتج
+</p>
+
+</div>
+</div>
+
+<script>
+  window.addEventListener('load', function() {
+    if (typeof mermaid !== 'undefined') {
+      mermaid.contentLoaded();
+    }
+  });
+</script>
+
+</body>
+</html>

@@ -62,8 +62,7 @@ dependencies = [
   "langchain-community>=0.3.0",
   "unstructured[all-docs]>=0.15.0", # Document parsing (PDF, DOCX, etc.)
   "pypdf2>=3.0.0",
-  "fpdf2>=2.8.0",                   # PDF authoring for customer report generation
-  "uharfbuzz>=0.39.0",              # Real glyph shaping for Arabic PDF text (fpdf2 text_shaping)
+  "weasyprint>=62.0",               # HTML/CSS -> PDF authoring for customer report generation; verified against 70.0
   "python-docx>=1.1.0",
   "pillow>=10.4.0",                 # Image processing
   "pytesseract>=0.3.13",            # OCR for Arabic documents
@@ -157,7 +156,8 @@ dev = [
   "ipython>=8.28.0",
   "pre-commit>=4.0.0",
   "watchfiles>=0.24.0",
-  "pymupdf>=1.24.0",                # PDF rasterization for the pdf_builder self-check only
+  "pymupdf>=1.24.0",                # PDF rasterization/extraction for the pdf_builder self-check
+  "pdfminer.six>=20231228",         # ToUnicode-CMap-accurate extraction for the pdf_builder self-check
 ]
 
 gpu = [

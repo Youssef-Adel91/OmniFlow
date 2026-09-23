@@ -9,23 +9,35 @@ text) depends on integrations that are not implemented yet — see
 IMPLEMENTATION_STATUS.md. `extra_fields` is where that content will land once
 those integrations exist, without changing this module.
 
-Arabic shaping uses fpdf2's HarfBuzz text-shaping engine (`uharfbuzz`) with
-`direction="rtl"`/`script="arab"`, so joining and bidi reordering happen at the
-glyph level inside the PDF content stream itself — the output looks correct in
-any compliant PDF viewer, unlike pre-joining text with `arabic_reshaper` and
-handing a viewer already-shaped presentation-form characters, which some
-viewers re-shape a second time and render as disconnected letters. The
-embedded Noto Naskh Arabic font (SIL OFL, bundled in ./assets) supplies the
-actual glyphs, since PDF viewers cannot be relied on to have an Arabic-capable
-font installed.
+Rendered via WeasyPrint (HTML/CSS -> PDF, using Pango/HarfBuzz under the hood)
+rather than fpdf2. fpdf2's HarfBuzz text-shaping integration was tried first
+and produces correct-looking pages, but has real, confirmed bugs in how it
+builds the PDF's /ToUnicode CMap for shaped Arabic text: `TTFFont.shape_text`
+drops the source-character mapping for any glyph that shares a HarfBuzz
+cluster with another glyph (routine for Arabic — e.g. a base+mark pair), so
+roughly 15-20% of glyphs in a page like this one render correctly on screen
+but are unextractable — garbled or missing on copy/paste, search, or a
+screen reader. This was confirmed against fpdf2 2.8.8, an unreleased
+git-master build (commit 4287c924), and independently verified with real
+`pdftotext` (poppler) and `pdfminer.six`, not just one Python library's own
+`get_text()`. WeasyPrint's Pango-based text layer does not have this defect:
+the same content round-trips through `pdftotext` and `pdfminer.six` with
+zero incorrect or missing characters. See IMPLEMENTATION_STATUS.md for the
+full investigation.
+
+Arabic reshaping/bidi is handled by Pango itself from plain logical-order
+Unicode text — no manual `arabic_reshaper`/`python-bidi` step is needed or
+wanted here. The embedded Noto Naskh Arabic font (SIL OFL, bundled in
+./assets) supplies the actual glyphs, since PDF viewers cannot be relied on
+to have an Arabic-capable font installed.
 """
 from __future__ import annotations
 
 from datetime import datetime
+from html import escape
 from pathlib import Path
 
-from fpdf import FPDF
-from fpdf.enums import XPos, YPos
+from weasyprint import CSS, HTML
 
 _FONT_PATH = Path(__file__).parent / "assets" / "NotoNaskhArabic-Regular.ttf"
 
@@ -34,6 +46,35 @@ REPORT_TITLES = {
     "municipal_consulting_15": "تقرير الاستشارة البلدية",
     "premium_consultation": "الاستشارة المتميزة",
 }
+
+_STYLESHEET = CSS(
+    string=f"""
+    @font-face {{
+        font-family: "NotoNaskh";
+        src: url("{_FONT_PATH.as_posix()}");
+    }}
+    @page {{ size: A4; margin: 2cm; }}
+    body {{
+        direction: rtl;
+        text-align: right;
+        font-family: "NotoNaskh";
+        font-size: 12pt;
+        color: #111;
+        /* The mandatory lam-alef ligature ("لا") triggers a glyph-ordering
+           bug in WeasyPrint/Pango's PDF text layer: the ligature's two
+           source characters come out swapped on extraction (confirmed with
+           both real `pdftotext` and pdfminer.six — "الاختبار" round-trips as
+           "االختبار"). Disabling ligature substitution renders lam and alef
+           as two separate glyphs instead of the fused ligature — still
+           correctly joined Arabic, just without that specific typographic
+           flourish — and the extraction bug disappears entirely. */
+        font-feature-settings: "liga" 0, "rlig" 0, "calt" 0, "clig" 0;
+    }}
+    h1 {{ text-align: center; font-size: 20pt; margin-bottom: 1.2em; }}
+    p {{ margin: 0.5em 0; }}
+    .disclaimer {{ margin-top: 1.5em; font-size: 9pt; color: #444; }}
+    """
+)
 
 
 def build_report_pdf(
@@ -48,36 +89,7 @@ def build_report_pdf(
     extra_fields: dict[str, str] | None = None,
 ) -> bytes:
     """Render a real, well-formed PDF for a paid customer report. Returns raw PDF bytes."""
-    pdf = FPDF(format="A4")
-    pdf.add_page()
-    pdf.add_font("NotoNaskh", "", str(_FONT_PATH))
-    pdf.set_text_shaping(use_shaping_engine=True, direction="rtl", script="arab")
-
-    # fpdf2 mis-measures w=0 (auto-width) combined with align="C"/"R", raising
-    # "Not enough horizontal space" even on a blank page — pass the usable
-    # width explicitly instead of relying on the w=0 shorthand.
-    content_width = pdf.w - pdf.l_margin - pdf.r_margin
-
-    def line(text: str, size: int, align: str = "R", extra_gap: float = 0.0) -> None:
-        # multi_cell defaults to new_x=XPos.RIGHT, which leaves the cursor at
-        # the right edge of whatever was just drawn instead of resetting to
-        # the left margin. Every subsequent call then starts further right
-        # than the page itself, rendering off-canvas (present in the PDF's
-        # text stream, extractable, but invisible) — hence explicit LMARGIN.
-        pdf.set_font("NotoNaskh", size=size)
-        pdf.multi_cell(
-            content_width,
-            size * 0.8,
-            text,
-            align=align,
-            new_x=XPos.LMARGIN,
-            new_y=YPos.NEXT,
-        )
-        if extra_gap:
-            pdf.ln(extra_gap)
-
     title = REPORT_TITLES.get(report_type, report_type)
-    line(title, size=18, align="C", extra_gap=4)
 
     rows = [
         ("الجهة", tenant_business_name),
@@ -91,21 +103,28 @@ def build_report_pdf(
     if extra_fields:
         rows.extend(extra_fields.items())
 
-    for label, value in rows:
-        line(f"{label}: {value}", size=11)
-
-    pdf.ln(6)
-    line(
-        "هذا التقرير آلي وتم إصداره بناءً على البيانات المتاحة وقت الدفع. "
-        "لا يغني عن التحقق الرسمي من الجهات المختصة.",
-        size=9,
+    rows_html = "\n".join(
+        f"<p>{escape(str(label))}: {escape(str(value))}</p>" for label, value in rows
     )
 
-    return bytes(pdf.output())
+    html = f"""<!DOCTYPE html>
+    <html>
+    <head><meta charset="utf-8"></head>
+    <body>
+        <h1>{escape(title)}</h1>
+        {rows_html}
+        <p class="disclaimer">
+            هذا التقرير آلي وتم إصداره بناءً على البيانات المتاحة وقت الدفع.
+            لا يغني عن التحقق الرسمي من الجهات المختصة.
+        </p>
+    </body>
+    </html>"""
+
+    return HTML(string=html).write_pdf(stylesheets=[_STYLESHEET])
 
 
 def _demo() -> None:
-    """ponytail self-check: a built report is a well-formed PDF with every row actually visible."""
+    """ponytail self-check: a built report is a well-formed PDF whose text extracts correctly."""
     pdf_bytes = build_report_pdf(
         report_type="deed_check_29",
         tenant_business_name="عقارات الاختبار",
@@ -120,36 +139,63 @@ def _demo() -> None:
     assert pdf_bytes.rstrip().endswith(b"%%EOF"), "output is not a well-formed PDF trailer"
     assert len(pdf_bytes) > 2000, "output is suspiciously small for a rendered page"
 
+    import io
+
+    from pdfminer.high_level import extract_text as pdfminer_extract_text
+
+    # Completeness check: pdfminer.six parses the PDF's /ToUnicode CMap per
+    # spec rather than reverse-engineering the embedded font like some
+    # viewers do, so it surfaces exactly the class of bug fpdf2 had (real
+    # text silently replaced with U+FFFD or dropped) instead of masking it.
+    # It does NOT reorder RTL runs by glyph position, so it is unsuitable
+    # for an exact-substring check — a correct RTL PDF still extracts
+    # character-reversed per line under pdfminer, confirmed against real
+    # `pdftotext` (poppler), which agrees with PyMuPDF below once glyph
+    # position is taken into account.
+    completeness_text = pdfminer_extract_text(io.BytesIO(pdf_bytes))
+    assert "�" not in completeness_text, "extracted text contains an unresolved-glyph placeholder"
+
     import pymupdf
 
     doc = pymupdf.open(stream=pdf_bytes, filetype="pdf")
-    page_text = doc[0].get_text()
-    # HarfBuzz-shaped glyphs don't round-trip through PyMuPDF's ToUnicode-based
-    # text extraction cleanly (a known fpdf2 + complex-script-shaping
-    # limitation: visual rendering is correct, copy/paste text is not), so the
-    # extraction check only covers the plain-ASCII fields, which do round-trip
-    # exactly and prove each row's *value* actually made it onto the page.
-    for value in ("deed_check_29", "txn_demo_123", "123456789", "966500000000", "29.00"):
-        assert value in page_text, f"row value {value!r} missing from rendered page text"
-    # Glyph-level shaping check: rasterize and confirm ink actually appears
-    # in the vertical band each row should occupy (catches the off-canvas
-    # x-cursor bug even if text happens to still be extractable).
-    # Restrict to the top ~45% of the page: this short report (title + 9
-    # lines + disclaimer) only occupies that much, so the rest of the page is
-    # legitimately blank and must not count against the check.
+    # Order + content check: PyMuPDF reconstructs reading order from glyph
+    # position, matching real `pdftotext -layout` output (verified by hand
+    # against poppler for this exact module — see IMPLEMENTATION_STATUS.md).
+    text = doc[0].get_text()
+    for value in (
+        "تقرير التحقق من الصك",
+        "الجهة",
+        "عقارات الاختبار",
+        "العميل",
+        "عميل تجريبي",
+        "رقم الجوال",
+        "966500000000",
+        "deed_check_29",
+        "29.00",
+        "txn_demo_123",
+        "123456789",
+        "رقم الصك",
+    ):
+        assert value in text, f"{value!r} missing or garbled in extracted text"
+
     pix = doc[0].get_pixmap(dpi=100)
     content_height = int(pix.height * 0.45)
     n_bands = 9
-    dark_bands = 0
-    for i in range(n_bands):
-        y0 = int(content_height * i / n_bands)
-        y1 = int(content_height * (i + 1) / n_bands)
-        band = pix.samples[y0 * pix.stride : y1 * pix.stride]
-        if any(b < 200 for b in band):
-            dark_bands += 1
+    dark_bands = sum(
+        1
+        for i in range(n_bands)
+        if any(
+            b < 200
+            for b in pix.samples[
+                int(content_height * i / n_bands)
+                * pix.stride : int(content_height * (i + 1) / n_bands)
+                * pix.stride
+            ]
+        )
+    )
     assert dark_bands >= 7, (
         f"only {dark_bands}/{n_bands} content-area bands have visible ink — "
-        "rows are likely overlapping or rendering off-canvas again"
+        "rows are likely missing or collapsed"
     )
     print(f"pdf_builder self-check passed: {len(pdf_bytes)} bytes, {dark_bands}/{n_bands} bands with ink")
 

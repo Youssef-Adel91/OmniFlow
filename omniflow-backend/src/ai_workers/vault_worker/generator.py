@@ -14,10 +14,11 @@ from datetime import datetime, timezone
 import structlog
 from aiokafka.structs import ConsumerRecord
 from pydantic import BaseModel
-from sqlalchemy import insert, text
+from sqlalchemy import insert, select, text
 
+from src.ai_workers.vault_worker.pdf_builder import build_report_pdf
 from src.shared.core.config import get_settings
-from src.shared.db.models import CustomerReport
+from src.shared.db.models import Customer, CustomerReport, Tenant
 from src.shared.db.session import get_tenant_session
 from src.shared.kafka.consumer import BaseKafkaConsumer
 from src.shared.storage.s3 import s3_mgr
@@ -48,6 +49,13 @@ class VaultGeneratorWorker(BaseKafkaConsumer):
         )
 
     async def on_startup(self) -> None:
+        if settings.is_production:
+            raise RuntimeError(
+                "This worker generates a real PDF but only from data already in the "
+                "database — the payment gateway (Moyasar/Tap) that is supposed to "
+                "publish `payment.events.v1` is not implemented, so no genuine "
+                "'completed' report_fee event can exist in production yet."
+            )
         logger.info(
             "vault_generator_worker_ready",
             input_topic=settings.kafka_topic_payment_events,
@@ -70,6 +78,9 @@ class VaultGeneratorWorker(BaseKafkaConsumer):
             # Skip non-report or incomplete payments
             return
 
+        if settings.is_production:
+            raise RuntimeError("No real payment gateway can publish this event in production yet")
+
         log = logger.bind(
             transaction_id=str(event.transaction_id),
             tenant_id=str(event.tenant_id),
@@ -78,10 +89,44 @@ class VaultGeneratorWorker(BaseKafkaConsumer):
         log.info("vault_generator_processing_payment")
 
         report_type = event.metadata.get("report_type", "deed_check_29")
-        report_title = event.metadata.get("report_title", f"تقرير {report_type}")
 
-        # 1. Generate PDF (Mock)
-        pdf_content = f"OmniFlow AI Report: {report_title}\nGenerated on {datetime.now(timezone.utc)}".encode("utf-8")
+        # 1. Generate a real PDF from the tenant/customer/payment data actually
+        # available. Any extra metadata the payment event carries beyond the
+        # known keys (e.g. a deed number once REGA integration supplies one)
+        # is passed through as additional report fields.
+        async with get_tenant_session(event.tenant_id) as lookup_session:
+            tenant = (
+                await lookup_session.execute(
+                    select(Tenant).where(Tenant.tenant_id == event.tenant_id)
+                )
+            ).scalar_one_or_none()
+            customer = (
+                await lookup_session.execute(
+                    select(Customer).where(Customer.customer_id == event.customer_id)
+                )
+            ).scalar_one_or_none()
+
+        if not tenant or not customer:
+            raise ValueError(
+                f"Cannot generate report: tenant={event.tenant_id} or "
+                f"customer={event.customer_id} not found"
+            )
+
+        known_metadata_keys = {"report_type", "report_title"}
+        extra_fields = {
+            k: str(v) for k, v in event.metadata.items() if k not in known_metadata_keys
+        }
+
+        pdf_content = build_report_pdf(
+            report_type=report_type,
+            tenant_business_name=tenant.business_name,
+            customer_display_name=customer.display_name,
+            customer_phone=customer.unified_phone,
+            price_sar=event.amount,
+            transaction_reference=str(event.transaction_id),
+            generated_at=datetime.now(timezone.utc),
+            extra_fields=extra_fields or None,
+        )
         file_hash = hashlib.sha256(pdf_content).hexdigest()
         file_size = len(pdf_content)
 
@@ -109,7 +154,7 @@ class VaultGeneratorWorker(BaseKafkaConsumer):
                 s3_url=s3_url,
                 price_sar=event.amount,
                 payment_reference=str(event.transaction_id),
-                is_delivered=True,
+                is_delivered=False,
                 # Additional fields from the SQL schema that aren't mapped strictly in the stub model but we'll try to map:
             )
             # The CustomerReport ORM model handles report_id automatically

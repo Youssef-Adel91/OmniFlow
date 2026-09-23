@@ -44,7 +44,9 @@ dependencies = [
   # Primary: OpenAI AsyncOpenAI — used by llm_orchestrator.py for all
   # 4-model routing tiers (gpt-4o-mini L1/L2 classifier, gpt-4o L3).
   "openai>=1.54.0",
-  # google-generativeai removed — Gemini replaced by OpenAI in Sprint 16
+  # The Kafka LLM worker still uses the Google GenAI client.
+  "google-genai>=1.0.0",
+  "google-api-core>=2.0.0",
   "anthropic>=0.37.0",              # Claude fallback
   "tiktoken>=0.8.0",                # Token counting
 
@@ -60,6 +62,7 @@ dependencies = [
   "langchain-community>=0.3.0",
   "unstructured[all-docs]>=0.15.0", # Document parsing (PDF, DOCX, etc.)
   "pypdf2>=3.0.0",
+  "fpdf2>=2.8.0",                   # PDF authoring for customer report generation
   "python-docx>=1.1.0",
   "pillow>=10.4.0",                 # Image processing
   "pytesseract>=0.3.13",            # OCR for Arabic documents
@@ -73,6 +76,7 @@ dependencies = [
 
   # ─── Security & Auth ──────────────────────────────────────────
   "python-jose[cryptography]>=3.3.0",
+  "PyJWT[crypto]>=2.9.0",
   "passlib[bcrypt]>=1.7.4",
   "cryptography>=43.0.0",
   "pyotp>=2.9.0",                   # TOTP for 2FA

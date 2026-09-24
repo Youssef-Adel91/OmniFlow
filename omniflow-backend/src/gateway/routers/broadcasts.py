@@ -16,11 +16,18 @@ A campaign that is already `sending`, `completed`, `cancelled` or `failed`
 cannot be re-scheduled or cancelled — that returns HTTP 409.
 
 NOTE: this router only manages campaign *records*. Actually dispatching a
-campaign is the job of `src/ai_workers/broadcast_worker/worker.py`, which
-consumes the `broadcast.marketing.v1` Kafka topic. Wiring the scheduled_at
-timestamp to an actual Kafka publish is a separate piece of work — that worker
-also depends on the `vip_subscribers` and `broadcast_deliveries` tables, which
-do not exist in the schema yet.
+campaign is the job of `src/ai_workers/broadcast_worker/worker.py`, triggered
+by the `omniflow.broadcast_dispatch_check` Celery Beat sweep (every minute),
+which publishes to the `broadcast.marketing.v1` Kafka topic once
+`scheduled_at` arrives and the campaign has an approved Meta template.
+
+Template-approval gate: `schedule_campaign` refuses to schedule a campaign
+without `meta_template_id` set (HTTP 422). WhatsApp's Cloud API only allows
+free-text sends within a customer's 24h session window; a broadcast reaching
+customers outside that window with anything other than a pre-approved
+template risks Meta banning the sending number. The Beat sweep re-checks this
+at dispatch time too, since template approval can be revoked after
+scheduling.
 """
 from __future__ import annotations
 
@@ -88,6 +95,7 @@ class CampaignItem(BaseModel):
     message_template: str
     target_audience: Optional[dict[str, Any]] = None
     campaign_type: Optional[str] = None
+    meta_template_id: Optional[str] = None
     status: str
     recipients_count: Optional[int] = None
     scheduled_at: Optional[datetime] = None
@@ -128,6 +136,15 @@ class CampaignCreate(BaseModel):
         description='Audience selector, e.g. {"list_type": "daily_rentals"}',
     )
     campaign_type: Optional[str] = Field(default=None, max_length=40)
+    meta_template_id: Optional[str] = Field(
+        default=None,
+        max_length=120,
+        description=(
+            "Approved Meta WhatsApp template ID/name. Not required to save a "
+            "draft, but required before it can be scheduled — see the "
+            "template-approval gate on POST /{id}/schedule."
+        ),
+    )
 
 
 class CampaignSchedule(BaseModel):
@@ -307,6 +324,7 @@ async def create_campaign(
         message_template=body.message_template,
         target_audience=body.target_audience,
         campaign_type=body.campaign_type,
+        meta_template_id=body.meta_template_id,
         status=BroadcastCampaignStatus.DRAFT,
         recipients_count=recipients_count,
     )
@@ -392,6 +410,20 @@ async def schedule_campaign(
 ) -> CampaignItem:
     campaign = await _get_campaign(session, campaign_id)
     _require_mutable(campaign, "schedule")
+
+    if not campaign.meta_template_id:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail={
+                "code": "TEMPLATE_REQUIRED",
+                "message": (
+                    "Cannot schedule a broadcast without an approved Meta "
+                    "WhatsApp template (meta_template_id). Free-text sends "
+                    "outside a customer's 24h session window risk Meta "
+                    "banning the number — set meta_template_id first."
+                ),
+            },
+        )
 
     scheduled_at = body.scheduled_at
     # Treat a naive datetime as UTC so comparisons stay unambiguous.

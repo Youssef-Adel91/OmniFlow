@@ -48,8 +48,9 @@ from sqlalchemy import and_, exists, func, or_, select, update
 
 from src.celery_app.app import app
 from src.shared.core.config import get_settings
-from src.shared.core.enums import ConversationStatus, ListingStatus
+from src.shared.core.enums import BroadcastCampaignStatus, ConversationStatus, ListingStatus
 from src.shared.db.models import (
+    BroadcastCampaign,
     Conversation,
     Customer,
     Message,
@@ -562,10 +563,86 @@ async def _ingest_knowledge_document_async(document_id: str) -> dict[str, Any]:
     }
 
 
+@app.task(name="omniflow.broadcast_dispatch_check", bind=True, max_retries=2)
+def broadcast_dispatch_check(self) -> dict[str, Any]:  # noqa: ANN001
+    """
+    Fire any campaign whose `scheduled_at` has arrived.
+
+    Delegates the actual sending to `BroadcastWorker` via a real Kafka
+    publish — this task only finds due campaigns, re-validates the Meta
+    template-approval gate one last time (defense in depth against a
+    campaign whose template got un-approved between scheduling and now),
+    and flips status draft-of-work to `sending` so it isn't picked up twice.
+    """
+    return _run(_broadcast_dispatch_check_async)
+
+
+async def _broadcast_dispatch_check_async() -> dict[str, Any]:
+    from src.shared.events.broadcast import BroadcastEvent
+    from src.shared.kafka.producer import KafkaProducerManager
+
+    dispatched: list[str] = []
+    rejected: list[str] = []
+
+    async with get_system_session() as session:
+        due = (
+            await session.execute(
+                select(BroadcastCampaign)
+                .where(BroadcastCampaign.status == BroadcastCampaignStatus.SCHEDULED.value)
+                .where(BroadcastCampaign.scheduled_at <= _now())
+                .limit(50)
+            )
+        ).scalars().all()
+
+        if not due:
+            return {"dispatched": 0, "rejected": 0, "checked_at": _now().isoformat()}
+
+        producer = KafkaProducerManager()
+        await producer.start()
+        try:
+            for campaign in due:
+                # Same rule the API enforces at schedule-time — checked again
+                # here because "approved template" is a fact that can change
+                # out from under an already-scheduled campaign (Meta can
+                # revoke approval), and this is the last gate before a real
+                # WhatsApp send that could get the number banned.
+                if not campaign.meta_template_id:
+                    campaign.status = BroadcastCampaignStatus.FAILED
+                    campaign.completed_at = _now()
+                    rejected.append(str(campaign.campaign_id))
+                    logger.error(
+                        "broadcast_dispatch_rejected_no_template",
+                        campaign_id=str(campaign.campaign_id),
+                    )
+                    continue
+
+                await producer.publish(
+                    topic=settings.kafka_topic_broadcast_marketing,
+                    event=BroadcastEvent(
+                        campaign_id=campaign.campaign_id,
+                        tenant_id=campaign.tenant_id,
+                    ),
+                    key=str(campaign.campaign_id).encode("utf-8"),
+                )
+                campaign.status = BroadcastCampaignStatus.SENDING
+                dispatched.append(str(campaign.campaign_id))
+                logger.info("broadcast_dispatch_published", campaign_id=str(campaign.campaign_id))
+        finally:
+            await producer.stop()
+
+    return {
+        "dispatched": len(dispatched),
+        "rejected": len(rejected),
+        "campaign_ids": {"dispatched": dispatched, "rejected": rejected},
+        "checked_at": _now().isoformat(),
+    }
+
+
 __all__ = [
     "sla_escalation_check",
     "vcard_reminder_check",
     "vip_followup_check",
     "rega_reverification_check",
     "ingest_knowledge_document",
+    "broadcast_dispatch_check",
 ]

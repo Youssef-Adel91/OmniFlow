@@ -784,18 +784,6 @@ class BroadcastCampaign(Base, TimestampMixin, TenantScopedMixin):
     """
     A VIP / marketing broadcast campaign.
 
-    NOTE ON COLUMN SET:
-        `src/ai_workers/broadcast_worker/worker.py` already reads this table
-        with raw SQL and expects `campaign_type`, `target_audience`,
-        `meta_template_id`, `status` and `completed_at`. Those columns are
-        included here so the existing worker keeps working against the ORM
-        definition instead of drifting from it.
-
-        That worker also references two tables that still do not exist
-        anywhere in the schema — `vip_subscribers` and `broadcast_deliveries`.
-        Creating them is out of scope here and needs a product decision on the
-        VIP subscription model.
-
     Status machine:
         draft → scheduled → sending → completed
         draft/scheduled → cancelled

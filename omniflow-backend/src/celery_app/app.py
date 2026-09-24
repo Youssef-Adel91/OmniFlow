@@ -41,7 +41,7 @@ app = Celery(
     "omniflow",
     broker=settings.celery_broker_url,
     backend=_results_backend_url(),
-    include=["src.celery_app.tasks"],
+    include=["src.celery_app.tasks", "src.shared.tasks.outbound_tasks"],
 )
 
 # ── Core configuration ───────────────────────────────────────────────────────
@@ -81,6 +81,11 @@ except ImportError:  # pragma: no cover
 # Times are interpreted in `settings.app_timezone` (Asia/Riyadh).
 # ══════════════════════════════════════════════════════════════════════════════
 app.conf.beat_schedule = {
+    "outbound-message-dispatch": {
+        "task": "omniflow.publish_pending_messages",
+        "schedule": 5.0,
+        "options": {"expires": 30},
+    },
     # SLA breach detection for escalated conversations — must be tight.
     "sla-escalation-check": {
         "task": "omniflow.sla_escalation_check",
@@ -92,6 +97,12 @@ app.conf.beat_schedule = {
         "task": "omniflow.vcard_reminder_check",
         "schedule": 3600.0,  # hourly
         "options": {"expires": 3500},
+    },
+    # Fire any broadcast campaign whose scheduled_at has arrived.
+    "broadcast-dispatch-check": {
+        "task": "omniflow.broadcast_dispatch_check",
+        "schedule": 60.0,  # every minute
+        "options": {"expires": 55},
     },
     # VIP re-engagement sweep — 03:00 Riyadh, outside business hours.
     "vip-followup-check": {

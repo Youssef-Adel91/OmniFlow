@@ -336,8 +336,13 @@ class Settings(BaseSettings):
     sentry_dsn: str = ""
 
     # ── Feature Flags ─────────────────────────────────────────────────────────
-    feature_multimodal_voice: bool = True
-    feature_multimodal_vision: bool = True
+    # Item 14 (launch readiness): no Whisper/Vision worker was ever built
+    # (see ai_workers/multimodal/__init__.py — a docstring-only stub, and no
+    # consumer on multimodal.audio.v1 / multimodal.vision.v1). Explicitly
+    # disabled for v1 rather than left as a silent gap; flipping either flag
+    # to True requires a real STT/vision pipeline to exist, not just a key.
+    feature_multimodal_voice: bool = False
+    feature_multimodal_vision: bool = False
     feature_reports_vault: bool = True
     feature_vcard_gatekeeper: bool = True
     feature_vip_broadcast: bool = True

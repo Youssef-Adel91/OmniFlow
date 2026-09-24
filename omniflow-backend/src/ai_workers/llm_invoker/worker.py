@@ -68,6 +68,13 @@ _L0_RESPONSES: dict[str, str] = {
     "greeting": "أهلاً وسهلاً! 😊 أنا مساعدك العقاري الذكي. كيف يمكنني مساعدتك اليوم؟",
     "vcard_confirmation": "ممتاز! شكراً لحفظ رقمنا 🎉 يسعدنا خدمتك في أي وقت.",
     "general": "شكراً لتواصلك معنا! سأبحث لك عن أفضل الخيارات المتاحة. 🏠",
+    # Item 14: no Whisper/Vision worker exists yet (see multimodal/__init__.py
+    # stub) — sent instead of letting the LLM answer a placeholder string
+    # like "[audio message — media: ...]" as if it understood the content.
+    "multimodal_unsupported": (
+        "عذرًا، لا يمكنني حاليًا الاستماع للرسائل الصوتية أو تحليل الصور تلقائيًا. "
+        "يسعدني مساعدتك إذا كتبت طلبك نصيًا 🙏"
+    ),
 }
 
 
@@ -248,6 +255,33 @@ class LLMInvokerWorker(BaseKafkaConsumer):
             )
             log.info("llm_invoker_l0_response_sent", chars=len(response_text))
             return
+
+        # ── 2b. Item 14: explicit v1 decision — no STT/vision pipeline exists ──
+        # Whisper/vision workers were never built (multimodal/__init__.py is a
+        # stub; nothing consumes multimodal.audio.v1 / multimodal.vision.v1).
+        # Without this guard, a captionless audio/image/video message would
+        # fall through to _build_current_message()'s "[audio message — media:
+        # ...]" placeholder and the LLM would generate a confident-sounding
+        # reply to content it never actually saw. Fail visibly to the
+        # customer instead, gated by the same feature flags a future real
+        # implementation would flip on.
+        if not event.text_content and event.message_type in (
+            MessageType.AUDIO, MessageType.IMAGE, MessageType.VIDEO,
+        ):
+            flag_enabled = (
+                settings.feature_multimodal_voice
+                if event.message_type == MessageType.AUDIO
+                else settings.feature_multimodal_vision
+            )
+            if not flag_enabled:
+                await self._publish_outbound(
+                    decision=decision,
+                    text=_L0_RESPONSES["multimodal_unsupported"],
+                    llm_response=None,
+                    latency_ms=0,
+                )
+                log.info("llm_invoker_multimodal_unsupported_fallback", message_type=str(event.message_type))
+                return
 
         # ── 3. Fetch conversation history from Redis ──────────────────────────
         conversation_id = decision.conversation_id

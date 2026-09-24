@@ -34,6 +34,7 @@ References: SRS §6, Sprint 2 specification.
 from __future__ import annotations
 
 import uuid
+from datetime import datetime
 from typing import Any, Generic, TypeVar
 
 from sqlalchemy import func, select
@@ -614,6 +615,7 @@ class ConversationRepository(
         tokens_used: int | None = None,
         latency_ms: int | None = None,
         delivery_status: str | None = "PENDING",
+        message_id: uuid.UUID | None = None,
     ) -> Message:
         """
         Append a Message to a Conversation and increment message_count atomically.
@@ -625,6 +627,7 @@ class ConversationRepository(
         from datetime import datetime, timezone  # local import avoids top-level cycle
 
         msg = Message(
+            message_id=message_id or uuid.uuid4(),
             conversation_id=conversation_id,
             sender_type=sender_type,
             message_type=message_type,  # type: ignore[arg-type]
@@ -661,6 +664,7 @@ class ConversationRepository(
         Paginated message history for a conversation, oldest-first.
         Used by the B2B dashboard conversation thread view.
         """
+        await self.get_or_404(conversation_id)
         stmt = (
             select(Message)
             .where(Message.conversation_id == conversation_id)
@@ -670,6 +674,32 @@ class ConversationRepository(
         )
         result = await self.session.scalars(stmt)
         return list(result.all())
+
+    async def get_recent_messages(
+        self,
+        conversation_id: uuid.UUID,
+        *,
+        limit: int = 100,
+        before: datetime | None = None,
+    ) -> list[Message]:
+        """
+        Cursor-paginated message history for the inbox thread view, always
+        returned oldest-first for direct rendering.
+
+        No `before` returns the most recent `limit` messages — fixes a real
+        bug in the old offset=0-default `get_messages()`: a conversation with
+        more than `limit` messages would silently hide everything past the
+        first page, i.e. its *newest* messages, behind its oldest ones. Pass
+        the `created_at` of the oldest currently-loaded message as `before`
+        to page further into the past ("load older messages").
+        """
+        await self.get_or_404(conversation_id)
+        stmt = select(Message).where(Message.conversation_id == conversation_id)
+        if before is not None:
+            stmt = stmt.where(Message.created_at < before)  # type: ignore[operator]
+        stmt = stmt.order_by(Message.created_at.desc()).limit(min(limit, 200))  # type: ignore[attr-defined]
+        result = await self.session.scalars(stmt)
+        return list(reversed(result.all()))
 
     async def create_message(
         self,
@@ -747,7 +777,7 @@ class ConversationRepository(
 
         # Cast the string to the enum accepted by the column
         try:
-            conv.status = ConversationStatus(status)  # type: ignore[assignment]
+            conv.status = ConversationStatus(status.lower())  # type: ignore[assignment]
         except ValueError:
             # Fallback: assign raw string; SQLAlchemy will validate on flush
             conv.status = status  # type: ignore[assignment]
@@ -929,4 +959,3 @@ class PropertyListingRepository(
             listing.qdrant_point_id = point_id
             self.session.add(listing)
             await self.session.flush()
-

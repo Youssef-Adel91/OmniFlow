@@ -1,38 +1,15 @@
 /**
  * hooks/useInboxStream.ts — Real-Time SSE Hook
- *
- * Connects to `GET /api/v1/stream/dashboard` (Server-Sent Events).
- *
- * ── SSE + Auth Headers Workaround ────────────────────────────────────────────
- * The native `EventSource` API does NOT support custom headers (Authorization,
- * X-Tenant-ID). We solve this with two complementary strategies:
- *
- *   1. Short-lived token query param:
- *      The backend accepts `?token=<jwt>&tenant_id=<uuid>` on the /stream
- *      endpoint as an alternative to headers (tokens are single-use or very
- *      short-lived via Redis). This is a common pattern for SSE.
- *
- *   2. Fallback to `fetch()` streaming (ReadableStream):
- *      If the EventSource approach proves insufficient, replace with a
- *      `fetch()` call that sends proper headers and parses the SSE protocol
- *      manually. That path is scaffolded but disabled by default.
- *
- * ── Events handled ────────────────────────────────────────────────────────────
- *   `message`              → Generic SSE ping / keepalive (ignored)
- *   `new_message`          → A new chat message arrived; pushed to inboxStore
- *   `conversation_update`  → Conversation status changed (takeover, etc.)
- *   `typing`               → AI typing indicator toggled
- *
- * ── Reconnection ──────────────────────────────────────────────────────────────
- * EventSource has built-in exponential back-off reconnect. We additionally
- * track the connection state and expose it so the UI can show a banner.
+ * Refreshes authentication on reconnect and reloads missed inbox data.
  */
 "use client";
 
 import { useEffect, useRef, useCallback, useState } from "react";
 import { useAuth } from "@clerk/nextjs";
 import { useInboxStore } from "@/store/inboxStore";
-import type { Message, Conversation } from "@/store/inboxStore";
+import { mapMessage, mapConversationPatch } from "@/lib/api/inbox";
+import { createInboxStream, type StreamStatus } from "@/lib/api/inbox-stream";
+export type { StreamStatus } from "@/lib/api/inbox-stream";
 
 // ── Config ────────────────────────────────────────────────────────────────────
 
@@ -41,7 +18,7 @@ const API_BASE =
 
 // ── Hook return type ──────────────────────────────────────────────────────────
 
-export type StreamStatus = "connecting" | "open" | "closed" | "error";
+
 
 export interface UseInboxStreamReturn {
   status:     StreamStatus;
@@ -61,11 +38,12 @@ export interface UseInboxStreamReturn {
 export function useInboxStream(): UseInboxStreamReturn {
   const { getToken } = useAuth();
   const [status, setStatus] = useState<StreamStatus>("connecting");
-  const esRef               = useRef<EventSource | null>(null);
+  const esRef               = useRef<ReturnType<typeof createInboxStream> | null>(null);
 
   // Pull store actions via stable references (avoid re-render loops)
   const addMessage         = useInboxStore.getState().addMessage;
   const updateConversation = useInboxStore.getState().updateConversation;
+  const updateMessageStatus = useInboxStore.getState().updateMessageStatus;
   const setTyping          = useInboxStore.getState().setTyping;
 
   // ── Build authenticated SSE URL ──────────────────────────────────────────
@@ -82,33 +60,27 @@ export function useInboxStream(): UseInboxStreamReturn {
     // login flow. That flow was removed in the Clerk unification — the tenant
     // is now resolved server-side from the Clerk token, so we only send it.
     const url = new URL(`${API_BASE}/stream/dashboard`);
-    if (token) url.searchParams.set("token", token);
+    if (!token) throw new Error("Missing authentication token");
+    url.searchParams.set("token", token);
     return url.toString();
   }, [getToken]);
 
   // ── Connect ───────────────────────────────────────────────────────────────
-  const connect = useCallback(async () => {
-    // Cleanup any existing connection first
-    esRef.current?.close();
-
-    const url = await buildStreamUrl();
-    const es  = new EventSource(url);
-    esRef.current = es;
-
-    es.addEventListener("open", () => {
-      setStatus("open");
-      console.info("[InboxStream] SSE connection established.");
-    });
-
+  const subscribe = useCallback((es: EventSource) => {
     // ── Event: new_message ──────────────────────────────────────────────────
     es.addEventListener("new_message", (event: MessageEvent) => {
       try {
-        const msg: Message = JSON.parse(event.data as string);
+        const msg = mapMessage(JSON.parse(event.data as string));
+        const state = useInboxStore.getState();
+        const duplicate = state.messages[msg.conversationId]?.some((item) => item.id === msg.id);
         addMessage(msg);
+        if (!state.conversations.some((item) => item.id === msg.conversationId)) {
+          void state.loadConversations();
+        }
 
         // Increment global unread badge if not the active conversation
         const { activeConversationId } = useInboxStore.getState();
-        if (msg.conversationId !== activeConversationId) {
+        if (!duplicate && msg.senderType === "customer" && msg.conversationId !== activeConversationId) {
           // Import is circular-safe because we read from the store directly
           import("@/store/tenantStore").then(({ useTenantStore }) => {
             useTenantStore.getState().incrementUnread();
@@ -122,12 +94,33 @@ export function useInboxStream(): UseInboxStreamReturn {
     // ── Event: conversation_update ──────────────────────────────────────────
     es.addEventListener("conversation_update", (event: MessageEvent) => {
       try {
-        const patch: Partial<Conversation> & { id: string } = JSON.parse(
-          event.data as string,
-        );
-        updateConversation(patch.id, patch);
+        const patch = mapConversationPatch(JSON.parse(event.data as string));
+        const state = useInboxStore.getState();
+        if (state.conversations.some((item) => item.id === patch.id)) {
+          updateConversation(patch.id, patch);
+        } else {
+          void state.loadConversations();
+        }
       } catch (e) {
         console.error("[InboxStream] Failed to parse conversation_update:", e);
+      }
+    });
+
+    // ── Event: message_status_update (item 12) ───────────────────────────────
+    // Previously a message's PENDING → QUEUED → SENT (and eventually
+    // DELIVERED/READ, once a real Meta status webhook exists) transition was
+    // invisible to an already-open inbox until a full reload.
+    es.addEventListener("message_status_update", (event: MessageEvent) => {
+      try {
+        const payload = JSON.parse(event.data as string);
+        const conversationId = payload.conversation_id;
+        const messageId = payload.id;
+        const deliveryStatus = payload.delivery_status;
+        if (conversationId && messageId && deliveryStatus) {
+          updateMessageStatus(conversationId, messageId, deliveryStatus);
+        }
+      } catch (e) {
+        console.error("[InboxStream] Failed to parse message_status_update event:", e);
       }
     });
 
@@ -153,37 +146,30 @@ export function useInboxStream(): UseInboxStreamReturn {
       }
     });
 
-    // ── Error / reconnect ───────────────────────────────────────────────────
-    es.addEventListener("error", (err) => {
-      console.warn("[InboxStream] SSE error — browser will auto-reconnect:", err);
-      setStatus("error");
-      // EventSource handles reconnection automatically with exponential back-off.
-      // We flip back to "connecting" state for UI feedback.
-      if (es.readyState === EventSource.CONNECTING) {
-        setStatus("connecting");
-      } else if (es.readyState === EventSource.CLOSED) {
-        setStatus("closed");
-        esRef.current = null;
-      }
-    });
-  }, [buildStreamUrl, addMessage, updateConversation, setTyping]);
+  }, [addMessage, updateConversation, setTyping]);
 
   // ── Lifecycle ─────────────────────────────────────────────────────────────
   useEffect(() => {
-    connect();
+    const stream = createInboxStream({
+      getUrl: buildStreamUrl,
+      subscribe,
+      onStatus: setStatus,
+      onOpen: () => {
+        const state = useInboxStore.getState();
+        void state.loadConversations();
+        if (state.activeConversationId) void state.loadMessages(state.activeConversationId, true);
+      },
+    });
+    esRef.current = stream;
+    void stream.connect();
     return () => {
-      esRef.current?.close();
+      stream.disconnect();
       esRef.current = null;
-      setStatus("closed");
     };
-  }, [connect]);
+  }, [buildStreamUrl, subscribe]);
 
-  const reconnect  = useCallback(() => { connect(); }, [connect]);
-  const disconnect = useCallback(() => {
-    esRef.current?.close();
-    esRef.current = null;
-    setStatus("closed");
-  }, []);
+  const reconnect = useCallback(() => { void esRef.current?.connect(); }, []);
+  const disconnect = useCallback(() => { esRef.current?.disconnect(); }, []);
 
   return { status, reconnect, disconnect };
 }

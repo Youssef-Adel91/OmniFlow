@@ -74,6 +74,7 @@ export interface Message {
   tier?:          string;   // L0/L1/L2/L3
   model?:         string;   // gemini-flash, etc.
   latencyMs?:     number;
+  deliveryStatus?: string;
 }
 
 // ── Store shape ───────────────────────────────────────────────────────────────
@@ -94,8 +95,10 @@ interface InboxState {
   // ── Async state ────────────────────────────────────────────────────────────
   isLoadingConversations: boolean;
   isLoadingMessages:      boolean;
+  isLoadingOlderMessages: boolean;
   conversationsError:     string | null;
   messagesError:          Record<string, string | null>; // per conv error
+  hasMoreMessages:        Record<string, boolean>; // per conv — true if older messages may exist
 
   // ── Derived (selector hooks below are preferred for performance) ──────────
   activeConversation:   Conversation | null;
@@ -103,7 +106,8 @@ interface InboxState {
 
   // ── Async thunks ───────────────────────────────────────────────────────────
   loadConversations:  () => Promise<void>;
-  loadMessages:       (conversationId: string) => Promise<void>;
+  loadMessages:       (conversationId: string, force?: boolean) => Promise<void>;
+  loadOlderMessages:  (conversationId: string) => Promise<void>;
   sendAgentMessage:   (conversationId: string, text: string) => Promise<void>;
   requestTakeOver:    (conversationId: string) => Promise<void>;
   requestReturnToAI:  (conversationId: string) => Promise<void>;
@@ -119,6 +123,7 @@ interface InboxState {
   setSortBy:             (sort: SortByOption) => void;
   setTyping:             (v: boolean) => void;
   updateConversation:    (id: string, patch: Partial<Conversation>) => void;
+  updateMessageStatus:   (conversationId: string, messageId: string, deliveryStatus: string) => void;
 }
 
 // ── Store implementation ──────────────────────────────────────────────────────
@@ -135,8 +140,10 @@ export const useInboxStore = create<InboxState>()((set, get) => ({
 
   isLoadingConversations:  false,
   isLoadingMessages:       false,
+  isLoadingOlderMessages:  false,
   conversationsError:      null,
   messagesError:           {},
+  hasMoreMessages:         {},
 
   // ── Derived (read at call-time via get()) ──────────────────────────────────
   get activeConversation() {
@@ -180,18 +187,25 @@ export const useInboxStore = create<InboxState>()((set, get) => ({
   },
 
   // ── Async thunk: loadMessages ──────────────────────────────────────────────
-  loadMessages: async (conversationId: string) => {
+  // Fetches the most recent page (no cursor) — see fetchMessages' docstring
+  // for why that matters for a conversation longer than one page.
+  loadMessages: async (conversationId: string, force = false) => {
     // Optimistic: if messages are already cached, don't re-fetch
     const cached = get().messages[conversationId];
-    if (cached && cached.length > 0) return;
+    if (!force && cached && cached.length > 0) return;
 
     set({ isLoadingMessages: true });
     try {
-      const messages = await fetchMessages(conversationId);
+      const { items, hasMore } = await fetchMessages(conversationId);
       set((s) => ({
-        messages:          { ...s.messages, [conversationId]: messages },
+        messages:          { ...s.messages, [conversationId]: Array.from(new Map([
+          ...(s.messages[conversationId] ?? []), ...items,
+        ].map((message) => [message.id, message])).values()).sort(
+          (a, b) => Date.parse(a.createdAt) - Date.parse(b.createdAt),
+        ) },
         isLoadingMessages: false,
         messagesError:     { ...s.messagesError, [conversationId]: null },
+        hasMoreMessages:   { ...s.hasMoreMessages, [conversationId]: hasMore },
       }));
     } catch (err) {
       const message =
@@ -204,12 +218,39 @@ export const useInboxStore = create<InboxState>()((set, get) => ({
     }
   },
 
+  // ── Async thunk: loadOlderMessages ("load older messages" button) ──────────
+  loadOlderMessages: async (conversationId: string) => {
+    if (get().isLoadingOlderMessages) return;
+    const current = get().messages[conversationId] ?? [];
+    const oldest = current[0];
+    if (!oldest) return; // nothing loaded yet — loadMessages() handles that case
+
+    set({ isLoadingOlderMessages: true });
+    try {
+      const { items, hasMore } = await fetchMessages(conversationId, 100, oldest.createdAt);
+      set((s) => {
+        const merged = Array.from(
+          new Map([...items, ...(s.messages[conversationId] ?? [])].map((m) => [m.id, m])).values(),
+        ).sort((a, b) => Date.parse(a.createdAt) - Date.parse(b.createdAt));
+        return {
+          messages:               { ...s.messages, [conversationId]: merged },
+          isLoadingOlderMessages: false,
+          hasMoreMessages:        { ...s.hasMoreMessages, [conversationId]: hasMore },
+        };
+      });
+    } catch (err) {
+      console.error("[inboxStore] loadOlderMessages error:", err);
+      set({ isLoadingOlderMessages: false });
+    }
+  },
+
   // ── Async thunk: sendAgentMessage ──────────────────────────────────────────
   sendAgentMessage: async (conversationId: string, text: string) => {
+    const tempId = `temp-${crypto.randomUUID()}`;
     try {
       // Optimistic update: add the message immediately with a temp ID
       const tempMsg: Message = {
-        id:             `temp-${Date.now()}`,
+        id:             tempId,
         conversationId,
         senderType:     "human_agent",
         text,
@@ -223,7 +264,7 @@ export const useInboxStore = create<InboxState>()((set, get) => ({
       const confirmed = await apiSendMessage(conversationId, text);
       set((s) => {
         const msgs = (s.messages[conversationId] ?? []).filter(
-          (m) => m.id !== tempMsg.id,
+          (m) => m.id !== tempMsg.id && m.id !== confirmed.id,
         );
         return {
           messages: { ...s.messages, [conversationId]: [...msgs, confirmed] },
@@ -236,7 +277,7 @@ export const useInboxStore = create<InboxState>()((set, get) => ({
         messages: {
           ...s.messages,
           [conversationId]: (s.messages[conversationId] ?? []).filter(
-            (m) => !m.id.startsWith("temp-"),
+            (m) => m.id !== tempId,
           ),
         },
       }));
@@ -297,7 +338,7 @@ export const useInboxStore = create<InboxState>()((set, get) => ({
               lastMessageAt: msg.createdAt,
               // Increment unread only if this is not the active conversation
               unreadCount:
-                c.id !== s.activeConversationId
+                msg.senderType === "customer" && c.id !== s.activeConversationId
                   ? c.unreadCount + 1
                   : c.unreadCount,
             }
@@ -368,6 +409,21 @@ export const useInboxStore = create<InboxState>()((set, get) => ({
         c.id === id ? { ...c, ...patch } : c,
       ),
     })),
+
+  // ── Sync: updateMessageStatus (called by SSE hook on delivery-status change) ──
+  updateMessageStatus: (conversationId, messageId, deliveryStatus) =>
+    set((s) => {
+      const list = s.messages[conversationId];
+      if (!list) return s;
+      return {
+        messages: {
+          ...s.messages,
+          [conversationId]: list.map((m) =>
+            m.id === messageId ? { ...m, deliveryStatus } : m,
+          ),
+        },
+      };
+    }),
 }));
 
 // ── Selector hooks (stable, avoid re-renders for unrelated state) ─────────────
@@ -401,6 +457,12 @@ export const useActiveMessages = () =>
     s.activeConversationId
       ? (s.messages[s.activeConversationId] ?? [])
       : [],
+  );
+
+/** Whether the active conversation may have older messages to page in. */
+export const useHasMoreMessages = () =>
+  useInboxStore((s) =>
+    s.activeConversationId ? Boolean(s.hasMoreMessages[s.activeConversationId]) : false,
   );
 
 export const useInboxLoadingState = () =>

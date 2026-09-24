@@ -176,10 +176,11 @@ class PaginatedConversations(BaseModel):
 
 
 class PaginatedMessages(BaseModel):
-    items:  list[MessageOut]
-    total:  int
-    offset: int
-    limit:  int
+    items:     list[MessageOut]
+    total:     int
+    offset:    int
+    limit:     int
+    has_more:  bool = False  # True if there may be older messages before this page
 
 
 class PropertyRecommendation(BaseModel):
@@ -286,20 +287,28 @@ async def list_conversations(
     "/conversations/{conversation_id}/messages",
     response_model=PaginatedMessages,
     summary="Get conversation message history",
+    description=(
+        "Returns the most recent `limit` messages, oldest-first. Pass "
+        "`before` (ISO timestamp — typically the oldest currently-loaded "
+        "message's created_at) to page further into the past."
+    ),
 )
 async def get_messages(
     conversation_id: uuid.UUID,
     user:            CurrentUser,
     repo:            ConversationRepo,
     limit:           Annotated[int, Query(ge=1, le=200)] = 100,
-    offset:          Annotated[int, Query(ge=0)]          = 0,
+    before:          Annotated[datetime | None, Query(description="ISO timestamp cursor for 'load older'")] = None,
 ) -> PaginatedMessages:
-    # get_messages returns list[Message] (not a tuple)
-    messages = await repo.get_messages(
-        conversation_id=conversation_id, offset=offset, limit=limit
+    messages = await repo.get_recent_messages(
+        conversation_id=conversation_id, limit=limit, before=before,
     )
     items = [MessageOut.from_orm_model(m) for m in messages]
-    return PaginatedMessages(items=items, total=len(items), offset=offset, limit=limit)
+    # Heuristic, not an exact count: a full page means there MAY be older
+    # messages before it. Cheaper than a separate COUNT(*) query, and a false
+    # positive just means one harmless extra "load older" click that returns [].
+    has_more = len(items) == limit
+    return PaginatedMessages(items=items, total=len(items), offset=0, limit=limit, has_more=has_more)
 
 
 # ══════════════════════════════════════════════════════════════════════════════

@@ -2,20 +2,47 @@
 
 import { useEffect, useRef } from "react";
 import { cn } from "@/lib/utils";
-import { useActiveMessages, useActiveConversation } from "@/store/inboxStore";
+import { useActiveMessages, useActiveConversation, useHasMoreMessages } from "@/store/inboxStore";
 import { useInboxStore } from "@/store/inboxStore";
 import type { Message } from "@/store/inboxStore";
 import {
   Zap,
   User,
   Headphones,
+  Check,
   CheckCheck,
   Clock,
+  AlertCircle,
   Bot,
   MessageSquare,
 } from "lucide-react";
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
+
+/**
+ * Delivery-status ticks for OUR outbound messages (item 12), driven by the
+ * real `deliveryStatus` field that already flowed from the backend but was
+ * never rendered — DELIVERED/READ will simply start appearing once the Meta
+ * status webhook (a separate, unbuilt piece of infra) starts setting them;
+ * this component doesn't need to change for that.
+ */
+function DeliveryStatusIcon({ status }: { status?: string }) {
+  switch (status) {
+    case "PENDING":
+    case "QUEUED":
+      return <Clock className="w-3 h-3 text-[var(--muted-foreground)]" />;
+    case "SENT":
+      return <Check className="w-3 h-3 text-[var(--muted-foreground)]" />;
+    case "DELIVERED":
+      return <CheckCheck className="w-3 h-3 text-[var(--muted-foreground)]" />;
+    case "READ":
+      return <CheckCheck className="w-3 h-3 text-info" />;
+    case "FAILED":
+      return <AlertCircle className="w-3 h-3 text-danger" />;
+    default:
+      return null;
+  }
+}
 
 function formatTime(iso: string): string {
   return new Date(iso).toLocaleTimeString("ar-SA", {
@@ -197,9 +224,7 @@ function MessageBubble({ msg }: { msg: Message }) {
               {msg.latencyMs}ms
             </span>
           )}
-          {isCustomer && msg.isRead && (
-            <CheckCheck className="w-3 h-3 text-info" />
-          )}
+          {!isCustomer && <DeliveryStatusIcon status={msg.deliveryStatus} />}
         </div>
       </div>
     </div>
@@ -267,12 +292,40 @@ export function ChatArea() {
   const messages         = useActiveMessages();
   const conversation     = useActiveConversation();
   const isTyping         = useInboxStore((s) => s.isTyping);
+  const hasMoreMessages  = useHasMoreMessages();
+  const isLoadingOlder   = useInboxStore((s) => s.isLoadingOlderMessages);
+  const loadOlderMessages = useInboxStore((s) => s.loadOlderMessages);
   const bottomRef        = useRef<HTMLDivElement>(null);
+  const scrollRef        = useRef<HTMLDivElement>(null);
+  const prevOldestId     = useRef<string | null>(null);
+  const pendingScrollAdjust = useRef(false);
 
-  // Auto-scroll to bottom when messages change
+  // Auto-scroll to bottom only when a message is appended at the end (normal
+  // chat flow) — NOT when "load older" prepends messages at the start, which
+  // would otherwise yank the view away from what the agent was reading.
   useEffect(() => {
-    bottomRef.current?.scrollIntoView({ behavior: "smooth" });
+    const oldestId = messages[0]?.id ?? null;
+    if (pendingScrollAdjust.current) {
+      // Restore scroll position after older messages were prepended, instead
+      // of jumping to the bottom (see loadOlder() below).
+      pendingScrollAdjust.current = false;
+    } else if (oldestId === prevOldestId.current || prevOldestId.current === null) {
+      bottomRef.current?.scrollIntoView({ behavior: "smooth" });
+    }
+    prevOldestId.current = oldestId;
   }, [messages, isTyping]);
+
+  async function loadOlder() {
+    const el = scrollRef.current;
+    const prevScrollHeight = el?.scrollHeight ?? 0;
+    pendingScrollAdjust.current = true;
+    await loadOlderMessages(conversation!.id);
+    // Prepending changes scrollHeight; hold the viewport on the same
+    // messages instead of snapping to the top or bottom.
+    requestAnimationFrame(() => {
+      if (el) el.scrollTop += el.scrollHeight - prevScrollHeight;
+    });
+  }
 
   if (!conversation) return <EmptyState />;
 
@@ -312,7 +365,22 @@ export function ChatArea() {
       </div>
 
       {/* ── Messages area ───────────────────────────────────────────────── */}
-      <div className="flex-1 overflow-y-auto p-5 space-y-4 scrollbar-hidden" dir="rtl">
+      <div ref={scrollRef} className="flex-1 overflow-y-auto p-5 space-y-4 scrollbar-hidden" dir="rtl">
+
+        {/* Load older messages (item 12) — a plain button rather than
+            scroll-triggered infinite scroll: simpler, and scroll-position
+            preservation is handled explicitly in loadOlder() above. */}
+        {hasMoreMessages && (
+          <div className="flex justify-center pb-2">
+            <button
+              onClick={loadOlder}
+              disabled={isLoadingOlder}
+              className="text-2xs text-[var(--muted-foreground)] hover:text-[var(--foreground)] px-3 py-1.5 rounded-full border border-[var(--border)] disabled:opacity-50"
+            >
+              {isLoadingOlder ? "جارٍ التحميل..." : "تحميل رسائل أقدم"}
+            </button>
+          </div>
+        )}
 
         {/* Date separator at top */}
         {messages.length > 0 && (

@@ -177,6 +177,11 @@ async def persist_outbound_message(
     tokens_used: int | None = None,
     latency_ms: int | None = None,
     delivery_status: str | None = "PENDING",
+    message_id: uuid.UUID | None = None,
+    sender_type: str = "ai_bot",
+    agent_id: uuid.UUID | None = None,
+    message_type: str = "text",
+    media_url: str | None = None,
 ) -> uuid.UUID | None:
     """
     Persist an AI-generated outbound reply to the messages table and
@@ -212,6 +217,14 @@ async def persist_outbound_message(
     async with get_tenant_session(tenant_id) as session:
         conv_repo = ConversationRepository(session)
 
+        if message_id is not None:
+            from sqlalchemy import select
+            existing = await session.scalar(
+                select(Message).where(Message.message_id == message_id, Message.conversation_id == conversation_id)
+            )
+            if existing is not None:
+                return existing.message_id
+
         # Guard: conversation must be visible to this tenant (RLS enforced)
         conversation = await conv_repo.get(conversation_id)
         if conversation is None:
@@ -224,8 +237,11 @@ async def persist_outbound_message(
 
         message = await conv_repo.add_message(
             conversation_id=conversation_id,
-            sender_type="ai_bot",
-            message_type="text",
+            sender_type=sender_type,
+            agent_id=agent_id,
+            message_id=message_id,
+            message_type=message_type,
+            s3_media_url=media_url,
             text_content=text,
             platform_message_id=platform_message_id,
             llm_routing_tier=llm_routing_tier,
@@ -241,9 +257,11 @@ async def persist_outbound_message(
         data={
             "id": str(message.message_id),
             "conversation_id": str(conversation_id),
-            "sender_type": "ai_bot",
+            "sender_type": sender_type,
             "text": text,
-            "message_type": "text",
+            "message_type": message_type,
+            "s3_media_url": media_url,
+            "delivery_status": delivery_status,
             "tier": llm_routing_tier,
             "latency_ms": latency_ms,
             "created_at": message.created_at.isoformat()
@@ -279,6 +297,7 @@ async def update_message_delivery_status(
     from sqlalchemy import select
     from src.shared.db.models import Message
 
+    conversation_id: uuid.UUID | None = None
     async with get_tenant_session(tenant_id) as session:
         stmt = select(Message).where(Message.message_id == message_id)
         result = await session.scalars(stmt)
@@ -287,8 +306,24 @@ async def update_message_delivery_status(
             msg.delivery_status = delivery_status
             if platform_message_id:
                 msg.platform_message_id = platform_message_id
+            conversation_id = msg.conversation_id
             session.add(msg)
             # The context manager automatically commits
+
+    if conversation_id is not None:
+        # Previously this update was invisible to the frontend until a full
+        # reload — a message's PENDING → QUEUED → SENT transition (or a
+        # future DELIVERED/READ once the Meta status webhook exists) never
+        # reached an already-open inbox.
+        await _publish_sse(
+            tenant_id=tenant_id,
+            event_type="message_status_update",
+            data={
+                "id": str(message_id),
+                "conversation_id": str(conversation_id),
+                "delivery_status": delivery_status,
+            },
+        )
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -310,25 +345,37 @@ async def _safe_add_message(
     Append a message row, returning None on duplicate platform_message_id.
 
     The messages.platform_message_id column has a UNIQUE constraint.
-    Rather than querying first (two round-trips), we attempt the insert
-    and catch the IntegrityError, which SQLAlchemy converts to a rollback
-    of the flush only — the outer transaction remains valid.
+    A savepoint rolls back only the attempted message and counter update.
+    Other integrity failures still propagate to the caller.
     """
     from sqlalchemy.exc import IntegrityError
+    from sqlalchemy import select
 
     try:
-        msg = await conv_repo.add_message(
-            conversation_id=conversation_id,
-            sender_type=sender_type,
-            message_type=message_type,
-            text_content=text_content,
-            s3_media_url=s3_media_url,
-            platform_message_id=platform_message_id,
-        )
+        async with conv_repo.session.begin_nested():
+            msg = await conv_repo.add_message(
+                conversation_id=conversation_id,
+                sender_type=sender_type,
+                message_type=message_type,
+                text_content=text_content,
+                s3_media_url=s3_media_url,
+                platform_message_id=platform_message_id,
+            )
         return msg
     except IntegrityError:
-        # Duplicate platform_message_id — idempotent, not an error
-        await conv_repo.session.rollback()
+        if not platform_message_id:
+            raise
+        existing = await conv_repo.session.scalar(
+            select(Message.message_id).where(
+                Message.platform_message_id == platform_message_id,
+                Message.conversation_id == conversation_id,
+            )
+        )
+        if existing is None:
+            raise
+        # Savepoint rollback may expire conversation metadata used by the caller.
+        conversation = await conv_repo.get_or_404(conversation_id)
+        await conv_repo.session.refresh(conversation)
         logger.info(
             "inbound_message_duplicate_skipped",
             platform_message_id=platform_message_id,

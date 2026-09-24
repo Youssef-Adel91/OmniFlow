@@ -119,25 +119,38 @@ export async function fetchConversations(
   return rawItems.map(mapConversation);
 }
 
+export interface MessagePage {
+  items: Message[];
+  hasMore: boolean;
+}
+
 /**
- * Fetch all messages for a specific conversation.
- * Called when the user selects a conversation in the ConversationList pane.
+ * Fetch a page of message history for a conversation.
+ *
+ * No `before` returns the most recent `limit` messages (oldest-first in the
+ * response, ready to render directly) — a long conversation no longer hides
+ * its newest messages behind an offset=0 default. Pass `before` (the
+ * `createdAt` of the oldest currently-loaded message) to load the next page
+ * further into the past ("load older messages").
  *
  * @param conversationId - UUID of the target conversation
  * @param limit          - Max messages to return (default 100)
+ * @param before         - ISO timestamp cursor for paging into the past
  */
 export async function fetchMessages(
   conversationId: string,
   limit = 100,
-): Promise<Message[]> {
+  before?: string,
+): Promise<MessagePage> {
   const { data } = await apiClient.get<any>(
     `/conversations/${conversationId}/messages`,
-    { params: { limit } },
+    { params: { limit, ...(before ? { before } : {}) } },
   );
 
   const rawItems: any[] = Array.isArray(data) ? data : data.items ?? [];
+  const hasMore: boolean = Array.isArray(data) ? false : Boolean(data.has_more);
 
-  return rawItems.map(mapMessage);
+  return { items: rawItems.map(mapMessage), hasMore };
 }
 
 export interface PropertyRecommendation {

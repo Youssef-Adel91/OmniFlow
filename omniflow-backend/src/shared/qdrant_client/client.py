@@ -42,8 +42,12 @@ from src.shared.core.config import get_settings
 logger = structlog.get_logger(__name__)
 settings = get_settings()
 
-# Embedding dimension for text-embedding-3-small
-EMBEDDING_DIM: int = 1536
+# Vector size for whichever embedding provider is active (see
+# shared/core/config.py::Settings.embedding_dim / embedding_provider) — the
+# single source of truth, so this can never drift from what embedder.py
+# actually produces. 1536 for real OpenAI embeddings, 384 for the local
+# fastembed fallback used whenever no OpenAI key is configured.
+EMBEDDING_DIM: int = settings.embedding_dim
 
 # Property listing payload fields (must match the schema used during indexing)
 _PAYLOAD_FIELDS = (

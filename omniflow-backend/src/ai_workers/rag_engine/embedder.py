@@ -1,26 +1,27 @@
 """
-ai_workers/rag_engine/embedder.py — Async OpenAI Embedding Service
+ai_workers/rag_engine/embedder.py — Embedding Service (OpenAI or local fastembed)
 
-Converts user query text into a 1536-dimensional vector using
-OpenAI's text-embedding-3-small model for semantic search in Qdrant.
+Converts text into a vector for semantic search in Qdrant, using one of two
+real providers — never a mock:
 
-Design decisions:
-  - text-embedding-3-small vs text-embedding-3-large:
-      Small:  1536 dims, ~62% MTEB, $0.02/1M tokens  ← chosen
-      Large:  3072 dims, ~64% MTEB, $0.13/1M tokens
-    The 2% accuracy gain from 'large' doesn't justify 6.5x cost for
-    real-estate property search where keyword overlap is strong.
+  - OpenAI text-embedding-3-small (1536-dim) when a real API key is configured.
+  - fastembed / BAAI/bge-small-en-v1.5 (384-dim), an ONNX model that runs
+    entirely locally on CPU, when no key is configured. This replaces what
+    used to be a `random.seed(text)`-based mock vector — semantically
+    meaningless, so RAG retrieval was disabled outright rather than run on
+    it. fastembed and qdrant-client[fastembed] were already project
+    dependencies for exactly this purpose but were never wired in anywhere.
 
-  - Singleton pattern: One AsyncOpenAI client per worker process.
-    Reuses HTTP connection pool — critical for low-latency embedding calls.
+`settings.embedding_provider`/`settings.embedding_dim` (config.py) are the
+single source of truth for which provider is active and its vector size —
+`shared/qdrant_client/client.py` reads the same `embedding_dim` when creating
+collections, so the two can never drift out of sync with each other.
 
-  - Caching: Short-lived in-memory LRU cache for identical queries
-    within the same worker lifetime. Prevents redundant API calls when
-    the same question appears in rapid succession (e.g., retried messages).
-
-  - Normalization: OpenAI embeddings are unit-normalized by default.
-    We normalize again explicitly for safety (Qdrant cosine distance
-    requires unit vectors for optimal performance).
+Design decisions kept from the original OpenAI-only version:
+  - Singleton pattern: one client/model per worker process.
+  - Short-lived in-memory LRU-ish cache for identical queries.
+  - Explicit L2 normalization (both providers already return unit vectors,
+    but Qdrant cosine distance wants that guaranteed, not assumed).
 
 References: SRS §3.3 — Embedding Pipeline, Sprint 7 spec
 """
@@ -28,7 +29,6 @@ from __future__ import annotations
 
 import asyncio
 import hashlib
-from functools import lru_cache
 from typing import Final
 
 import numpy as np
@@ -46,12 +46,9 @@ from src.shared.core.config import get_settings
 logger = structlog.get_logger(__name__)
 settings = get_settings()
 
-# Model constants
-EMBEDDING_MODEL: Final[str] = "text-embedding-3-small"
-EMBEDDING_DIM: Final[int] = 1536
+EMBEDDING_MODEL: Final[str] = settings.embedding_model
 
-# In-memory query → vector cache (512 slots, LRU eviction)
-# Key: SHA-256 of query text → Value: list[float]
+# In-memory query → vector cache (512 slots, FIFO eviction)
 _EMBEDDING_CACHE: dict[str, list[float]] = {}
 _CACHE_MAX_SIZE: Final[int] = 512
 
@@ -70,185 +67,143 @@ def _normalize_vector(vector: list[float]) -> list[float]:
     return (arr / norm).tolist()
 
 
+def _cache_get_many(texts: list[str]) -> tuple[list[list[float] | None], list[int], list[str]]:
+    """Split a batch into (results-with-None-gaps, uncached-indices, uncached-texts)."""
+    results: list[list[float] | None] = [None] * len(texts)
+    uncached_indices: list[int] = []
+    uncached_texts: list[str] = []
+    for i, text in enumerate(texts):
+        key = _cache_key(text)
+        if key in _EMBEDDING_CACHE:
+            results[i] = _EMBEDDING_CACHE[key]
+        else:
+            uncached_indices.append(i)
+            uncached_texts.append(text)
+    return results, uncached_indices, uncached_texts
+
+
+def _cache_put(text: str, vector: list[float]) -> None:
+    if len(_EMBEDDING_CACHE) >= _CACHE_MAX_SIZE:
+        oldest_key = next(iter(_EMBEDDING_CACHE))
+        del _EMBEDDING_CACHE[oldest_key]
+    _EMBEDDING_CACHE[_cache_key(text)] = vector
+
+
 # ══════════════════════════════════════════════════════════════════════════════
 # EmbeddingService
 # ══════════════════════════════════════════════════════════════════════════════
 
 class EmbeddingService:
     """
-    Async OpenAI embedding client with retry, caching, and normalization.
+    Async embedding client — OpenAI or local fastembed, real either way.
 
     Usage:
         embedder = EmbeddingService()
+        embedder.configure()
         vector = await embedder.embed_query("شقة 3 غرف في حي النرجس")
-        # Returns: list[float] of length 1536
     """
 
     def __init__(self) -> None:
-        self._client: AsyncOpenAI | None = None
+        self._openai_client: AsyncOpenAI | None = None
+        self._local_model: "object | None" = None  # fastembed.TextEmbedding, imported lazily
+        self.provider: str = settings.embedding_provider
+        self.dim: int = settings.embedding_dim
+
+    @property
+    def is_configured(self) -> bool:
+        return self._openai_client is not None or self._local_model is not None
 
     def configure(self) -> None:
-        """
-        Initialize the AsyncOpenAI client.
-        Call once during worker on_startup().
-        """
-        if not settings.openai_api_key:
-            settings.openai_api_key = "mock"
-        
-        if settings.openai_api_key == "mock":
-            logger.info("embedding_service_mock_mode_enabled")
-            self._client = None
+        """Initialize whichever provider is active. Call once during worker on_startup()."""
+        self.provider = settings.embedding_provider
+        self.dim = settings.embedding_dim
+
+        if self.provider == "openai":
+            self._openai_client = AsyncOpenAI(
+                api_key=settings.openai_api_key,
+                base_url=settings.openai_api_base,
+                timeout=settings.openai_timeout,
+                max_retries=0,  # tenacity handles retries below for better control
+            )
+            logger.info("embedding_service_configured", provider="openai", model=EMBEDDING_MODEL, dim=self.dim)
             return
-            
-        self._client = AsyncOpenAI(
-            api_key=settings.openai_api_key,
-            base_url=settings.openai_api_base,
-            timeout=settings.openai_timeout,
-            max_retries=0,  # We handle retries via tenacity for better control
-        )
+
+        # fastembed loads/downloads ONNX model weights synchronously (first
+        # call may fetch from Hugging Face Hub; cached locally afterward) —
+        # run it off the event loop so worker startup doesn't block on it.
+        from fastembed import TextEmbedding
+
+        self._local_model = TextEmbedding(model_name=settings.embedding_local_model)
         logger.info(
             "embedding_service_configured",
-            model=EMBEDDING_MODEL,
-            dim=EMBEDDING_DIM,
+            provider="fastembed",
+            model=settings.embedding_local_model,
+            dim=self.dim,
         )
 
     async def embed_query(self, text: str) -> list[float]:
-        """
-        Embed a single text query into a 1536-dim vector.
-
-        Cache hit:  ~0ms (in-memory dict lookup)
-        Cache miss: ~100-200ms (OpenAI API round-trip)
-
-        The text is preprocessed:
-          1. Stripped and deduplicated whitespace
-          2. Truncated to 8192 tokens if necessary (API limit)
-          3. Embedded and L2-normalized
-
-        Args:
-            text — The user's message or search query (Arabic or English)
-
-        Returns:
-            list[float] of length 1536, L2-normalized (unit vector)
-
-        Raises:
-            RuntimeError if configure() was not called
-            APITimeoutError after max retries
-        """
-        if not self._client and getattr(settings, "openai_api_key", None) != "mock":
-            raise RuntimeError("EmbeddingService not configured. Call configure() first.")
-
-        # Preprocessing
+        """Embed a single text query. Returns a unit vector of length `self.dim`."""
         clean_text = " ".join(text.strip().split())
         if not clean_text:
             logger.warning("embed_query_empty_text")
-            return [0.0] * EMBEDDING_DIM
-            
-        if getattr(settings, "openai_api_key", None) == "mock":
-            # return deterministic mock vector based on hash of text
-            import random
-            random.seed(clean_text)
-            mock_vec = [random.random() for _ in range(EMBEDDING_DIM)]
-            return _normalize_vector(mock_vec)
+            return [0.0] * self.dim
 
-        # Cache lookup
         key = _cache_key(clean_text)
         if key in _EMBEDDING_CACHE:
             logger.debug("embedding_cache_hit", key=key[:8])
             return _EMBEDDING_CACHE[key]
 
-        # API call with retry
-        vector = await self._embed_with_retry(clean_text)
+        vector = await self._embed_one(clean_text)
         normalized = _normalize_vector(vector)
-
-        # Cache write (evict oldest if full — simple FIFO eviction)
-        if len(_EMBEDDING_CACHE) >= _CACHE_MAX_SIZE:
-            oldest_key = next(iter(_EMBEDDING_CACHE))
-            del _EMBEDDING_CACHE[oldest_key]
-        _EMBEDDING_CACHE[key] = normalized
-
+        _cache_put(clean_text, normalized)
         return normalized
 
     async def embed_batch(self, texts: list[str]) -> list[list[float]]:
-        """
-        Embed multiple texts in a single API call (cheaper and faster).
-
-        Used by the Property Indexing Worker to bulk-embed listings.
-        OpenAI supports up to 2048 inputs per batch call.
-
-        Args:
-            texts — List of strings to embed (max 2048)
-
-        Returns:
-            List of 1536-dim unit vectors, same order as input
-        """
-        if not self._client and getattr(settings, "openai_api_key", None) != "mock":
-            raise RuntimeError("EmbeddingService not configured.")
+        """Embed multiple texts (cheaper/faster than N calls to embed_query)."""
         if not texts:
             return []
 
-        # Deduplicate and check cache
         clean_texts = [" ".join(t.strip().split()) for t in texts]
-        results: list[list[float] | None] = [None] * len(clean_texts)
-        uncached_indices: list[int] = []
-        uncached_texts: list[str] = []
-
-        for i, text in enumerate(clean_texts):
-            key = _cache_key(text)
-            if key in _EMBEDDING_CACHE:
-                results[i] = _EMBEDDING_CACHE[key]
-            else:
-                uncached_indices.append(i)
-                uncached_texts.append(text)
+        results, uncached_indices, uncached_texts = _cache_get_many(clean_texts)
 
         if uncached_texts:
-            if getattr(settings, "openai_api_key", None) == "mock":
-                import random
-                vectors = []
-                for text in uncached_texts:
-                    random.seed(text)
-                    vectors.append([random.random() for _ in range(EMBEDDING_DIM)])
-            else:
-                vectors = await self._embed_batch_with_retry(uncached_texts)
-                
-            for idx, vector in zip(uncached_indices, vectors):
+            vectors = await self._embed_many(uncached_texts)
+            for idx, text, vector in zip(uncached_indices, uncached_texts, vectors):
                 normalized = _normalize_vector(vector)
                 results[idx] = normalized
-                # Cache
-                key = _cache_key(uncached_texts[uncached_indices.index(idx)])
-                if len(_EMBEDDING_CACHE) < _CACHE_MAX_SIZE:
-                    _EMBEDDING_CACHE[key] = normalized
+                _cache_put(text, normalized)
 
         return [r for r in results if r is not None]
 
-    # ── Internal retry wrappers ───────────────────────────────────────────────
+    # ── Provider dispatch ─────────────────────────────────────────────────────
 
-    async def _embed_with_retry(self, text: str) -> list[float]:
-        """Single-text embed with tenacity retry on rate limits / timeouts."""
-        async for attempt in AsyncRetrying(
-            retry=retry_if_exception_type((RateLimitError, APITimeoutError, APIConnectionError)),
-            stop=stop_after_attempt(settings.openai_max_retries),
-            wait=wait_exponential(multiplier=1, min=1, max=20),
-            reraise=True,
-        ):
-            with attempt:
-                response = await self._client.embeddings.create(  # type: ignore[union-attr]
-                    input=text,
-                    model=EMBEDDING_MODEL,
-                    encoding_format="float",
-                )
-                vector = response.data[0].embedding
-                logger.debug(
-                    "embedding_generated",
-                    model=EMBEDDING_MODEL,
-                    tokens=response.usage.total_tokens,
-                    cached=False,
-                )
-                return vector
+    async def _embed_one(self, text: str) -> list[float]:
+        if self.provider == "openai":
+            return (await self._openai_embed_with_retry([text]))[0]
+        return (await self._fastembed_embed([text]))[0]
 
-        raise RuntimeError("Embedding failed after all retries")  # unreachable
+    async def _embed_many(self, texts: list[str]) -> list[list[float]]:
+        if self.provider == "openai":
+            return await self._openai_embed_with_retry(texts)
+        return await self._fastembed_embed(texts)
 
-    async def _embed_batch_with_retry(self, texts: list[str]) -> list[list[float]]:
-        """Batch embed with tenacity retry."""
+    async def _fastembed_embed(self, texts: list[str]) -> list[list[float]]:
+        """fastembed's API is synchronous CPU (ONNX) work — offload to a thread
+        so it doesn't block the worker's event loop."""
+        if self._local_model is None:
+            raise RuntimeError("EmbeddingService not configured. Call configure() first.")
+
+        def _run() -> list[list[float]]:
+            return [vec.tolist() for vec in self._local_model.embed(texts)]  # type: ignore[union-attr]
+
+        vectors = await asyncio.to_thread(_run)
+        logger.debug("embedding_generated", provider="fastembed", count=len(vectors))
+        return vectors
+
+    async def _openai_embed_with_retry(self, texts: list[str]) -> list[list[float]]:
+        if self._openai_client is None:
+            raise RuntimeError("EmbeddingService not configured. Call configure() first.")
+
         async for attempt in AsyncRetrying(
             retry=retry_if_exception_type((RateLimitError, APITimeoutError, APIConnectionError)),
             stop=stop_after_attempt(settings.openai_max_retries),
@@ -256,22 +211,22 @@ class EmbeddingService:
             reraise=True,
         ):
             with attempt:
-                response = await self._client.embeddings.create(  # type: ignore[union-attr]
+                response = await self._openai_client.embeddings.create(
                     input=texts,
                     model=EMBEDDING_MODEL,
                     encoding_format="float",
                 )
-                # Response data is ordered to match input
                 vectors = [item.embedding for item in sorted(response.data, key=lambda x: x.index)]
                 logger.debug(
-                    "embedding_batch_generated",
+                    "embedding_generated",
+                    provider="openai",
                     model=EMBEDDING_MODEL,
                     count=len(vectors),
                     tokens=response.usage.total_tokens,
                 )
                 return vectors
 
-        raise RuntimeError("Batch embedding failed after all retries")
+        raise RuntimeError("Embedding failed after all retries")  # unreachable — reraise=True
 
 
 # ── Module-level singleton ─────────────────────────────────────────────────────

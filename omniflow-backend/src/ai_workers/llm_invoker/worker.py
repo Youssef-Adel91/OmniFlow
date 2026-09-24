@@ -39,17 +39,21 @@ from typing import Any
 import structlog
 from aiokafka.structs import ConsumerRecord
 from pydantic import BaseModel, Field
+from sqlalchemy import update
 
 from src.ai_workers.llm_invoker.client import LLMResponse, gemini_client
 from src.ai_workers.llm_invoker.persona import DEFAULT_SYSTEM_PROMPT, get_system_prompt
 from src.ai_workers.rag_engine.retriever import rag_retriever
 from src.ai_workers.semantic_router.worker import RoutingDecision
 from src.shared.core.config import get_settings
-from src.shared.core.enums import RoutingTier, MessageType
+from src.shared.core.enums import RoutingTier, MessageType, ConversationStatus
+from src.shared.db.models import Conversation
+from src.shared.db.session import get_tenant_session
 from src.shared.kafka.consumer import BaseKafkaConsumer
 from src.shared.kafka.producer import KafkaProducerManager
 from src.shared.redis_client.client import redis_mgr
 from src.shared.services.tts_client import TTSGenerationError, tts_client
+from src.shared.services.conversation_state import load_conversation_state
 
 logger = structlog.get_logger(__name__)
 settings = get_settings()
@@ -117,46 +121,8 @@ def _should_use_voice_note(decision: "RoutingDecision", ai_text: str) -> bool:
 # Outbound Message Model — published to messages.outgoing.v1
 # ══════════════════════════════════════════════════════════════════════════════
 
-class OutboundMessage(BaseModel):
-    """
-    AI-generated response ready for delivery to the customer.
-
-    Consumed by the WhatsApp Sender Worker (Sprint 8) which calls
-    the Meta Graph API to deliver the message.
-
-    Sprint 14 additions:
-        message_type  — "text" (default) | "audio" (voice note)
-        media_url     — Public HTTPS URL to audio/mpeg for voice notes.
-                        Always populated alongside `text` so the Smart Inbox
-                        can display the transcript even for voice messages.
-    """
-    message_id: uuid.UUID = Field(default_factory=uuid.uuid4)
-    tenant_id: uuid.UUID
-    conversation_id: uuid.UUID | None = None
-    customer_phone: str
-    channel: str = "whatsapp"
-    platform_conversation_id: str  # wa_id for WhatsApp routing
-
-    # Response content
-    text: str
-    message_type: str = "text"           # "text" | "audio"
-    media_url: str | None = None         # Sprint 14: populated for voice notes
-
-    # Metadata
-    source_event_id: uuid.UUID     # The CanonicalInboundEvent that triggered this
-    routing_tier_used: str
-    model_used: str
-    input_tokens: int = 0
-    output_tokens: int = 0
-    latency_ms: int = 0
-    created_at: datetime = Field(default_factory=lambda: datetime.now(tz=timezone.utc))
-
-    def to_kafka_bytes(self) -> bytes:
-        return self.model_dump_json().encode("utf-8")
-
-    @classmethod
-    def kafka_key(cls, tenant_id: uuid.UUID, phone: str) -> bytes:
-        return f"{tenant_id!s}:{phone}".encode("utf-8")
+# Re-exported for existing worker imports.
+from src.shared.events.outbound import OutboundMessage
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -196,8 +162,13 @@ class LLMInvokerWorker(BaseKafkaConsumer):
         await self._outbound_producer.start()
         await self._analytics_producer.start()
         gemini_client.configure()
-        # Sprint 7: Initialize RAG pipeline (embedder + Qdrant)
-        rag_retriever.configure()  # Validates OpenAI API key
+        # RAG pipeline (embedder + Qdrant). Always enabled — a real embedding
+        # provider is always available: OpenAI when a real key is configured,
+        # otherwise the local fastembed model (no API key, no network
+        # dependency beyond a one-time model download). See embedder.py.
+        self._rag_enabled = True
+        rag_retriever.configure()
+        logger.info("rag_enabled", embedding_provider=settings.embedding_provider)
         from src.shared.qdrant_client.client import qdrant_mgr
         await qdrant_mgr.start()
         logger.info(
@@ -207,6 +178,7 @@ class LLMInvokerWorker(BaseKafkaConsumer):
         )
 
     async def on_shutdown(self) -> None:
+        await gemini_client.close()
         await self._outbound_producer.stop()
         await self._analytics_producer.stop()
         from src.shared.qdrant_client.client import qdrant_mgr
@@ -247,6 +219,10 @@ class LLMInvokerWorker(BaseKafkaConsumer):
         tenant_id = decision.tenant_id
         customer_phone = event.customer_phone or event.platform_user_id
         tier = decision.target_tier
+        if decision.conversation_id:
+            state = await load_conversation_state(tenant_id, decision.conversation_id)
+            if state["is_human_active"] or state["is_processing_restricted"]:
+                return
 
         log = logger.bind(
             event_id=str(event.event_id),
@@ -255,7 +231,7 @@ class LLMInvokerWorker(BaseKafkaConsumer):
         )
 
         # ── 2. Non-LLM fast paths ─────────────────────────────────────────────
-        if tier == RoutingTier.HUMAN_ESCALATION or decision.skip_llm:
+        if tier == RoutingTier.HUMAN_ESCALATION or (decision.skip_llm and tier != RoutingTier.L0_SEMANTIC_CACHE):
             log.info("llm_invoker_skipped_human_route", reason=decision.route_reason)
             # Human routing — do NOT call LLM, do NOT publish to outgoing.
             # The Human Takeover service handles this (Sprint 8).
@@ -291,7 +267,7 @@ class LLMInvokerWorker(BaseKafkaConsumer):
 
         # ── 5. RAG context injection (L2) ────────────────────────────────────
         rag_context: str | None = None
-        if tier == RoutingTier.L2_RAG:
+        if tier == RoutingTier.L2_RAG and getattr(self, "_rag_enabled", False):
             user_text = event.text_content or ""
             if event.location_latitude:
                 user_text = (
@@ -337,7 +313,7 @@ class LLMInvokerWorker(BaseKafkaConsumer):
             return
         except Exception as exc:
             # Will be caught by BaseKafkaConsumer retry loop
-            raise RuntimeError(f"Gemini API error: {exc}") from exc
+            raise RuntimeError(f"LLM API error: {exc}") from exc
 
         # Handle safety block
         if llm_response.was_blocked:
@@ -466,17 +442,28 @@ class LLMInvokerWorker(BaseKafkaConsumer):
         )
 
     async def _publish_escalation_event(self, decision: RoutingDecision) -> None:
-        """Publish a human escalation event when LLM times out."""
-        escalation = decision.model_copy(
-            update={
-                "target_tier": RoutingTier.HUMAN_ESCALATION,
-                "route_reason": "llm_timeout_auto_escalation",
-                "skip_llm": True,
-            }
-        )
-        await self._outbound_producer.publish(
-            topic=settings.kafka_topic_messages_outgoing,
-            event=escalation,
+        """Persist human escalation when LLM times out, then notify the inbox."""
+        if not decision.conversation_id:
+            raise ValueError("Cannot escalate without a persisted conversation")
+        async with get_tenant_session(decision.tenant_id) as session:
+            result = await session.execute(
+                update(Conversation).where(
+                    Conversation.conversation_id == decision.conversation_id,
+                    Conversation.status == ConversationStatus.AI_ACTIVE,
+                ).values(status=ConversationStatus.ESCALATED)
+            )
+            changed = result.rowcount
+        # A human takeover or closure while the model ran must be preserved.
+        if not changed:
+            return
+        await redis_mgr.publish_sse(
+            tenant_id=decision.tenant_id,
+            event_type="conversation_update",
+            data={
+                "id": str(decision.conversation_id),
+                "status": ConversationStatus.ESCALATED.value,
+                "is_ai_active": False,
+            },
         )
 
     async def _publish_analytics(

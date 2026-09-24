@@ -52,6 +52,7 @@ class Settings(BaseSettings):
     field_encryption_key: str
     clerk_secret_key: str = ""
     clerk_publishable_key: str = ""
+    clerk_issuer_url: str = ""
     # Svix signing secret for the Clerk webhook (env: CLERK_WEBHOOK_SECRET).
     # MANDATORY in production — see validate_production_settings below.
     clerk_webhook_secret: str = Field(
@@ -74,10 +75,12 @@ class Settings(BaseSettings):
     @computed_field  # type: ignore[misc]
     @property
     def database_url(self) -> str:
-        return (
-            f"postgresql+asyncpg://{self.postgres_user}:{self.postgres_password}"
-            f"@{self.pgbouncer_host}:{self.pgbouncer_port}/{self.postgres_db}"
-        )
+        from sqlalchemy import URL
+        return URL.create(
+            "postgresql+asyncpg", username=self.postgres_user,
+            password=self.postgres_password, host=self.pgbouncer_host,
+            port=self.pgbouncer_port, database=self.postgres_db,
+        ).render_as_string(hide_password=False)
 
     # ── Redis ─────────────────────────────────────────────────────────────────
     redis_host: str = "localhost"
@@ -215,20 +218,64 @@ class Settings(BaseSettings):
     openai_api_base: str = "https://api.openai.com/v1"
     openai_timeout: int = 60
     openai_max_retries: int = 3
+    # ── Free/OpenAI-Compatible AI Provider Configuration ───────────────────
+    # Switch between openrouter.ai, groq, or direct openai.
+    llm_primary_provider: Literal["openai", "openrouter", "groq", "gemini"] = "openai"
+    openrouter_api_key: str = ""
+    groq_api_key: str = ""
+    llm_free_only: bool = False
+    llm_base_url: str = Field(
+        default="https://openrouter.ai/api/v1",
+        description="Base URL for OpenAI-compatible API (OpenRouter or Groq). "
+        "Set to https://api.openai.com/v1 for direct OpenAI.",
+    )
+    llm_api_key: str = Field(
+        default="",
+        description=(
+            "API key for the selected provider. Priority: LLM_API_KEY env var → "
+            "OPENROUTER_API_KEY env var → GROQ_API_KEY env var. "
+            "Leave blank if using mock mode or direct OpenAI with OPENAI_API_KEY."
+        ),
+    )
+    # Model identifiers per routing tier — all should be valid for the selected provider.
+    MODEL_ROUTER: str = Field(
+        default="meta-llama/llama-3.1-8b-instruct:free",
+        description="Default model for intent classification / router tier.",
+    )
+    MODEL_L1: str = Field(
+        default="meta-llama/llama-3.1-8b-instruct:free",
+        description="L1 triage model — simple FAQs / greetings.",
+    )
+    MODEL_L2: str = Field(
+        default="qwen/qwen-2.5-72b-instruct:free",
+        description="L2 RAG-augmented model — moderate complexity.",
+    )
+    MODEL_L3: str = Field(
+        default="deepseek/deepseek-r1:free",
+        description="L3 master agent model — deep consultation / legal.",
+    )
+    # Optional per-provider overrides (leave blank to use MODEL_* defaults above).
+    model_l1_override: str = Field(default="", description="Override L1 model identifier.")
+    model_l2_override: str = Field(default="", description="Override L2 model identifier.")
+    model_l3_override: str = Field(default="", description="Override L3 model identifier.")
+    # Legacy names remain available while the workers share this configuration.
     llm_l1_model: str = "gpt-4o-mini"
     llm_l3_model: str = "gpt-4o"
     embedding_model: str = "text-embedding-3-small"
+    embedding_model_dim: int = 1536
+    # Local, no-API-key embedding fallback (ONNX via fastembed) — used
+    # whenever no real OpenAI key is configured, instead of the previous
+    # semantically-meaningless random-vector mock. See embedder.py.
+    embedding_local_model: str = "BAAI/bge-small-en-v1.5"
+    embedding_local_model_dim: int = 384
     whisper_api_model: str = "whisper-1"
-    google_ai_api_key: str = ""
-    # Primary Gemini credential used by src/ai_engine/llm_orchestrator.py.
-    # SECURITY: read from env only (GEMINI_API_KEY) — never hard-code.
-    gemini_api_key: str = Field(
+    google_ai_api_key: str = Field(
         default="",
-        description="Google Gemini API key — env: GEMINI_API_KEY",
+        description="Google Gemini API key — env: GOOGLE_AI_API_KEY",
     )
+    gemini_api_key: str = ""
     gemini_l1_model: str = "gemini-2.0-flash-lite"
     gemini_l3_model: str = "gemini-2.0-pro"
-    llm_primary_provider: Literal["openai", "gemini", "anthropic"] = "openai"
     ai_confidence_escalation_threshold: float = 0.70
 
     # ── Multimodal ────────────────────────────────────────────────────────────
@@ -312,16 +359,36 @@ class Settings(BaseSettings):
     def validate_production_settings(self) -> "Settings":
         """Enforce strict settings in production."""
         if self.app_env == "production":
-            assert not self.app_debug, "DEBUG must be False in production"
-            assert self.sentry_dsn, "SENTRY_DSN is required in production"
-            assert self.kms_dev_mock_key is False, "KMS mock must be disabled in production"
-            assert self.otel_enabled, "OpenTelemetry must be enabled in production"
-            assert self.clerk_secret_key, "CLERK_SECRET_KEY is required in production"
-            assert self.clerk_webhook_secret, (
-                "CLERK_WEBHOOK_SECRET is required in production — without it the "
-                "Clerk webhook cannot verify signatures and would accept forged "
-                "tenant-provisioning requests."
-            )
+            # Explicit errors remain active when Python runs with -O.
+            checks = {
+                "APP_DEBUG must be false": not self.app_debug,
+                "SENTRY_DSN is required": bool(self.sentry_dsn),
+                "KMS mock must be disabled": not self.kms_dev_mock_key,
+                "OpenTelemetry must be enabled": self.otel_enabled,
+                "CLERK_SECRET_KEY is required": bool(self.clerk_secret_key),
+                "CLERK_WEBHOOK_SECRET is required": bool(self.clerk_webhook_secret),
+                "Clerk issuer or publishable key is required": bool(self.clerk_issuer_url or self.clerk_publishable_key),
+                "ALLOWED_ORIGINS must contain explicit HTTPS origins": all(
+                    origin.startswith("https://") and "*" not in origin
+                    for origin in self.allowed_origins_list
+                ),
+            }
+            for message, valid in checks.items():
+                if not valid:
+                    raise ValueError(message + " in production")
+            for name in ("secret_key", "jwt_secret_key", "meta_webhook_hmac_secret", "field_encryption_key",
+                         "clerk_secret_key", "clerk_webhook_secret", "postgres_password", "redis_password"):
+                value = getattr(self, name).strip()
+                if not value or value.lower() in {"mock", "changeme", "change_me"} or "<REQUIRED" in value.upper():
+                    raise ValueError(name.upper() + " must not be a placeholder in production")
+            if self.feature_voice_notes_enabled and self.elevenlabs_api_key.strip().lower() in {"", "mock"}:
+                raise ValueError("Disable voice notes or configure ELEVENLABS_API_KEY in production")
+            provider_keys = {"openai": self.openai_api_key, "openrouter": self.openrouter_api_key, "groq": self.groq_api_key}
+            if self.llm_primary_provider not in provider_keys:
+                raise ValueError("The gateway requires an OpenAI-compatible chat provider in production")
+            chat_key = (self.llm_api_key or provider_keys[self.llm_primary_provider]).strip()
+            if not chat_key or chat_key.lower() == "mock" or "<REQUIRED" in chat_key.upper():
+                raise ValueError("A real key for the selected chat provider is required in production")
         return self
 
     @property
@@ -341,6 +408,19 @@ class Settings(BaseSettings):
             if value and value.lower() != "mock":
                 return value
         return ""
+
+    @property
+    def embedding_provider(self) -> str:
+        """"openai" when a real key is configured, else "fastembed" (local,
+        no API key, no network dependency beyond the one-time model download)."""
+        key = (self.openai_api_key or "").strip().lower()
+        return "openai" if key and key != "mock" else "fastembed"
+
+    @property
+    def embedding_dim(self) -> int:
+        """Vector size for the active embedding provider — Qdrant collections
+        must be created with this size, and it changes if the provider does."""
+        return self.embedding_model_dim if self.embedding_provider == "openai" else self.embedding_local_model_dim
 
     @property
     def is_production(self) -> bool:

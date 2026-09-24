@@ -254,8 +254,8 @@ class RAGRetriever:
         self._qdrant = _qdrant or qdrant_mgr
 
     def configure(self) -> None:
-        """Validate that the embedder is configured (client set up)."""
-        if not self._embedder._client:
+        """Validate that the embedder is configured (client/model set up)."""
+        if not self._embedder.is_configured:
             self._embedder.configure()
 
     async def get_rag_context(

@@ -94,8 +94,11 @@ dependencies = [
   "opentelemetry-instrumentation-fastapi>=0.48b0",
   "opentelemetry-instrumentation-sqlalchemy>=0.48b0",
   "opentelemetry-instrumentation-redis>=0.48b0",
-  "opentelemetry-instrumentation-kafka-python>=0.48b0",
-  "opentelemetry-exporter-otlp>=1.27.0",
+  # NOT opentelemetry-instrumentation-kafka-python: this codebase uses
+  # aiokafka, a different client library that instrumentor doesn't patch —
+  # it would install cleanly and instrument nothing. No aiokafka
+  # instrumentor exists upstream (see shared/observability/tracing.py).
+  "opentelemetry-exporter-otlp-proto-grpc>=1.27.0",  # matches the :4317 gRPC OTLP endpoint used locally
   "prometheus-client>=0.21.0",
   "prometheus-fastapi-instrumentator>=7.0.0",
   "structlog>=24.4.0",              # Structured JSON logging

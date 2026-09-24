@@ -3,7 +3,8 @@ gateway/routers/settings.py — Tenant Settings REST API
 
 Endpoints (prefix /api/v1/settings):
     GET   /   → current tenant configuration (Meta token MASKED)
-    PATCH /   → update business_name / max_ai_conversations only
+    PATCH /   → update business_name / max_ai_conversations /
+                whatsapp_display_phone_number only
 
     PATCH /ai-personality → update the AI Personality (system prompt)
     POST  /logo           → upload a company logo (multipart/form-data)
@@ -23,9 +24,10 @@ import mimetypes
 import uuid
 from typing import Optional
 
+import phonenumbers
 import structlog
 from fastapi import APIRouter, File, HTTPException, UploadFile, status
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 from sqlalchemy import select
 
 from src.ai_engine.company_context import invalidate_company_context
@@ -80,11 +82,46 @@ class TenantSettings(BaseModel):
         default=None,
         description="Public S3/MinIO URL of the company logo.",
     )
+    whatsapp_display_phone_number: Optional[str] = Field(
+        default=None,
+        description="E.164 contact number shown on the tenant's VCard (item 7).",
+    )
+
+
+def _normalize_e164(raw: str) -> str:
+    """
+    Normalize a phone number to E.164 (+<countrycode><number>).
+
+    Item 7 sign-off: numbers typed without an explicit country code default
+    to Saudi Arabia (region hint "SA" below) — e.g. "0501234567" ->
+    "+966501234567" — but a number given WITH its own country code (a
+    leading "+" or "00") is respected as-is, since a brokerage's customers
+    are not necessarily Saudi-resident. Never silently force everything to
+    +966.
+    """
+    try:
+        parsed = phonenumbers.parse(raw, "SA")
+    except phonenumbers.NumberParseException as exc:
+        raise ValueError(f"Not a valid phone number: {raw!r}") from exc
+    if not phonenumbers.is_valid_number(parsed):
+        raise ValueError(
+            f"Not a valid phone number: {raw!r}. "
+            "Include a country code (e.g. +9665...) if this is not a Saudi number."
+        )
+    return phonenumbers.format_number(parsed, phonenumbers.PhoneNumberFormat.E164)
 
 
 class TenantSettingsPatch(BaseModel):
     business_name: Optional[str] = Field(default=None, min_length=2, max_length=255)
     max_ai_conversations: Optional[int] = Field(default=None, ge=0, le=1_000_000)
+    whatsapp_display_phone_number: Optional[str] = Field(default=None, max_length=20)
+
+    @field_validator("whatsapp_display_phone_number")
+    @classmethod
+    def _validate_display_phone(cls, value: Optional[str]) -> Optional[str]:
+        if value is None:
+            return None
+        return _normalize_e164(value)
 
 
 class AiPersonalityPatch(BaseModel):
@@ -114,6 +151,7 @@ def _to_settings(tenant: Tenant) -> TenantSettings:
         meta_access_token=_mask_secret(tenant.meta_access_token),
         ai_system_prompt=tenant.ai_system_prompt,
         logo_url=tenant.logo_url,
+        whatsapp_display_phone_number=tenant.whatsapp_display_phone_number,
     )
 
 
@@ -179,8 +217,10 @@ async def get_settings_endpoint(
     status_code=status.HTTP_200_OK,
     summary="Update tenant settings",
     description=(
-        "Updates `business_name` and/or `max_ai_conversations`. Requires the "
-        "`admin` role. Meta/WhatsApp credentials cannot be changed here — use "
+        "Updates `business_name`, `max_ai_conversations`, and/or "
+        "`whatsapp_display_phone_number` (normalized to E.164, defaulting to "
+        "the Saudi country code when none is given). Requires the `admin` "
+        "role. Meta/WhatsApp credentials cannot be changed here — use "
         "PATCH /api/v1/tenants/onboarding."
     ),
 )

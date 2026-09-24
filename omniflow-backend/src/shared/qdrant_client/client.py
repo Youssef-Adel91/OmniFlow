@@ -211,6 +211,42 @@ class QdrantManager:
 
         return qmodels.Filter(must=must_conditions)
 
+    @staticmethod
+    def build_preference_filter(
+        *,
+        price_min: float | None = None,
+        price_max: float | None = None,
+        district: str | None = None,
+        property_type: str | None = None,
+        bedrooms: int | None = None,
+    ) -> list[qmodels.Condition]:
+        """
+        Structured filter conditions from extracted customer preferences
+        (item 10 — recommendations should filter on price/location, not just
+        rank by text similarity). Returns `must` conditions to combine with
+        `_tenant_and_status_filter`'s own conditions — never called alone,
+        since it carries no tenant isolation.
+        """
+        conditions: list[qmodels.Condition] = []
+        if price_min is not None or price_max is not None:
+            conditions.append(qmodels.FieldCondition(
+                key="price_sar",
+                range=qmodels.Range(gte=price_min, lte=price_max),
+            ))
+        if district:
+            conditions.append(qmodels.FieldCondition(
+                key="district", match=qmodels.MatchValue(value=district),
+            ))
+        if property_type:
+            conditions.append(qmodels.FieldCondition(
+                key="property_type", match=qmodels.MatchValue(value=property_type),
+            ))
+        if bedrooms is not None:
+            conditions.append(qmodels.FieldCondition(
+                key="bedrooms", match=qmodels.MatchValue(value=bedrooms),
+            ))
+        return conditions
+
     # ══════════════════════════════════════════════════════════════════════════
     # Property Listing Search
     # ══════════════════════════════════════════════════════════════════════════
@@ -223,6 +259,7 @@ class QdrantManager:
         limit: int = 5,
         score_threshold: float = 0.60,
         with_payload: bool = True,
+        extra_filters: list[qmodels.Condition] | None = None,
     ) -> list[qmodels.ScoredPoint]:
         """
         Search property listings for a specific tenant using vector similarity.
@@ -236,6 +273,10 @@ class QdrantManager:
             limit         — Max number of results to return (default 5)
             score_threshold — Min cosine similarity score (0.0–1.0)
             with_payload  — Include payload fields in results
+            extra_filters — Additional `must` conditions (e.g. from
+                            `build_preference_filter`) applied on top of the
+                            tenant/status filter — item 10: price/location
+                            filtering, not just text-similarity ranking.
 
         Returns:
             List of ScoredPoint with .payload and .score attributes.
@@ -245,12 +286,15 @@ class QdrantManager:
             RuntimeError if client not started.
         """
         collection = _tenant_collection(tenant_id)
+        query_filter = self._tenant_and_status_filter(tenant_id)
+        if extra_filters:
+            query_filter.must.extend(extra_filters)
 
         try:
             response = await self._c.query_points(
                 collection_name=collection,
                 query=query_vector,
-                query_filter=self._tenant_and_status_filter(tenant_id),
+                query_filter=query_filter,
                 limit=limit,
                 score_threshold=score_threshold,
                 with_payload=with_payload,

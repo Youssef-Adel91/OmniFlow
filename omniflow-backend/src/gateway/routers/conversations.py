@@ -186,10 +186,11 @@ class PaginatedMessages(BaseModel):
 class PropertyRecommendation(BaseModel):
     """One Qdrant-retrieved property suggestion for the inbox context panel.
 
-    `score` is the raw cosine similarity from Qdrant (0-1) — not a bespoke
-    weighted match-rule score. There is no separate preference-extraction
-    step yet (see get_conversation_recommendations' docstring); this is the
-    simplest reasonable default, not a documented SRS requirement.
+    `score` is the raw cosine similarity from Qdrant (0-1) against the query
+    built from extracted preferences (or raw recent messages as a fallback)
+    — not a bespoke weighted match-rule score. See
+    get_conversation_recommendations' docstring for the extraction +
+    price/location filtering this sits on top of (item 10).
     """
     title:    str
     price:    float
@@ -320,12 +321,15 @@ async def get_messages(
     response_model=list[PropertyRecommendation],
     summary="Real-estate property suggestions for this conversation",
     description=(
-        "Semantic search over the tenant's Qdrant-indexed property listings, "
-        "using the conversation's own recent customer messages as the query — "
-        "no separate preference-extraction step exists yet, so this reuses "
-        "whatever intent/budget/location signal is already present in what "
-        "the customer actually wrote. Returns [] if the conversation has no "
-        "customer messages yet or no listings score above the threshold."
+        "Semantic search over the tenant's Qdrant-indexed property listings. "
+        "Item 10 sign-off: an explicit LLM preference-extraction step (budget, "
+        "district, property type, bedrooms) runs first — price/location are "
+        "applied as a real Qdrant filter, not just folded into text "
+        "similarity, since a price ceiling or a specific district matters "
+        "more than lexical overlap for real estate. Falls back to raw "
+        "recent-message text if nothing is confidently extracted or if a "
+        "strict filter returns nothing. Returns [] if the conversation has "
+        "no customer messages yet or no listings score above the threshold."
     ),
 )
 async def get_conversation_recommendations(
@@ -342,11 +346,27 @@ async def get_conversation_recommendations(
     customer_texts = [m.text_content for m in messages if m.sender_type == "customer" and m.text_content]
     if not customer_texts:
         return []
-    query_text = " ".join(customer_texts[-5:])
 
     from src.ai_workers.rag_engine.embedder import embedder
+    from src.ai_workers.rag_engine.preference_extractor import extract_preferences
     from src.ai_workers.rag_engine.retriever import _map_property_type
     from src.shared.qdrant_client.client import qdrant_mgr
+
+    preferences = await extract_preferences(customer_texts)
+
+    # Prefer a canonical query built from what was actually extracted — more
+    # precise than the raw message blob for the embedding to key off. Falls
+    # back to the raw text when nothing confident was extracted at all.
+    parts = []
+    if preferences["property_type"]:
+        parts.append(_map_property_type(preferences["property_type"]))
+    if preferences["bedrooms"]:
+        parts.append(f"{preferences['bedrooms']} غرف")
+    if preferences["district"]:
+        parts.append(f"في {preferences['district']}")
+    if preferences["budget_max"]:
+        parts.append(f"بميزانية حتى {int(preferences['budget_max'])} ريال")
+    query_text = " ".join(parts) if parts else " ".join(customer_texts[-5:])
 
     if not embedder.is_configured:
         embedder.configure()
@@ -354,9 +374,36 @@ async def get_conversation_recommendations(
         await qdrant_mgr.start()
 
     query_vector = await embedder.embed_query(query_text)
-    results = await qdrant_mgr.search_properties(
-        conversation.tenant_id, query_vector, limit=limit, score_threshold=0.0,
+
+    # Strict filter first (item 10: price/location should actually filter,
+    # not just rank) — relax in stages rather than risk an empty panel when
+    # the extracted district doesn't exactly string-match a listing's, since
+    # Qdrant's exact-match filter has no fuzzy tolerance.
+    full_filter = qdrant_mgr.build_preference_filter(
+        price_min=preferences["budget_min"], price_max=preferences["budget_max"],
+        district=preferences["district"], property_type=preferences["property_type"],
+        bedrooms=preferences["bedrooms"],
     )
+    price_only_filter = qdrant_mgr.build_preference_filter(
+        price_min=preferences["budget_min"], price_max=preferences["budget_max"],
+    )
+
+    # Relaxation stages, de-duplicated by identity so an empty/no-op stage
+    # (e.g. no budget was ever extracted, so the "price-only" stage is the
+    # same as "no filter") isn't queried twice.
+    stages: list[list] = []
+    for candidate in (full_filter, price_only_filter, []):
+        if not stages or candidate != stages[-1]:
+            stages.append(candidate)
+
+    results: list = []
+    for extra_filters in stages:
+        results = await qdrant_mgr.search_properties(
+            conversation.tenant_id, query_vector, limit=limit, score_threshold=0.0,
+            extra_filters=extra_filters or None,
+        )
+        if results:
+            break
 
     recommendations = []
     for point in results:

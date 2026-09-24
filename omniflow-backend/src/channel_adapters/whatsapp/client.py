@@ -265,6 +265,75 @@ class WhatsAppClient:
         )
         return result
 
+    async def upload_media(
+        self,
+        *,
+        phone_number_id: str,
+        file_bytes: bytes,
+        filename: str,
+        mime_type: str,
+        access_token: str,
+    ) -> str:
+        """
+        Upload a file to Meta's Media API and return its media ID.
+
+        Meta hosts the file temporarily (media IDs expire after 30 days);
+        this lets us send document/image/audio attachments we generated
+        ourselves (e.g. a VCard) without needing our own public storage URL.
+
+        POST /{phone_number_id}/media (multipart/form-data), distinct from
+        the JSON /{phone_number_id}/messages endpoint every other method
+        here uses — Meta requires the file as actual multipart form data.
+        """
+        url = f"/{phone_number_id}/media"
+        headers = {"Authorization": f"Bearer {access_token}"}
+        files = {"file": (filename, file_bytes, mime_type)}
+        data = {"messaging_product": "whatsapp", "type": mime_type}
+
+        # httpx overrides the client's default application/json Content-Type
+        # with the correct multipart boundary automatically when `files=` is
+        # passed — no manual header surgery needed.
+        response = await self._client.post(url, headers=headers, files=files, data=data)
+
+        if response.status_code != 200:
+            self._raise_for_status(response, logger.bind(phone_number_id=phone_number_id))
+
+        media_id = response.json().get("id", "")
+        logger.info("whatsapp_media_uploaded", media_id=media_id, filename=filename, mime_type=mime_type)
+        return media_id
+
+    async def send_document_message(
+        self,
+        *,
+        phone_number_id: str,
+        to: str,
+        media_id: str,
+        filename: str,
+        access_token: str,
+        caption: str | None = None,
+    ) -> SendResult:
+        """Send a document (e.g. a VCard .vcf) by previously-uploaded media ID."""
+        normalized_to = to.lstrip("+")
+
+        document: dict[str, Any] = {"id": media_id, "filename": filename}
+        if caption:
+            document["caption"] = caption[:1024]
+
+        payload: dict[str, Any] = {
+            "messaging_product": "whatsapp",
+            "recipient_type": "individual",
+            "to": normalized_to,
+            "type": "document",
+            "document": document,
+        }
+
+        return await self._send(
+            phone_number_id=phone_number_id,
+            payload=payload,
+            access_token=access_token,
+            recipient=normalized_to,
+        )
+
     async def send_template_message(
         self,
         *,

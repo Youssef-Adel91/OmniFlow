@@ -201,8 +201,15 @@ async def _vcard_reminder_check_async() -> dict[str, Any]:
         logger.info("vcard_reminder_check_skipped", reason="feature disabled")
         return {"skipped": True, "reason": "FEATURE_VCARD_GATEKEEPER is off"}
 
-    async with get_system_session() as session:
-        result = await advance_vcard_states(session, batch_limit=_BATCH_LIMIT)
+    from src.shared.kafka.producer import KafkaProducerManager
+
+    producer = KafkaProducerManager()
+    await producer.start()
+    try:
+        async with get_system_session() as session:
+            result = await advance_vcard_states(session, batch_limit=_BATCH_LIMIT, producer=producer)
+    finally:
+        await producer.stop()
 
     payload = result.as_dict()
     payload["checked_at"] = _now().isoformat()

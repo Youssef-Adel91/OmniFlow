@@ -29,6 +29,7 @@ from __future__ import annotations
 import uuid
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
+from typing import TYPE_CHECKING
 
 import structlog
 from sqlalchemy import select, update
@@ -36,10 +37,22 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.shared.core.config import get_settings
 from src.shared.core.enums import CustomerVCardState
-from src.shared.db.models import Customer
+from src.shared.db.models import Conversation, Customer
+from src.shared.events.outbound import OutboundMessage
+
+if TYPE_CHECKING:
+    from src.shared.kafka.producer import KafkaProducerManager
 
 logger = structlog.get_logger(__name__)
 settings = get_settings()
+
+_REMINDER_TEXT = {
+    "reminder_1": "لإكمال طلبك، يرجى حفظ رقمنا في جهات الاتصال وإرسال كلمة 'تم'. 🤝",
+    "reminder_2": (
+        "تذكير أخير: لم نتلقَّ تأكيد حفظ رقمنا بعد. بدون ذلك لن تصلك تقاريرك "
+        "العقارية وإشعاراتك الهامة. يرجى حفظ الرقم وإرسال كلمة 'تم' لتفعيل الخدمة كاملة. 🙏"
+    ),
+}
 
 
 @dataclass
@@ -106,10 +119,70 @@ async def _transition(
     return [str(r) for r in rows]
 
 
+async def _publish_reminders(
+    session: AsyncSession,
+    producer: "KafkaProducerManager",
+    customer_ids: list[str],
+    reminder_key: str,
+) -> None:
+    """Publish a reminder OutboundMessage for each customer's most recent conversation.
+
+    Customers with no conversation row at all (shouldn't happen — a customer
+    only exists because of an inbound message — but not guaranteed by a DB
+    constraint) are skipped with a warning rather than crashing the sweep.
+    """
+    if not customer_ids:
+        return
+
+    ids = [uuid.UUID(c) for c in customer_ids]
+    rows = (
+        await session.execute(
+            select(Customer, Conversation)
+            .join(Conversation, Conversation.customer_id == Customer.customer_id)
+            .where(Customer.customer_id.in_(ids))
+            .order_by(
+                Customer.customer_id,
+                Conversation.last_message_at.desc().nullslast(),
+                Conversation.created_at.desc(),
+            )
+        )
+    ).all()
+
+    reminded: set[uuid.UUID] = set()
+    text = _REMINDER_TEXT[reminder_key]
+    for customer, conv in rows:
+        if customer.customer_id in reminded:
+            continue  # rows are ordered most-recent-conversation-first per customer
+        reminded.add(customer.customer_id)
+
+        event = OutboundMessage(
+            tenant_id=customer.tenant_id,
+            conversation_id=conv.conversation_id,
+            customer_phone=customer.unified_phone,
+            platform_conversation_id=conv.platform_conversation_id or customer.unified_phone,
+            channel=str(conv.channel),
+            text=text,
+            message_type="text",
+            source_event_id=uuid.uuid4(),
+            routing_tier_used="VCARD",
+            model_used="deterministic",
+        )
+        await producer.publish(
+            topic=settings.kafka_topic_messages_outgoing,
+            event=event,
+            key=OutboundMessage.kafka_key(customer.tenant_id, customer.unified_phone),
+        )
+
+    missing = len(ids) - len(reminded)
+    if missing:
+        logger.warning("vcard_reminder_no_conversation", reminder=reminder_key, missing_count=missing)
+
+
 async def advance_vcard_states(
     session: AsyncSession,
     *,
     batch_limit: int = 500,
+    producer: "KafkaProducerManager | None" = None,
 ) -> VCardSweepResult:
     """
     Run one pass of the VCard drip sequence.
@@ -117,13 +190,11 @@ async def advance_vcard_states(
     The caller owns the session/transaction. Use a system session to sweep
     across every tenant, or a tenant session to sweep one tenant only.
 
-    NOTE (deliberate limitation): this advances the persisted state machine
-    and emits a structured log line per batch. It does NOT itself push the
-    reminder message to WhatsApp — outbound delivery goes through the Kafka
-    topic `messages.outgoing.v1` and needs a conversation/platform thread id
-    that is not derivable from the `customers` row alone. The outbound hook is
-    marked with `TODO(outbound)` below and is the one remaining piece of work
-    to make reminders user-visible.
+    `producer` is optional and defaults to None for backward compatibility
+    (existing tests call this without a producer and only check the state
+    transitions) — pass a started `KafkaProducerManager` to also actually
+    deliver the reminder_1/reminder_2 nudge to the customer. Without it, this
+    only advances the persisted state machine, as before.
     """
     now = _now()
     result = VCardSweepResult()
@@ -142,6 +213,8 @@ async def advance_vcard_states(
     result.reminder_1 = len(ids)
     if ids:
         result.customer_ids["reminder_1"] = ids
+        if producer:
+            await _publish_reminders(session, producer, ids, "reminder_1")
 
     # ── Step 2: REMINDER_1 → REMINDER_2 ─────────────────────────────────────
     ids = await _transition(
@@ -154,6 +227,8 @@ async def advance_vcard_states(
     result.reminder_2 = len(ids)
     if ids:
         result.customer_ids["reminder_2"] = ids
+        if producer:
+            await _publish_reminders(session, producer, ids, "reminder_2")
 
     # ── Step 3: REMINDER_2 → DORMANT ────────────────────────────────────────
     ids = await _transition(
@@ -174,12 +249,6 @@ async def advance_vcard_states(
         dormant=result.dormant,
         batch_limit=batch_limit,
     )
-
-    # TODO(outbound): publish a reminder OutboundMessage on
-    # settings.kafka_topic_messages_outgoing for each id in
-    # result.customer_ids["reminder_1"|"reminder_2"]. Requires resolving the
-    # customer's most recent Conversation to obtain conversation_id and
-    # platform_conversation_id.
 
     return result
 

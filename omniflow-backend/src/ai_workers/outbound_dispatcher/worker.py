@@ -37,7 +37,8 @@ from typing import Any
 import structlog
 from aiokafka.structs import ConsumerRecord
 
-from src.ai_workers.llm_invoker.worker import OutboundMessage
+from src.ai_workers.vcard_gatekeeper import vcard_builder
+from src.shared.events.outbound import OutboundMessage
 from src.channel_adapters.whatsapp.client import (
     WhatsAppAuthError,
     WhatsAppInvalidRecipientError,
@@ -48,6 +49,10 @@ from src.shared.core.enums import Channel
 from src.shared.db.persistence import persist_outbound_message, update_message_delivery_status
 from src.shared.kafka.consumer import BaseKafkaConsumer
 from src.shared.redis_client.client import redis_mgr
+from src.shared.services.conversation_state import load_conversation_state
+from src.shared.db.session import get_tenant_session
+from src.shared.db.models import Tenant, Message
+from sqlalchemy import select
 
 logger = structlog.get_logger(__name__)
 settings = get_settings()
@@ -112,8 +117,15 @@ async def _resolve_tenant_credentials(
     except Exception as exc:
         logger.warning("tenant_creds_cache_miss", tenant_id=str(tenant_id), error=str(exc))
 
-    # ── 2. Settings fallback (dev single-tenant mode) ─────────────────────────
-    if settings.meta_whatsapp_phone_number_id and settings.meta_whatsapp_access_token:
+    # ── 2. Tenant settings — never borrow another office's credentials ───────
+    async with get_tenant_session(tenant_id) as session:
+        tenant = await session.scalar(select(Tenant).where(Tenant.tenant_id == tenant_id))
+        if tenant and tenant.whatsapp_phone_number_id and tenant.meta_access_token:
+            return TenantCredentials(tenant.whatsapp_phone_number_id, tenant.meta_access_token, str(tenant_id))
+
+    # ── 3. Settings fallback for the reserved local-development tenant only ──
+    if (settings.is_development and tenant_id == uuid.UUID(int=1)
+            and settings.meta_whatsapp_phone_number_id and settings.meta_whatsapp_access_token):
         logger.debug(
             "tenant_creds_using_env_fallback",
             tenant_id=str(tenant_id),
@@ -215,7 +227,18 @@ class OutboundDispatcherWorker(BaseKafkaConsumer):
                 channel=msg.channel,
                 tip="Non-WhatsApp channels handled in Sprint 11",
             )
-            return  # Acknowledge and skip — don't DLQ for unsupported channels
+            raise ValueError(f"Unsupported outbound channel: {msg.channel}")
+
+        if msg.sender_type == "ai_bot" and msg.conversation_id:
+            state = await load_conversation_state(msg.tenant_id, msg.conversation_id)
+            if state["is_human_active"] or state["is_processing_restricted"]:
+                log.info("outbound_ai_cancelled_after_takeover")
+                return
+
+        async with get_tenant_session(msg.tenant_id) as session:
+            existing = await session.scalar(select(Message).where(Message.message_id == msg.message_id))
+            if existing and existing.delivery_status in ("SENT", "DELIVERED", "READ"):
+                return
 
         # ── 3. Resolve tenant credentials ─────────────────────────────────────
         creds = await _resolve_tenant_credentials(msg.tenant_id)
@@ -227,11 +250,13 @@ class OutboundDispatcherWorker(BaseKafkaConsumer):
             )
 
         # ── 4. Outbound idempotency — prevent double-sends ────────────────────
-        idem_key = f"{_SENT_KEY_PREFIX}{msg.source_event_id}"
-        already_sent = await redis_mgr.set_idempotency_key(
-            idem_key, _SENT_KEY_TTL
-        )
-        if not already_sent:
+        idem_key = f"{_SENT_KEY_PREFIX}{msg.tenant_id}:{msg.message_id}"
+        already_sent = await redis_mgr.get_raw(idem_key)
+        if already_sent:
+            await update_message_delivery_status(
+                tenant_id=msg.tenant_id, message_id=msg.message_id,
+                delivery_status="SENT", platform_message_id=str(already_sent),
+            )
             log.warning(
                 "outbound_duplicate_suppressed",
                 source_event_id=str(msg.source_event_id),
@@ -249,11 +274,54 @@ class OutboundDispatcherWorker(BaseKafkaConsumer):
             tokens_used=msg.output_tokens or None,
             latency_ms=None,
             delivery_status="PENDING",
+            message_id=msg.message_id,
+            sender_type=msg.sender_type,
+            agent_id=msg.agent_id,
+            message_type=msg.message_type,
+            media_url=msg.media_url,
         )
 
         # ── 6. Dispatch via WhatsApp (── route by message_type) ─────────────────────
         try:
-            if msg.message_type == "audio" and msg.media_url:
+            if msg.message_type == "vcard":
+                # VCard Gatekeeper (SRS §5.5): attach a real .vcf contact
+                # card, not just the instructional text. Uploaded to Meta's
+                # Media API rather than linked by URL — no public storage
+                # dependency (item 16 isn't done yet), and the file is
+                # generated fresh from the tenant's own DB row every time.
+                async with get_tenant_session(msg.tenant_id) as session:
+                    tenant = await session.scalar(select(Tenant).where(Tenant.tenant_id == msg.tenant_id))
+                if not tenant:
+                    raise RuntimeError(f"Cannot build VCard: tenant {msg.tenant_id} not found")
+
+                vcf_bytes = vcard_builder.build_tenant_vcard(
+                    business_name=tenant.business_name,
+                    phone=tenant.whatsapp_display_phone_number,
+                )
+                if not tenant.whatsapp_display_phone_number:
+                    log.warning(
+                        "vcard_missing_display_phone",
+                        tip="Tenant.whatsapp_display_phone_number is unset — "
+                        "the VCard will have no TEL field and won't let the "
+                        "customer actually call/message the saved contact.",
+                    )
+                media_id = await whatsapp_client.upload_media(
+                    phone_number_id=creds.phone_number_id,
+                    file_bytes=vcf_bytes,
+                    filename="contact.vcf",
+                    mime_type="text/vcard",
+                    access_token=creds.access_token,
+                )
+                result = await whatsapp_client.send_document_message(
+                    phone_number_id=creds.phone_number_id,
+                    to=msg.customer_phone,
+                    media_id=media_id,
+                    filename="contact.vcf",
+                    access_token=creds.access_token,
+                    caption=msg.text or None,
+                )
+                log.info("outbound_vcard_dispatched", wamid=result.wamid, media_id=media_id)
+            elif msg.message_type == "audio" and msg.media_url:
                 # Sprint 14: Dispatch as WhatsApp Voice Note ──────────────────
                 # Send the synthesised audio URL as a WhatsApp audio message.
                 # WhatsApp fetches the MP3 from the URL and renders it as a
@@ -320,10 +388,15 @@ class OutboundDispatcherWorker(BaseKafkaConsumer):
                 error=str(exc),
                 exc_type=type(exc).__name__,
             )
+            if persisted_msg_id:
+                await update_message_delivery_status(
+                    tenant_id=msg.tenant_id, message_id=persisted_msg_id, delivery_status="FAILED",
+                )
             raise  # Triggers retry logic in BaseKafkaConsumer
 
         # ── 6. Record wamid for traceability ──────────────────────────────────
         if result.wamid:
+            await redis_mgr.set_raw(idem_key, result.wamid, ttl=_SENT_KEY_TTL)
             wamid_key = f"wamid:{result.wamid}"
             await redis_mgr.set_raw(
                 wamid_key,
@@ -344,16 +417,14 @@ class OutboundDispatcherWorker(BaseKafkaConsumer):
         )
 
         # ── 7. Update DB message status + fire SSE ──────────────────────
-        # Sprint 10: async DB write (messages table) + Redis SSE publish.
-        # Runs as a background asyncio task so Kafka offset commits immediately.
+        # Meta acceptance means SENT. Delivery is confirmed by a later webhook.
+        # Finish persistence before committing the Kafka offset.
         if persisted_msg_id:
-            asyncio.create_task(
-                update_message_delivery_status(
+            await update_message_delivery_status(
                     tenant_id=msg.tenant_id,
                     message_id=persisted_msg_id,
-                    delivery_status="DELIVERED",
+                    delivery_status="SENT",
                     platform_message_id=result.wamid,
-                )
             )
 
     async def _send_whatsapp_with_typing(

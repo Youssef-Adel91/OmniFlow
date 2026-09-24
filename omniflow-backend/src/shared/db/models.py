@@ -128,6 +128,13 @@ class Tenant(Base, TimestampMixin):
         nullable=True,
         comment="Meta WhatsApp Business Account ID",
     )
+    whatsapp_display_phone_number: Mapped[Optional[str]] = mapped_column(
+        String(30),
+        nullable=True,
+        comment="Tenant's own dialable WhatsApp number (E.164) — shown to "
+        "customers via the VCard gate. Distinct from the opaque Meta "
+        "whatsapp_phone_number_id, which cannot be dialed or saved as a contact.",
+    )
     max_ai_conversations: Mapped[int] = mapped_column(
         default=500,
         nullable=False,

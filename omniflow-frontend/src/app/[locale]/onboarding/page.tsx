@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState, useEffect } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, useParams } from "next/navigation";
 import {
   ShieldCheck,
   Calendar,
@@ -12,6 +12,7 @@ import {
   CheckCircle2,
   X,
   Zap,
+  Building2,
 } from "lucide-react";
 // Auth is fully handled by Clerk: `apiClient` attaches the Clerk bearer token
 // automatically, and `clerkMiddleware` protects this route. There is no local
@@ -69,11 +70,8 @@ function ToastContainer({
 
 // ── Main Page ────────────────────────────────────────────────────────────────
 
-export default function OnboardingPage({
-  params,
-}: {
-  params: { locale: string };
-}) {
+export default function OnboardingPage() {
+  const params = useParams<{ locale: string }>();
   const router = useRouter();
 
   const [isLoadingSelfService, setIsLoadingSelfService] = useState(false);
@@ -85,6 +83,29 @@ export default function OnboardingPage({
     phoneId: "",
     wabaId: "",
   });
+  // "Tell us about your business" — previously missing from onboarding
+  // entirely; this is what actually feeds the AI's company-knowledge block
+  // (see IMPLEMENTATION_STATUS.md). Shared by both onboarding paths below.
+  const [businessProfile, setBusinessProfile] = useState({
+    businessName: "",
+    businessCategory: "",
+    aboutText: "",
+    productsText: "", // comma-separated, split into a list on submit
+  });
+  const businessNameValid = businessProfile.businessName.trim().length >= 2;
+
+  const businessProfilePayload = () => {
+    const products = businessProfile.productsText
+      .split(",")
+      .map((p) => p.trim())
+      .filter(Boolean);
+    return {
+      business_name: businessProfile.businessName.trim(),
+      business_category: businessProfile.businessCategory.trim() || undefined,
+      about_text: businessProfile.aboutText.trim() || undefined,
+      products: products.length ? products : undefined,
+    };
+  };
   // Auto-dismiss toasts after 5 s
   useEffect(() => {
     if (toasts.length === 0) return;
@@ -106,11 +127,16 @@ export default function OnboardingPage({
   // ── Self-Service Submit ────────────────────────────────────────────────────
   const handleSelfServiceSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!businessNameValid) {
+      addToast("error", "من فضلك أدخل اسم الشركة أولاً (في القسم أعلاه).");
+      return;
+    }
     setIsLoadingSelfService(true);
 
     try {
       await apiClient.patch("/tenants/onboarding", {
         option: "self_service",
+        ...businessProfilePayload(),
         meta_access_token: formData.metaAccessToken,
         whatsapp_phone_number_id: formData.phoneId,
         whatsapp_waba_id: formData.wabaId,
@@ -137,10 +163,17 @@ export default function OnboardingPage({
 
   // ── White-Glove Submit ─────────────────────────────────────────────────────
   const handleWhiteGloveSubmit = async () => {
+    if (!businessNameValid) {
+      addToast("error", "من فضلك أدخل اسم الشركة أولاً (في القسم أعلاه).");
+      return;
+    }
     setIsLoadingWhiteGlove(true);
 
     try {
-      await apiClient.patch("/tenants/onboarding", { option: "white_glove" });
+      await apiClient.patch("/tenants/onboarding", {
+        option: "white_glove",
+        ...businessProfilePayload(),
+      });
 
       // Show full-screen success state instead of navigating immediately
       setShowWhiteGloveSuccess(true);
@@ -182,13 +215,6 @@ export default function OnboardingPage({
                 تم إضافتك إلى قائمة الأولويات VIP — متوسط وقت الاستجابة أقل من 24 ساعة.
               </p>
 
-              <div className="bg-white/5 border border-white/10 rounded-xl p-4 mb-8 text-right">
-                <p className="text-xs text-gray-500 mb-1">رقم الطلب</p>
-                <p className="text-white font-mono text-sm">
-                  WG-{Math.random().toString(36).toUpperCase().slice(2, 10)}
-                </p>
-              </div>
-
               <button
                 onClick={() => router.push(`/${params.locale}/inbox`)}
                 className="w-full bg-[#C9A84C] text-[#0A0F1C] py-4 rounded-xl font-bold text-lg hover:bg-[#D4B55A] transition-all hover:shadow-lg hover:shadow-[#C9A84C]/20 flex items-center justify-center gap-2"
@@ -208,9 +234,81 @@ export default function OnboardingPage({
     <>
       <ToastContainer toasts={toasts} onRemove={removeToast} />
 
+      <div className="min-h-screen bg-[#0A0F1C] text-white" dir="rtl">
+        {/* ── Business Profile (shared by both paths below) ────────────────── */}
+        <div className="max-w-3xl mx-auto px-6 pt-10 pb-2 md:pt-14">
+          <div className="bg-[#111827] border border-white/10 rounded-2xl p-6 md:p-8">
+            <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-[#C9A84C]/10 border border-[#C9A84C]/20 text-[#C9A84C] text-sm mb-4">
+              <Building2 className="w-4 h-4" />
+              <span>عن شركتك</span>
+            </div>
+            <p className="text-gray-400 text-sm mb-5">
+              هذه المعلومات هي ما يعتمد عليه المساعد الذكي في الرد على عملائك — عبّئها هنا قبل ربط واتساب.
+            </p>
+            <div className="grid md:grid-cols-2 gap-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-300 mb-2">
+                  اسم الشركة <span className="text-[#C9A84C]">*</span>
+                </label>
+                <input
+                  type="text"
+                  required
+                  value={businessProfile.businessName}
+                  onChange={(e) =>
+                    setBusinessProfile({ ...businessProfile, businessName: e.target.value })
+                  }
+                  placeholder="مثال: نعيم"
+                  className="w-full bg-[#0A0F1C] border border-white/10 rounded-lg py-3 px-4 text-white placeholder-gray-600 focus:outline-none focus:ring-2 focus:ring-[#C9A84C] focus:border-transparent transition-all"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-300 mb-2">
+                  التصنيف / المجال
+                </label>
+                <input
+                  type="text"
+                  value={businessProfile.businessCategory}
+                  onChange={(e) =>
+                    setBusinessProfile({ ...businessProfile, businessCategory: e.target.value })
+                  }
+                  placeholder="مثال: أجهزة مساج احترافية"
+                  className="w-full bg-[#0A0F1C] border border-white/10 rounded-lg py-3 px-4 text-white placeholder-gray-600 focus:outline-none focus:ring-2 focus:ring-[#C9A84C] focus:border-transparent transition-all"
+                />
+              </div>
+            </div>
+            <div className="mt-4">
+              <label className="block text-sm font-medium text-gray-300 mb-2">
+                نبذة عن الشركة
+              </label>
+              <textarea
+                value={businessProfile.aboutText}
+                onChange={(e) =>
+                  setBusinessProfile({ ...businessProfile, aboutText: e.target.value })
+                }
+                rows={4}
+                placeholder="اكتب قصة علامتك التجارية بإيجاز..."
+                className="w-full bg-[#0A0F1C] border border-white/10 rounded-lg py-3 px-4 text-white placeholder-gray-600 focus:outline-none focus:ring-2 focus:ring-[#C9A84C] focus:border-transparent transition-all resize-none"
+              />
+            </div>
+            <div className="mt-4">
+              <label className="block text-sm font-medium text-gray-300 mb-2">
+                المنتجات (افصل بينها بفاصلة)
+              </label>
+              <input
+                type="text"
+                value={businessProfile.productsText}
+                onChange={(e) =>
+                  setBusinessProfile({ ...businessProfile, productsText: e.target.value })
+                }
+                placeholder="مثال: أجهزة مساج القدم، أجهزة مساج الركبة"
+                className="w-full bg-[#0A0F1C] border border-white/10 rounded-lg py-3 px-4 text-white placeholder-gray-600 focus:outline-none focus:ring-2 focus:ring-[#C9A84C] focus:border-transparent transition-all"
+              />
+            </div>
+          </div>
+        </div>
+
       <div
-        className="min-h-screen flex flex-col md:flex-row bg-[#0A0F1C] text-white"
-        dir="rtl"
+        className="flex flex-col md:flex-row"
       >
         {/* ── Left: White-Glove ─────────────────────────────────────────── */}
         <div className="flex-1 p-8 md:p-16 flex flex-col justify-center border-b md:border-b-0 md:border-l border-white/10 relative overflow-hidden">
@@ -364,6 +462,7 @@ export default function OnboardingPage({
             </form>
           </div>
         </div>
+      </div>
       </div>
     </>
   );

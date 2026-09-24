@@ -103,8 +103,18 @@ class TenantOnboardingUpdate(BaseModel):
     """
     Payload for the Dual-Option Onboarding Flow.
     option: 'self_service' | 'white_glove'
+
+    business_name/business_category/about_text/products (all optional): the
+    "tell us about your business" step that was missing from onboarding
+    entirely before this — see IMPLEMENTATION_STATUS.md. When present, these
+    feed Tenant.business_name + CompanyProfile (the same knowledge block
+    every AI reply is built from), not just a DB field nobody reads.
     """
     option: str = Field(..., pattern="^(self_service|white_glove)$")
+    business_name: Optional[str] = Field(default=None, min_length=2, max_length=255)
+    business_category: Optional[str] = Field(default=None, max_length=255)
+    about_text: Optional[str] = Field(default=None, max_length=2000)
+    products: Optional[list[str]] = Field(default=None, max_length=50)
     meta_access_token: Optional[str] = Field(default=None)
     whatsapp_phone_number_id: Optional[str] = Field(default=None, max_length=30)
     whatsapp_waba_id: Optional[str] = Field(default=None, max_length=30)

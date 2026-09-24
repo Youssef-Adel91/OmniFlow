@@ -10,8 +10,9 @@ from fastapi import APIRouter, HTTPException, status
 from pydantic import BaseModel
 from sqlalchemy import select
 
-from src.shared.db.session import AsyncSessionFactory
-from src.shared.db.models import Tenant, TenantUser
+from src.ai_engine.company_context import invalidate_company_context
+from src.shared.db.session import AsyncSessionFactory, get_tenant_session
+from src.shared.db.models import CompanyProfile, Tenant, TenantUser
 from src.shared.core.enums import OnboardingStatus
 from src.shared.schemas.schemas import TenantOnboardingUpdate
 from src.gateway.dependencies import get_current_user
@@ -20,6 +21,27 @@ from fastapi import Depends
 logger = structlog.get_logger(__name__)
 
 router = APIRouter(prefix="/api/v1/tenants", tags=["Tenants"])
+
+
+def _generic_persona(business_name: str, category: str | None) -> str:
+    """
+    A vertical-neutral starting persona for a newly onboarded business.
+
+    Without this, a non-real-estate tenant's AI silently inherits
+    llm_orchestrator.py's hardcoded default persona ("أنت المستشار أحمد
+    الصائغ ... مستشار عقاري سعودي" — a Saudi real-estate consultant), which
+    is simply wrong for any other kind of business. Generated once at
+    onboarding time and stored on Tenant.ai_system_prompt; an admin can
+    still fully rewrite it later via PATCH /api/v1/settings/ai-personality.
+    """
+    category_line = f"، متخصص في {category}" if category else ""
+    return (
+        f"أنت المساعد الذكي الرسمي لمتجر {business_name}{category_line}. "
+        "تحدث بأسلوب ودود واحترافي، واعتمد فقط على معلومات الشركة الموضحة أدناه "
+        "للإجابة عن استفسارات العملاء حول المنتجات والخدمات. "
+        "إذا سُئلت عن شيء غير مذكور في معلومات الشركة، أخبر العميل أنك ستتحقق "
+        "وتحوّله لأحد موظفي خدمة العملاء."
+    )
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -108,6 +130,28 @@ async def update_tenant_onboarding(
             if payload.whatsapp_waba_id:
                 tenant.whatsapp_waba_id = payload.whatsapp_waba_id
 
+        # ── Business profile step ────────────────────────────────────────────
+        # Previously nothing in onboarding collected this at all — a brand-new
+        # tenant's business_name stayed "Workspace for {clerk name}" and the AI
+        # had zero real company knowledge until someone separately found the
+        # dashboard's Knowledge/Settings screens. This is what actually feeds
+        # company_context.py's system-prompt block (see that module's
+        # docstring) — not a second, disconnected place data goes to die.
+        wrote_business_profile = any((
+            payload.business_name, payload.business_category,
+            payload.about_text, payload.products,
+        ))
+        if wrote_business_profile:
+            if payload.business_name:
+                tenant.business_name = payload.business_name
+
+            # Never overwrite a persona an admin already customized by hand —
+            # onboarding only sets a starting point, once.
+            if tenant.ai_system_prompt is None:
+                tenant.ai_system_prompt = _generic_persona(
+                    tenant.business_name, payload.business_category,
+                )
+
         # Capture the value INSIDE the session before commit closes the transaction
         _onboarding_val = str(
             tenant.onboarding_status.value
@@ -117,11 +161,33 @@ async def update_tenant_onboarding(
 
         await session.commit()
 
+    if wrote_business_profile:
+        # CompanyProfile is a real RLS table (unlike `tenants`, which is the
+        # RLS partition key itself and intentionally not protected) — needs
+        # its own tenant-scoped session, not the bare AsyncSessionFactory
+        # session above, or the write would run with no RLS context set at all.
+        async with get_tenant_session(tenant_uuid) as profile_session:
+            profile = await profile_session.scalar(
+                select(CompanyProfile).where(CompanyProfile.tenant_id == tenant_uuid)
+            )
+            if profile is None:
+                profile = CompanyProfile(tenant_id=tenant_uuid)
+                profile_session.add(profile)
+
+            if payload.about_text:
+                profile.business_description = payload.about_text
+            services = [s for s in (payload.business_category, *(payload.products or [])) if s]
+            if services:
+                profile.services_offered = services
+
+        invalidate_company_context(tenant_uuid)
+
     logger.info(
         "onboarding_updated",
         tenant_id=tenant_id_str,
         option=payload.option,
         new_status=_onboarding_val,
+        wrote_business_profile=wrote_business_profile,
     )
 
     return OnboardingUpdateResponse(

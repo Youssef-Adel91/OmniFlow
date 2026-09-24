@@ -17,9 +17,11 @@ Implemented scheduled tasks
                                                        (REMINDER_1/2 → DORMANT)
     omniflow.vip_followup_check         03:00 daily    quiet VIP customers
     omniflow.rega_reverification_check  02:00 daily    stale REGA verifications
+    omniflow.media_cleanup_check        hourly         voice-note TTL sweep (item 16)
 
 Still to build (listed in the SRS, deliberately not implemented here):
-    - Media cleanup (voice 24h / images 7d)
+    - Image retention (nothing to sweep yet — no vision pipeline downloads
+      images into our storage at all; see item 14/16 in IMPLEMENTATION_STATUS.md)
     - Semantic cache pruning in Qdrant
 
 Running it

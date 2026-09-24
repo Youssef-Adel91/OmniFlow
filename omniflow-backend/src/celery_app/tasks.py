@@ -638,6 +638,45 @@ async def _broadcast_dispatch_check_async() -> dict[str, Any]:
     }
 
 
+# ══════════════════════════════════════════════════════════════════════════════
+# 6. Media retention sweep (item 16 — launch readiness)
+# ══════════════════════════════════════════════════════════════════════════════
+
+@app.task(name="omniflow.media_cleanup_check", bind=True, max_retries=2)
+def media_cleanup_check(self) -> dict[str, Any]:  # noqa: ANN001
+    """
+    Enforce `settings.media_voice_retention_hours` against TTS audio in
+    object storage.
+
+    `media_voice_retention_hours`/`media_image_retention_days` were declared
+    in config but never enforced anywhere (confirmed via grep — this task is
+    the first reader of either setting). Voice notes are the only media this
+    codebase currently writes to object storage (`storage_client.upload_audio_bytes`,
+    under the `tts/` prefix) — incoming WhatsApp images are never downloaded
+    into our storage at all (item 14 audit: no vision pipeline exists), so
+    there is nothing under an "images" prefix for `media_image_retention_days`
+    to sweep yet. That setting will need this task extended, not a new one,
+    once a vision pipeline actually stores image bytes somewhere.
+    """
+    return _run(_media_cleanup_check_async)
+
+
+async def _media_cleanup_check_async() -> dict[str, Any]:
+    from src.shared.services.storage_client import storage_client
+
+    deleted = await storage_client.delete_expired_objects(
+        prefix="tts/", max_age_hours=float(settings.media_voice_retention_hours),
+    )
+    logger.info("media_cleanup_completed", deleted=deleted, prefix="tts/",
+                max_age_hours=settings.media_voice_retention_hours)
+    return {
+        "checked_at": _now().isoformat(),
+        "prefix": "tts/",
+        "max_age_hours": settings.media_voice_retention_hours,
+        "deleted": deleted,
+    }
+
+
 __all__ = [
     "sla_escalation_check",
     "vcard_reminder_check",
@@ -645,4 +684,5 @@ __all__ = [
     "rega_reverification_check",
     "ingest_knowledge_document",
     "broadcast_dispatch_check",
+    "media_cleanup_check",
 ]

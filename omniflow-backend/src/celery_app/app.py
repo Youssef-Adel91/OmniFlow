@@ -114,6 +114,12 @@ app.conf.beat_schedule = {
         "task": "omniflow.rega_reverification_check",
         "schedule": crontab(hour=2, minute=0),
     },
+    # Media retention sweep (item 16) — hourly is fine, the 24h voice TTL
+    # doesn't need tighter granularity than that.
+    "media-cleanup-check": {
+        "task": "omniflow.media_cleanup_check",
+        "schedule": crontab(minute=0),
+    },
 }
 
 

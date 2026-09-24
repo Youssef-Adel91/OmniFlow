@@ -109,6 +109,8 @@ class StorageClient:
         prevent the rest of the application from starting.
         """
         if not self.is_configured:
+            if _settings.is_production:
+                raise RuntimeError("Audio storage is not configured")
             logger.warning(
                 "storage_bucket_check_skipped",
                 reason="MINIO_ACCESS_KEY not configured",
@@ -208,6 +210,8 @@ class StorageClient:
             the mock URL so the TTS pipeline never crashes.
         """
         if not self.is_configured:
+            if _settings.is_production:
+                raise RuntimeError("Audio storage is not configured")
             logger.warning(
                 "storage_upload_skipped",
                 reason="Storage not configured — returning mock URL",
@@ -227,10 +231,11 @@ class StorageClient:
                 "storage_upload_success",
                 object_key=object_key,
                 size_bytes=len(file_bytes),
-                url=url,
             )
             return url
         except Exception as exc:
+            if _settings.is_production:
+                raise RuntimeError("Audio storage upload failed") from exc
             logger.error(
                 "storage_upload_failed",
                 object_key=object_key,
@@ -279,6 +284,71 @@ class StorageClient:
             ExpiresIn=_PRESIGNED_EXPIRY_SECONDS,
         )
         return url
+
+    # ── Retention sweep (item 16) ────────────────────────────────────────────────
+
+    async def delete_expired_objects(self, *, prefix: str, max_age_hours: float) -> int:
+        """
+        Delete objects under `prefix` whose LastModified is older than
+        `max_age_hours`. Returns the number of objects deleted.
+
+        Used by the `omniflow.media_cleanup_check` Celery beat task to enforce
+        `settings.media_voice_retention_hours` against the `tts/` prefix (the
+        only media this codebase currently writes to object storage — see
+        that task's docstring for why image retention has nothing to sweep
+        yet). Never raises: a failed sweep should not crash Celery beat, it
+        should just try again next run.
+        """
+        if not self.is_configured:
+            logger.info("storage_cleanup_skipped", reason="storage not configured", prefix=prefix)
+            return 0
+        try:
+            if self._use_aioboto3:
+                return await self._delete_expired_aioboto3(prefix, max_age_hours)
+            return await asyncio.to_thread(self._delete_expired_sync, prefix, max_age_hours)
+        except Exception as exc:
+            logger.error(
+                "storage_cleanup_failed", prefix=prefix, error=str(exc), exc_type=type(exc).__name__,
+            )
+            return 0
+
+    async def _delete_expired_aioboto3(self, prefix: str, max_age_hours: float) -> int:
+        import aioboto3  # type: ignore[import]
+        from datetime import datetime, timedelta, timezone
+
+        cutoff = datetime.now(timezone.utc) - timedelta(hours=max_age_hours)
+        deleted = 0
+        session = aioboto3.Session()
+        async with session.client("s3", **self._make_boto3_kwargs()) as s3:
+            paginator = s3.get_paginator("list_objects_v2")
+            async for page in paginator.paginate(Bucket=self._bucket, Prefix=prefix):
+                for obj in page.get("Contents", []):
+                    if obj["LastModified"] < cutoff:
+                        # Per-object delete_object, not batch delete_objects:
+                        # this MinIO deployment rejects delete_objects with
+                        # "MissingContentMD5" (a real, confirmed compatibility
+                        # gap between this botocore version and this MinIO
+                        # version) — found by the real validation drill for
+                        # this task, not assumed. Sweep volume (TTS audio
+                        # only) is small enough that per-object calls are fine.
+                        await s3.delete_object(Bucket=self._bucket, Key=obj["Key"])
+                        deleted += 1
+        return deleted
+
+    def _delete_expired_sync(self, prefix: str, max_age_hours: float) -> int:
+        import boto3  # type: ignore[import]
+        from datetime import datetime, timedelta, timezone
+
+        cutoff = datetime.now(timezone.utc) - timedelta(hours=max_age_hours)
+        deleted = 0
+        s3 = boto3.client("s3", **self._make_boto3_kwargs())
+        paginator = s3.get_paginator("list_objects_v2")
+        for page in paginator.paginate(Bucket=self._bucket, Prefix=prefix):
+            for obj in page.get("Contents", []):
+                if obj["LastModified"] < cutoff:
+                    s3.delete_object(Bucket=self._bucket, Key=obj["Key"])
+                    deleted += 1
+        return deleted
 
     # ── Helpers ────────────────────────────────────────────────────────────────
 

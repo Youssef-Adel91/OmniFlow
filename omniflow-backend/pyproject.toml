@@ -61,7 +61,6 @@ dependencies = [
   "langchain>=0.3.0",
   "langchain-community>=0.3.0",
   "unstructured[all-docs]>=0.15.0", # Document parsing (PDF, DOCX, etc.)
-  "pypdf2>=3.0.0",
   "weasyprint>=62.0",               # HTML/CSS -> PDF authoring for customer report generation; verified against 70.0
   "python-docx>=1.1.0",
   "pillow>=10.4.0",                 # Image processing

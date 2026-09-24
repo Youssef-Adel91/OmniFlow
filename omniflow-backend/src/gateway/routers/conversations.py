@@ -25,7 +25,7 @@ import asyncio
 import json
 import uuid
 from collections.abc import AsyncGenerator
-from datetime import timezone
+from datetime import datetime, timezone
 from typing import Annotated, Literal
 
 import structlog
@@ -33,7 +33,8 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from fastapi.responses import StreamingResponse
 from fastapi.security import HTTPAuthorizationCredentials
 from jose import JWTError
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
+from sqlalchemy import select
 
 from src.gateway.dependencies import ConversationRepo, CurrentUser, get_current_user, get_tenant_id
 from src.shared.db.repository import ConversationRepository
@@ -196,6 +197,39 @@ class PropertyRecommendation(BaseModel):
     score:    float
 
 
+class ConversationNoteCreate(BaseModel):
+    body:     str = Field(..., min_length=1, max_length=4000)
+    severity: Literal["info", "warning"] = "info"
+
+
+class ConversationNoteOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    note_id:         uuid.UUID
+    conversation_id: uuid.UUID
+    author_user_id:  uuid.UUID | None
+    body:            str
+    severity:        str
+    created_at:      datetime
+
+
+class AppointmentCreate(BaseModel):
+    scheduled_at:  datetime = Field(..., description="ISO 8601, UTC")
+    location_note: str | None = Field(default=None, max_length=500)
+
+
+class AppointmentOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    appointment_id:  uuid.UUID
+    conversation_id: uuid.UUID
+    customer_id:     uuid.UUID
+    scheduled_at:    datetime
+    location_note:   str | None
+    status:          str
+    created_at:      datetime
+
+
 class SendMessageRequest(BaseModel):
     text:        str  = Field(..., min_length=1, max_length=4096)
     sender_type: Literal["human_agent"] = "human_agent"
@@ -329,6 +363,132 @@ async def get_conversation_recommendations(
             score=round(point.score, 3),
         ))
     return recommendations
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# Internal notes (inbox quick action: "إضافة ملاحظة تحذير")
+# ══════════════════════════════════════════════════════════════════════════════
+
+@router.get(
+    "/conversations/{conversation_id}/notes",
+    response_model=list[ConversationNoteOut],
+    summary="List internal notes for a conversation",
+)
+async def list_conversation_notes(
+    conversation_id: uuid.UUID,
+    user:            CurrentUser,
+    repo:            ConversationRepo,
+) -> list[ConversationNoteOut]:
+    from src.shared.db.models import ConversationNote
+
+    await repo.get_or_404(conversation_id)  # 404s if not visible to this tenant
+    rows = (
+        await repo.session.execute(
+            select(ConversationNote)
+            .where(ConversationNote.conversation_id == conversation_id)
+            .order_by(ConversationNote.created_at.desc())
+        )
+    ).scalars().all()
+    return [ConversationNoteOut.model_validate(r) for r in rows]
+
+
+@router.post(
+    "/conversations/{conversation_id}/notes",
+    response_model=ConversationNoteOut,
+    status_code=status.HTTP_201_CREATED,
+    summary="Add an internal note (never shown to the customer)",
+)
+async def create_conversation_note(
+    conversation_id: uuid.UUID,
+    body:            ConversationNoteCreate,
+    user:            CurrentUser,
+    repo:            ConversationRepo,
+) -> ConversationNoteOut:
+    from src.shared.db.models import ConversationNote
+
+    await repo.get_or_404(conversation_id)
+    note = ConversationNote(
+        tenant_id=user.tenant_id,
+        conversation_id=conversation_id,
+        author_user_id=user.user_id,
+        body=body.body.strip(),
+        severity=body.severity,
+    )
+    repo.session.add(note)
+    await repo.session.flush()
+    await repo.session.refresh(note)
+    return ConversationNoteOut.model_validate(note)
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# Viewing appointments (inbox quick action: "جدولة موعد زيارة")
+#
+# Deliberately minimal — a structured date/time + location note, not the full
+# SRS §5 appointment subsystem (distance-based dispatch routing, CalDAV/Google
+# Calendar sync, conflict detection, automated reminders). See
+# IMPLEMENTATION_STATUS.md for the scope-cut rationale.
+# ══════════════════════════════════════════════════════════════════════════════
+
+@router.get(
+    "/conversations/{conversation_id}/appointments",
+    response_model=list[AppointmentOut],
+    summary="List scheduled viewing appointments for a conversation",
+)
+async def list_appointments(
+    conversation_id: uuid.UUID,
+    user:            CurrentUser,
+    repo:            ConversationRepo,
+) -> list[AppointmentOut]:
+    from src.shared.db.models import Appointment
+
+    await repo.get_or_404(conversation_id)
+    rows = (
+        await repo.session.execute(
+            select(Appointment)
+            .where(Appointment.conversation_id == conversation_id)
+            .order_by(Appointment.scheduled_at.asc())
+        )
+    ).scalars().all()
+    return [AppointmentOut.model_validate(r) for r in rows]
+
+
+@router.post(
+    "/conversations/{conversation_id}/appointments",
+    response_model=AppointmentOut,
+    status_code=status.HTTP_201_CREATED,
+    summary="Schedule a viewing appointment",
+)
+async def create_appointment(
+    conversation_id: uuid.UUID,
+    body:            AppointmentCreate,
+    user:            CurrentUser,
+    repo:            ConversationRepo,
+) -> AppointmentOut:
+    from src.shared.db.models import Appointment
+
+    conversation = await repo.get_or_404(conversation_id)
+
+    scheduled_at = body.scheduled_at
+    if scheduled_at.tzinfo is None:
+        scheduled_at = scheduled_at.replace(tzinfo=timezone.utc)
+    if scheduled_at <= datetime.now(timezone.utc):
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail={"code": "SCHEDULED_AT_IN_PAST", "message": "scheduled_at must be in the future."},
+        )
+
+    appointment = Appointment(
+        tenant_id=user.tenant_id,
+        conversation_id=conversation_id,
+        customer_id=conversation.customer_id,
+        created_by_user_id=user.user_id,
+        scheduled_at=scheduled_at,
+        location_note=body.location_note,
+    )
+    repo.session.add(appointment)
+    await repo.session.flush()
+    await repo.session.refresh(appointment)
+    return AppointmentOut.model_validate(appointment)
 
 
 @router.post(

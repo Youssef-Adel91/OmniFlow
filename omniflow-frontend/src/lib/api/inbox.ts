@@ -163,6 +163,49 @@ export async function fetchRecommendations(
   return Array.isArray(data) ? data : [];
 }
 
+export interface ConversationNoteDTO {
+  note_id: string;
+  body: string;
+  severity: "info" | "warning";
+  created_at: string;
+}
+
+/** Add an internal note to a conversation (item 11) — never shown to the customer. */
+export async function addConversationNote(
+  conversationId: string,
+  body: string,
+  severity: "info" | "warning" = "warning",
+): Promise<ConversationNoteDTO> {
+  const { data } = await apiClient.post<ConversationNoteDTO>(
+    `/conversations/${conversationId}/notes`,
+    { body, severity },
+  );
+  return data;
+}
+
+export interface AppointmentDTO {
+  appointment_id: string;
+  scheduled_at: string;
+  location_note: string | null;
+  status: "scheduled" | "completed" | "cancelled";
+}
+
+/**
+ * Schedule a viewing appointment (item 11). Deliberately minimal — a date +
+ * location note, not calendar sync or automated reminders.
+ */
+export async function scheduleAppointment(
+  conversationId: string,
+  scheduledAt: string,
+  locationNote?: string,
+): Promise<AppointmentDTO> {
+  const { data } = await apiClient.post<AppointmentDTO>(
+    `/conversations/${conversationId}/appointments`,
+    { scheduled_at: scheduledAt, location_note: locationNote || undefined },
+  );
+  return data;
+}
+
 /**
  * Send a message from the human agent to the customer.
  * Only valid when the conversation's status is HUMAN_ACTIVE or ESCALATED.

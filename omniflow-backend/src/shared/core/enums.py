@@ -222,3 +222,27 @@ class KnowledgeDocumentStatus(StrEnum):
     PROCESSING = "processing"
     INDEXED = "indexed"
     FAILED = "failed"
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Conversation quick actions — internal notes + viewing appointments
+# ─────────────────────────────────────────────────────────────────────────────
+class NoteSeverity(StrEnum):
+    """Severity of an agent-authored internal note (table: conversation_notes)."""
+    INFO = "info"
+    WARNING = "warning"
+
+
+class AppointmentStatus(StrEnum):
+    """
+    Lifecycle of a scheduled viewing appointment (table: appointments).
+
+    This is deliberately minimal — a structured date + location note, not
+    the full SRS §5 vision (distance-based dispatch, CalDAV/Google Calendar
+    sync, conflict detection, automated reminders). That's a substantial
+    separate subsystem; scoped down here to what's actually buildable as
+    part of the inbox quick-actions launch item. See IMPLEMENTATION_STATUS.md.
+    """
+    SCHEDULED = "scheduled"
+    COMPLETED = "completed"
+    CANCELLED = "cancelled"

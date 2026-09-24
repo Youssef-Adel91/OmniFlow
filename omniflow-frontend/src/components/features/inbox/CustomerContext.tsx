@@ -1,9 +1,15 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { useParams } from "next/navigation";
 import { cn, formatSAR } from "@/lib/utils";
 import { useActiveConversation } from "@/store/inboxStore";
-import { fetchRecommendations, type PropertyRecommendation } from "@/lib/api/inbox";
+import {
+  fetchRecommendations,
+  addConversationNote,
+  scheduleAppointment,
+  type PropertyRecommendation,
+} from "@/lib/api/inbox";
 import {
   Brain,
   Target,
@@ -160,6 +166,132 @@ function EmptyContext() {
   );
 }
 
+// ── Quick actions ────────────────────────────────────────────────────────────
+//
+// "Reports" links to the existing reports page (read-only) rather than a
+// fake on-demand generation — real paid-report generation depends on payment
+// integration, which doesn't exist yet. "Notes" and "Appointments" are real,
+// minimal features: an internal note and a structured date/location record,
+// not full calendar sync (see IMPLEMENTATION_STATUS.md for the scope-cut).
+
+function QuickActions({ conversationId }: { conversationId: string }) {
+  const params = useParams<{ locale: string }>();
+  const locale = params?.locale ?? "ar";
+
+  const [openForm, setOpenForm] = useState<"note" | "appointment" | null>(null);
+  const [noteText, setNoteText] = useState("");
+  const [apptDate, setApptDate] = useState("");
+  const [apptLocation, setApptLocation] = useState("");
+  const [submitting, setSubmitting] = useState(false);
+  const [feedback, setFeedback] = useState<string | null>(null);
+
+  async function submitNote() {
+    if (!noteText.trim()) return;
+    setSubmitting(true);
+    setFeedback(null);
+    try {
+      await addConversationNote(conversationId, noteText.trim(), "warning");
+      setNoteText("");
+      setOpenForm(null);
+      setFeedback("تمت إضافة الملاحظة.");
+    } catch {
+      setFeedback("تعذّرت إضافة الملاحظة، حاول مرة أخرى.");
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  async function submitAppointment() {
+    if (!apptDate) return;
+    setSubmitting(true);
+    setFeedback(null);
+    try {
+      const iso = new Date(apptDate).toISOString();
+      await scheduleAppointment(conversationId, iso, apptLocation.trim() || undefined);
+      setApptDate("");
+      setApptLocation("");
+      setOpenForm(null);
+      setFeedback("تمت جدولة الموعد.");
+    } catch {
+      setFeedback("تعذّرت جدولة الموعد — تأكد من أن التاريخ في المستقبل.");
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  return (
+    <div className="space-y-1.5">
+      <a
+        href={`/${locale}/reports`}
+        className="w-full btn-outline text-xs py-2 flex items-center justify-start gap-2"
+      >
+        <TrendingUp className="w-3.5 h-3.5 text-success" />
+        عرض تقارير العميل
+      </a>
+
+      <button
+        onClick={() => setOpenForm(openForm === "appointment" ? null : "appointment")}
+        className="w-full btn-outline text-xs py-2 flex items-center justify-start gap-2"
+      >
+        <Calendar className="w-3.5 h-3.5 text-info" />
+        جدولة موعد زيارة
+      </button>
+      {openForm === "appointment" && (
+        <div className="rounded-[var(--radius-sm)] border border-[var(--border)] p-2 space-y-1.5">
+          <input
+            type="datetime-local"
+            value={apptDate}
+            onChange={(e) => setApptDate(e.target.value)}
+            className="w-full text-xs rounded border border-[var(--border)] px-2 py-1 bg-[var(--background)]"
+          />
+          <input
+            type="text"
+            value={apptLocation}
+            onChange={(e) => setApptLocation(e.target.value)}
+            placeholder="ملاحظة الموقع (اختياري)"
+            className="w-full text-xs rounded border border-[var(--border)] px-2 py-1 bg-[var(--background)]"
+          />
+          <button
+            onClick={submitAppointment}
+            disabled={submitting || !apptDate}
+            className="w-full btn-primary text-xs py-1.5 disabled:opacity-50"
+          >
+            تأكيد الموعد
+          </button>
+        </div>
+      )}
+
+      <button
+        onClick={() => setOpenForm(openForm === "note" ? null : "note")}
+        className="w-full btn-outline text-xs py-2 flex items-center justify-start gap-2 text-danger border-danger/30 hover:bg-danger/5"
+      >
+        <AlertCircle className="w-3.5 h-3.5" />
+        إضافة ملاحظة تحذير
+      </button>
+      {openForm === "note" && (
+        <div className="rounded-[var(--radius-sm)] border border-[var(--border)] p-2 space-y-1.5">
+          <textarea
+            value={noteText}
+            onChange={(e) => setNoteText(e.target.value)}
+            placeholder="اكتب الملاحظة..."
+            rows={3}
+            className="w-full text-xs rounded border border-[var(--border)] px-2 py-1 bg-[var(--background)] resize-none"
+          />
+          <button
+            onClick={submitNote}
+            disabled={submitting || !noteText.trim()}
+            className="w-full btn-primary text-xs py-1.5 disabled:opacity-50"
+          >
+            حفظ الملاحظة
+          </button>
+        </div>
+      )}
+
+      {feedback && <p className="text-2xs text-[var(--muted-foreground)]">{feedback}</p>}
+    </div>
+  );
+}
+
 // ── Main component ────────────────────────────────────────────────────────────
 
 export function CustomerContext() {
@@ -289,21 +421,7 @@ export function CustomerContext() {
           <h3 className="text-2xs font-semibold text-[var(--muted-foreground)] uppercase tracking-wider mb-2">
             إجراءات سريعة
           </h3>
-          <div className="space-y-1.5">
-            <p className="text-xs text-[var(--muted-foreground)]">الإجراءات السريعة غير متاحة حاليًا.</p>
-            <button disabled className="w-full btn-outline text-xs py-2 justify-start gap-2 disabled:opacity-50 disabled:cursor-not-allowed">
-              <TrendingUp className="w-3.5 h-3.5 text-success" />
-              إنشاء تقرير عميل
-            </button>
-            <button disabled className="w-full btn-outline text-xs py-2 justify-start gap-2 disabled:opacity-50 disabled:cursor-not-allowed">
-              <Calendar className="w-3.5 h-3.5 text-info" />
-              جدولة موعد زيارة
-            </button>
-            <button disabled className="w-full btn-outline text-xs py-2 justify-start gap-2 text-danger border-danger/30 hover:bg-danger/5 disabled:opacity-50 disabled:cursor-not-allowed">
-              <AlertCircle className="w-3.5 h-3.5" />
-              إضافة ملاحظة تحذير
-            </button>
-          </div>
+          <QuickActions conversationId={conv.id} />
         </section>
       </div>
     </div>

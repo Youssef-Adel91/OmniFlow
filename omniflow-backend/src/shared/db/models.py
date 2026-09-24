@@ -43,9 +43,11 @@ from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from src.shared.core.enums import (
+    AppointmentStatus,
     BroadcastCampaignStatus,
     Channel,
     KnowledgeDocumentStatus,
+    NoteSeverity,
     ConversationStatus,
     CustomerVCardState,
     ListingStatus,
@@ -1218,3 +1220,103 @@ class KnowledgeDocument(Base, TenantScopedMixin):
             f"<KnowledgeDocument id={self.document_id} "
             f"title={self.title!r} status={self.status}>"
         )
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# 15. ConversationNote — agent-authored internal note (inbox quick action)
+# ══════════════════════════════════════════════════════════════════════════════
+class ConversationNote(Base, TimestampMixin, TenantScopedMixin):
+    """
+    An internal note an agent attaches to a conversation — never shown to the
+    customer. The "warning" severity is meant for the "إضافة ملاحظة تحذير"
+    quick-action button (e.g. flagging a difficult or high-risk customer).
+    """
+    __tablename__ = "conversation_notes"
+    __table_args__ = (
+        Index("ix_conversation_notes_conversation", "conversation_id", "created_at"),
+    )
+
+    note_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4,
+    )
+    tenant_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("tenants.tenant_id", ondelete="RESTRICT"),
+        nullable=False,
+        index=True,
+        comment="RLS partition key — must match app.current_tenant_id",
+    )
+    conversation_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("conversations.conversation_id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    author_user_id: Mapped[Optional[uuid.UUID]] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("tenant_users.user_id", ondelete="SET NULL"),
+        nullable=True,
+        comment="NULL if the authoring agent was later removed",
+    )
+    body: Mapped[str] = mapped_column(Text, nullable=False)
+    severity: Mapped[NoteSeverity] = mapped_column(
+        String(20), nullable=False, default=NoteSeverity.INFO,
+    )
+
+    def __repr__(self) -> str:
+        return f"<ConversationNote id={self.note_id} severity={self.severity}>"
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# 16. Appointment — scheduled viewing (inbox quick action)
+# ══════════════════════════════════════════════════════════════════════════════
+class Appointment(Base, TimestampMixin, TenantScopedMixin):
+    """
+    A scheduled property-viewing appointment tied to a conversation.
+
+    Deliberately minimal: a structured date/time + location note. Does NOT
+    implement the full SRS §5 appointment subsystem (distance-based dispatch
+    routing, CalDAV/Google Calendar/Outlook sync, conflict detection,
+    automated 24h/1h reminders) — that's a substantial separate feature.
+    See IMPLEMENTATION_STATUS.md for the scope-cut rationale.
+    """
+    __tablename__ = "appointments"
+    __table_args__ = (
+        Index("ix_appointments_conversation", "conversation_id", "scheduled_at"),
+        Index("ix_appointments_tenant_status", "tenant_id", "status"),
+    )
+
+    appointment_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4,
+    )
+    tenant_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("tenants.tenant_id", ondelete="RESTRICT"),
+        nullable=False,
+        index=True,
+        comment="RLS partition key — must match app.current_tenant_id",
+    )
+    conversation_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("conversations.conversation_id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    customer_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("customers.customer_id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    created_by_user_id: Mapped[Optional[uuid.UUID]] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("tenant_users.user_id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    scheduled_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False,
+    )
+    location_note: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)
+    status: Mapped[AppointmentStatus] = mapped_column(
+        String(20), nullable=False, default=AppointmentStatus.SCHEDULED,
+    )
+
+    def __repr__(self) -> str:
+        return f"<Appointment id={self.appointment_id} status={self.status} at={self.scheduled_at}>"

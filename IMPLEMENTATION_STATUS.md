@@ -301,6 +301,19 @@ Audited both halves of "settings alone aren't instrumentation" separately, since
 
 **Monitoring stack deployment: still blocked, but for a different reason than before.** `docker-compose.monitoring.yml` (Prometheus/Grafana/postgres-exporter/redis-exporter) genuinely needs a real target host to "deploy" to — there's nothing to build locally here beyond what already exists; this is an infrastructure/hosting decision tied to item 21 (no production host/domain yet), not a code gap.
 
+### Real Qdrant/MinIO restore drills (item 18, partial) — 2026-09-24
+
+**Off-host backup storage: still blocked** — needs real cloud credentials (S3/GCS bucket + keys) that don't exist yet. Not attempted.
+
+**Restore drills: real, confirmed gap, now closed for Qdrant and MinIO.** `RELEASE_CHECKLIST.md` already said this plainly: "PostgreSQL restoration was tested locally in a disposable container; off-host copies and Qdrant/MinIO restoration remain unverified." Audited `backup.sh`: it already had real backup code for all three systems, but Qdrant's restore procedure existed only as a comment (`docker cp` + a curl command, never run), and MinIO had no restore code or documentation at all.
+
+- Added [`omniflow-deploy/restore.sh`](omniflow-deploy/restore.sh): real, runnable restore for both — `restore.sh qdrant <collection> <snapshot-file>` (copies the snapshot into the container, calls Qdrant's real recover API) and `restore.sh minio <backup-prefix> <destination-bucket>` (a real `mc mirror` in the opposite direction from backup.sh's). Uses the exact same container/network env-var conventions as `backup.sh` so a restore always targets the stack a backup was taken from.
+- Updated `backup.sh`'s inline comments to point at the new real script instead of leaving restore as unverified prose.
+- **Verified against the real local dev stack** (real Qdrant, real MinIO — not mocks): new [`omniflow-deploy/tests/restore_drill.sh`](omniflow-deploy/tests/restore_drill.sh), ran twice. Qdrant: creates a real collection with 3 points, snapshots it, **deletes the collection entirely** (confirmed 404 before restoring), restores via the real `restore.sh`, and confirms all 3 points are back (`points_count` verified, not just an HTTP 200 from the recover call). MinIO: creates a real bucket with 2 objects, mirrors to a backup bucket, **deletes the source objects entirely** (confirmed empty), restores via `restore.sh`, and diffs the restored files byte-for-byte against the originals (not just an object-count check).
+- Real bug found and fixed by the drill itself, not assumed away: on Windows, `docker cp`/`docker run -v` arguments that look like absolute paths get silently mangled by Git Bash's MSYS path translation, pointing restore operations at the wrong directory. Fixed with an `MSYS_NO_PATHCONV=1` export and a `cygpath`-based path-translation helper — a no-op on the Linux hosts this actually deploys to.
+
+**Not covered**: PostgreSQL's restore drill was already done in an earlier session (per `RELEASE_CHECKLIST.md`) and isn't re-tested here. A production run of `restore.sh` still assumes the same trusted operator context as `backup.sh` (direct Docker access to the deployment host) — no additional access-control hardening was added.
+
 ## Next steps and known gaps
 
 1. Real database inbox/report integration and synthetic Kafka/Redis transport checks pass. Next validate the authenticated browser journey and the combined worker flow; the inbox validator still mocks transport/channel boundaries.

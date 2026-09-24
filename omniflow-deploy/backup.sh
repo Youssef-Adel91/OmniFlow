@@ -5,7 +5,7 @@
 # Backs up, in order:
 #   1. PostgreSQL   -> gzip-compressed pg_dump (custom-format is also produced)
 #   2. Qdrant       -> snapshot per collection via the Snapshot REST API
-#   3. MinIO        -> `mc mirror` of the media bucket into a backup bucket
+#   3. MinIO        -> `mc mirror` of configured data buckets into a backup bucket
 #                      (and, optionally, to a local directory)
 #
 # Retention: anything older than $RETENTION_DAYS is removed. Deletion failures
@@ -69,6 +69,10 @@ fi
 
 POSTGRES_USER="${POSTGRES_USER:-postgres}"
 POSTGRES_DB="${POSTGRES_DB:-omniflow_db}"
+
+# Resolve after loading ENV_FILE. An explicit space-separated list overrides
+# defaults; each source gets its own prefix to avoid colliding object names.
+read -r -a SOURCE_BUCKETS <<< "${MINIO_SOURCE_BUCKETS:-${MINIO_SOURCE_BUCKET} ${S3_VAULT_BUCKET:-omniflow-reports-vault} ${S3_MEDIA_TEMP_BUCKET:-omniflow-media-temp} ${S3_ASSETS_BUCKET:-omniflow-public-assets} ${S3_KNOWLEDGE_BUCKET:-omniflow-knowledge-docs}}"
 
 mkdir -p "$BACKUP_ROOT/postgres" "$BACKUP_ROOT/qdrant" "$BACKUP_ROOT/minio" || {
     fail "Cannot create backup directories under $BACKUP_ROOT"
@@ -140,14 +144,17 @@ if container_running "$QDRANT_CONTAINER"; then
 
     qcurl() {
         docker run --rm --network "$QDRANT_NET" curlimages/curl:8.11.0 \
-            -sS --max-time 120 "${AUTH_ARGS[@]}" "$@"
+            -fsS --max-time 120 "${AUTH_ARGS[@]}" "$@"
     }
 
-    COLLECTIONS="$(qcurl http://qdrant:6333/collections 2>/dev/null \
-        | grep -o '"name":"[^"]*"' | cut -d'"' -f4)"
+    COLLECTIONS_JSON="$(qcurl http://qdrant:6333/collections 2>/dev/null)"
+    COLLECTIONS_STATUS=$?
+    COLLECTIONS="$(echo "$COLLECTIONS_JSON" | grep -oE '"name"[[:space:]]*:[[:space:]]*"[^"]*"' | cut -d'"' -f4 || true)"
 
-    if [ -z "$COLLECTIONS" ]; then
-        warn "No Qdrant collections found (or the API was unreachable) — nothing to snapshot."
+    if [ "$COLLECTIONS_STATUS" -ne 0 ] || ! echo "$COLLECTIONS_JSON" | grep -qE '"collections"[[:space:]]*:'; then
+        fail "Qdrant collection listing failed — Qdrant was NOT backed up."
+    elif [ -z "$COLLECTIONS" ]; then
+        log "Qdrant has no collections to snapshot."
     else
         for COLLECTION in $COLLECTIONS; do
             log "   • snapshotting collection: $COLLECTION"
@@ -173,19 +180,20 @@ if container_running "$QDRANT_CONTAINER"; then
         done
     fi
 
-    # RESTORE (for reference):
-    #   docker cp snapshot.snapshot prod-qdrant:/qdrant/snapshots/<collection>/
-    #   curl -X PUT 'http://qdrant:6333/collections/<collection>/snapshots/recover' \
-    #        -H 'Content-Type: application/json' \
-    #        -d '{"location":"file:///qdrant/snapshots/<collection>/snapshot.snapshot"}'
+    # RESTORE: ./restore.sh qdrant <collection> <snapshot-file>
+    # (item 18: this used to be a comment with no runnable code behind it —
+    # see restore.sh, drilled against a real local Qdrant instance.)
 else
-    warn "Container $QDRANT_CONTAINER is not running — Qdrant was NOT backed up."
+    fail "Container $QDRANT_CONTAINER is not running — Qdrant was NOT backed up."
 fi
 
 # ═════════════════════════════════════════════════════════════════════════════
 # 3. MinIO
 # ═════════════════════════════════════════════════════════════════════════════
 log "── [3/3] MinIO mirror ───────────────────────────────────"
+# RESTORE: ./restore.sh minio <backup-bucket>/<timestamp>/<source-bucket> <destination-bucket>
+# (item 18: no restore code or documentation existed for MinIO at all
+# before this — see restore.sh, drilled against a real local MinIO instance.)
 if container_running "$MINIO_CONTAINER"; then
     MINIO_NET="$(docker inspect -f '{{range $k,$v := .NetworkSettings.Networks}}{{$k}}{{end}}' "$MINIO_CONTAINER" 2>/dev/null | head -n1)"
     MINIO_NET="${MINIO_NET:-omniflow-prod-net}"
@@ -194,12 +202,16 @@ if container_running "$MINIO_CONTAINER"; then
             -e MC_HOST_myminio="http://${MINIO_ROOT_USER:-minio}:${MINIO_ROOT_PASSWORD:-}@minio:9000"
             minio/mc)
 
-    # 3a. Versioned in-cluster copy: media bucket -> backup bucket, under a
-    #     timestamped prefix so older generations remain retrievable.
+    # 3a. Timestamped in-cluster copies, separated by source bucket.
+    for SOURCE_BUCKET in "${SOURCE_BUCKETS[@]}"; do
+      if [ "$SOURCE_BUCKET" = "$MINIO_BACKUP_BUCKET" ]; then
+        fail "The backup bucket must not be included in MINIO_SOURCE_BUCKETS."
+        continue
+      fi
     if "${MC_RUN[@]}" mirror --overwrite --quiet \
-            "myminio/${MINIO_SOURCE_BUCKET}" \
-            "myminio/${MINIO_BACKUP_BUCKET}/${TIMESTAMP}"; then
-        log "✅ MinIO mirrored to myminio/${MINIO_BACKUP_BUCKET}/${TIMESTAMP}"
+            "myminio/${SOURCE_BUCKET}" \
+            "myminio/${MINIO_BACKUP_BUCKET}/${TIMESTAMP}/${SOURCE_BUCKET}"; then
+        log "✅ MinIO mirrored to myminio/${MINIO_BACKUP_BUCKET}/${TIMESTAMP}/${SOURCE_BUCKET}"
     else
         fail "mc mirror to the backup bucket failed."
     fi
@@ -207,12 +219,12 @@ if container_running "$MINIO_CONTAINER"; then
     # 3b. Optional off-container copy onto the host filesystem.
     #     Set MINIO_LOCAL_MIRROR=1 to enable (uses more disk).
     if [ "${MINIO_LOCAL_MIRROR:-0}" = "1" ]; then
-        LOCAL_DIR="$BACKUP_ROOT/minio/${TIMESTAMP}"
+        LOCAL_DIR="$BACKUP_ROOT/minio/${TIMESTAMP}/${SOURCE_BUCKET}"
         mkdir -p "$LOCAL_DIR"
         if docker run --rm --network "$MINIO_NET" \
                 -e MC_HOST_myminio="http://${MINIO_ROOT_USER:-minio}:${MINIO_ROOT_PASSWORD:-}@minio:9000" \
                 -v "$LOCAL_DIR:/backup" minio/mc \
-                mirror --overwrite --quiet "myminio/${MINIO_SOURCE_BUCKET}" /backup; then
+                mirror --overwrite --quiet "myminio/${SOURCE_BUCKET}" /backup; then
             log "✅ MinIO mirrored to host: $LOCAL_DIR"
         else
             fail "Local mc mirror failed."
@@ -220,13 +232,19 @@ if container_running "$MINIO_CONTAINER"; then
     else
         log "ℹ️  Local MinIO mirror skipped (set MINIO_LOCAL_MIRROR=1 to enable)."
     fi
+    done
 else
-    warn "Container $MINIO_CONTAINER is not running — MinIO was NOT backed up."
+    fail "Container $MINIO_CONTAINER is not running — MinIO was NOT backed up."
 fi
 
 # ═════════════════════════════════════════════════════════════════════════════
 # 4. Retention / pruning  (best-effort — never fatal)
 # ═════════════════════════════════════════════════════════════════════════════
+if [ "$EXIT_CODE" -ne 0 ]; then
+    warn "Backup incomplete — preserving previous backups and skipping all pruning."
+    exit "$EXIT_CODE"
+fi
+
 log "── Pruning backups older than ${RETENTION_DAYS} days ────"
 
 prune_path() {

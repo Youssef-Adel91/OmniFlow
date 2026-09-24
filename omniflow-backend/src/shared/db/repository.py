@@ -37,7 +37,7 @@ import uuid
 from datetime import datetime
 from typing import Any, Generic, TypeVar
 
-from sqlalchemy import func, select
+from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import joinedload, selectinload
 
@@ -62,6 +62,15 @@ from src.shared.schemas import (
 ModelT = TypeVar("ModelT", bound=Base)
 CreateSchemaT = TypeVar("CreateSchemaT")
 UpdateSchemaT = TypeVar("UpdateSchemaT")
+
+
+class ConversationConflictError(Exception):
+    """
+    Raised by ConversationRepository.assign_agent when the conversation was
+    already claimed by a different agent between the caller's read and this
+    write — see the atomic UPDATE ... WHERE in assign_agent() for why this
+    can no longer happen silently.
+    """
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -580,14 +589,37 @@ class ConversationRepository(
         """
         Human-takeover: assign an agent and flip status to HUMAN_ACTIVE.
         This is the primary action triggered by the B2B dashboard takeover button.
+
+        Atomic conditional UPDATE, not read-then-write: two agents clicking
+        "take over" on the same unassigned conversation within milliseconds
+        used to both read assigned_agent_id=NULL, then both unconditionally
+        write their own id — whichever commit landed last silently won, and
+        the loser got a 200 OK claiming they owned a conversation they
+        actually didn't (discovered only on their next send_message, which
+        checks ownership and 409s). The `WHERE assigned_agent_id IS NULL OR
+        assigned_agent_id = :agent_id` clause makes Postgres itself the
+        arbiter: only one concurrent UPDATE can match on an unassigned row,
+        and re-taking over your own already-assigned conversation is still a
+        harmless no-op (idempotent double-click).
         """
-        conv = await self.get_or_404(conversation_id)
-        conv.assigned_agent_id = agent_id
-        conv.status = ConversationStatus.HUMAN_ACTIVE
-        self.session.add(conv)
+        result = await self.session.execute(
+            update(Conversation)
+            .where(
+                Conversation.conversation_id == conversation_id,
+                (Conversation.assigned_agent_id.is_(None))
+                | (Conversation.assigned_agent_id == agent_id),
+            )
+            .values(assigned_agent_id=agent_id, status=ConversationStatus.HUMAN_ACTIVE)
+        )
+        if result.rowcount == 0:
+            # Either the conversation doesn't exist, or it's genuinely owned
+            # by someone else — get_or_404 tells these apart for the caller.
+            await self.get_or_404(conversation_id)
+            raise ConversationConflictError(
+                f"conversation {conversation_id!s} is already assigned to a different agent"
+            )
         await self.session.flush()
-        await self.session.refresh(conv)
-        return conv
+        return await self.get_or_404(conversation_id)
 
     async def close(self, conversation_id: uuid.UUID) -> Conversation:
         """Mark a conversation as CLOSED. Nulls out the assigned agent."""
@@ -623,6 +655,15 @@ class ConversationRepository(
         Preferred over a standalone MessageRepository for writes, because
         we need to update Conversation.last_message_at and message_count
         in the same flush — keeping the denormalized counter consistent.
+
+        message_count is updated via a single `SET count = count + 1` SQL
+        UPDATE, not Python read-modify-write — concurrent inbound messages
+        for the same conversation (routine: two Kafka partitions, or a
+        customer message racing an agent reply) used to both read the same
+        pre-update value under READ COMMITTED and each write back their own
+        stale +1, silently under-counting by however many messages landed in
+        the same window. The atomic SQL expression pushes the increment to
+        Postgres, which serializes concurrent UPDATEs of the same row itself.
         """
         from datetime import datetime, timezone  # local import avoids top-level cycle
 
@@ -642,12 +683,20 @@ class ConversationRepository(
         )
         self.session.add(msg)
 
-        # Update conversation meta in the same flush.
         # last_message_at is TIMESTAMP WITHOUT TIME ZONE — store naive UTC.
-        conv = await self.get_or_404(conversation_id)
-        conv.last_message_at = datetime.now(tz=timezone.utc).replace(tzinfo=None)
-        conv.message_count = (conv.message_count or 0) + 1
-        self.session.add(conv)
+        result = await self.session.execute(
+            update(Conversation)
+            .where(Conversation.conversation_id == conversation_id)
+            .values(
+                last_message_at=datetime.now(tz=timezone.utc).replace(tzinfo=None),
+                message_count=Conversation.message_count + 1,
+            )
+        )
+        if result.rowcount == 0:
+            raise ValueError(
+                f"conversations with id={conversation_id!s} not found "
+                "(or not visible to the current tenant)"
+            )
 
         await self.session.flush()
         await self.session.refresh(msg)

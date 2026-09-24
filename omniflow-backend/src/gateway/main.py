@@ -46,6 +46,7 @@ from fastapi.responses import JSONResponse
 from sqlalchemy.exc import IntegrityError, OperationalError, SQLAlchemyError
 
 from src.shared.core.config import get_settings
+from src.shared.db.repository import ConversationConflictError
 from src.shared.kafka.producer import kafka_producer
 from src.shared.redis_client.client import redis_mgr
 from src.gateway.routers import health as health_router
@@ -94,6 +95,9 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     try:
         await asyncio.wait_for(kafka_producer.start(), timeout=5.0)
     except Exception as exc:
+        if settings.is_production:
+            await kafka_producer.stop()
+            raise RuntimeError("Kafka is required for production startup") from exc
         logger.warning(
             "kafka_producer_unavailable_continuing",
             error=str(exc)[:120],
@@ -104,6 +108,10 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     try:
         await redis_mgr.start()
     except Exception as exc:
+        if settings.is_production:
+            await kafka_producer.stop()
+            await redis_mgr.stop()
+            raise RuntimeError("Redis is required for production startup") from exc
         logger.warning(
             "redis_unavailable_continuing",
             error=str(exc),
@@ -112,6 +120,15 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
 
     # ── Future (Sprint 6+) ────────────────────────────────────────────────────
     # setup_opentelemetry(settings)
+
+    if settings.is_production:
+        checks = await health_router.dependency_status()
+        if any(value != "ok" for value in checks.values()):
+            await redis_mgr.stop()
+            await kafka_producer.stop()
+            raise RuntimeError("Production dependency readiness failed: " + ", ".join(
+                name for name, value in checks.items() if value != "ok"
+            ))
 
     logger.info("omniflow_ready", host=settings.app_host, port=settings.app_port)
     yield  # ← application runs here
@@ -276,6 +293,23 @@ def _register_exception_handlers(app: FastAPI) -> None:
             content={
                 "code": "DATABASE_ERROR",
                 "message": "An unexpected database error occurred.",
+            },
+        )
+
+    @app.exception_handler(ConversationConflictError)
+    async def conversation_conflict_handler(
+        request: Request, exc: ConversationConflictError
+    ) -> JSONResponse:
+        """
+        ConversationRepository.assign_agent lost the takeover race to a
+        different agent (item 13 concurrency audit). Map to HTTP 409 so the
+        losing agent gets an explicit error instead of a false "success".
+        """
+        return JSONResponse(
+            status_code=status.HTTP_409_CONFLICT,
+            content={
+                "code": "ALREADY_ASSIGNED",
+                "message": str(exc),
             },
         )
 

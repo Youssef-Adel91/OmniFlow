@@ -29,7 +29,7 @@ from datetime import datetime, timezone
 from typing import Annotated, Literal
 
 import structlog
-from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, Request, status
 from fastapi.responses import StreamingResponse
 from fastapi.security import HTTPAuthorizationCredentials
 from jose import JWTError
@@ -511,6 +511,7 @@ async def send_message(
     body:            SendMessageRequest,
     user:            CurrentUser,
     repo:            ConversationRepo,
+    background_tasks: BackgroundTasks,
 ) -> MessageOut:
     _require_agent(user)
     conv = await repo.get_or_404(conversation_id)
@@ -526,8 +527,11 @@ async def send_message(
     )
     # PENDING is the durable outbox: Celery publishes after this transaction commits.
     msg_out = MessageOut.from_orm_model(message)
-    # Publish to Redis pub/sub so the SSE stream picks it up
-    await _publish_sse_event(
+    # Deferred to a background task (runs after the response is sent, i.e.
+    # after the tenant session dependency has committed) so SSE subscribers
+    # never observe an event for a row that isn't visible yet on a fresh read.
+    background_tasks.add_task(
+        _publish_sse_event,
         tenant_id=str(user.tenant_id),
         event_type="new_message",
         data=msg_out.model_dump(),
@@ -548,6 +552,7 @@ async def takeover_conversation(
     conversation_id: uuid.UUID,
     user:            CurrentUser,
     repo:            ConversationRepo,
+    background_tasks: BackgroundTasks,
 ) -> ConversationOut:
     _require_agent(user)
     conv = await repo.assign_agent(
@@ -556,7 +561,8 @@ async def takeover_conversation(
     )
     conv = await repo.get_with_messages(conversation_id)
     conv_out = ConversationOut.from_orm_model(conv)
-    await _publish_sse_event(
+    background_tasks.add_task(
+        _publish_sse_event,
         tenant_id=str(user.tenant_id),
         event_type="conversation_update",
         data=conv_out.model_dump(),
@@ -577,6 +583,7 @@ async def return_to_ai(
     conversation_id: uuid.UUID,
     user:            CurrentUser,
     repo:            ConversationRepo,
+    background_tasks: BackgroundTasks,
 ) -> ConversationOut:
     _require_agent(user)
     current = await repo.get_or_404(conversation_id)
@@ -589,7 +596,8 @@ async def return_to_ai(
     )
     conv = await repo.get_with_messages(conversation_id)
     conv_out = ConversationOut.from_orm_model(conv)
-    await _publish_sse_event(
+    background_tasks.add_task(
+        _publish_sse_event,
         tenant_id=str(user.tenant_id),
         event_type="conversation_update",
         data=conv_out.model_dump(),

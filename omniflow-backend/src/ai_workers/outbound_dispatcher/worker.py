@@ -281,6 +281,24 @@ class OutboundDispatcherWorker(BaseKafkaConsumer):
             media_url=msg.media_url,
         )
 
+        # ── 5b. Re-check takeover immediately before the network call ──────────
+        # Narrows (does not close) the TOCTOU window between the step-2 check
+        # and the actual send: credential resolution + the idempotency round
+        # trip + the DB persist above are all real async gaps a human takeover
+        # can land in. A full fix needs a lock/fencing token on the
+        # conversation; this is a best-effort second look, not a guarantee.
+        if msg.sender_type == "ai_bot" and msg.conversation_id:
+            state = await load_conversation_state(msg.tenant_id, msg.conversation_id)
+            if state["is_human_active"] or state["is_processing_restricted"]:
+                log.info("outbound_ai_cancelled_after_takeover_late")
+                if persisted_msg_id:
+                    await update_message_delivery_status(
+                        tenant_id=msg.tenant_id,
+                        message_id=persisted_msg_id,
+                        delivery_status="FAILED",
+                    )
+                return
+
         # ── 6. Dispatch via WhatsApp (── route by message_type) ─────────────────────
         try:
             if msg.message_type == "vcard":

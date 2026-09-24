@@ -1,7 +1,9 @@
 "use client";
 
+import { useEffect, useState } from "react";
 import { cn, formatSAR } from "@/lib/utils";
 import { useActiveConversation } from "@/store/inboxStore";
+import { fetchRecommendations, type PropertyRecommendation } from "@/lib/api/inbox";
 import {
   Brain,
   Target,
@@ -162,6 +164,24 @@ function EmptyContext() {
 
 export function CustomerContext() {
   const conv = useActiveConversation();
+  const [recommendations, setRecommendations] = useState<PropertyRecommendation[]>([]);
+
+  // Hooks must run unconditionally (before the `!conv` early return below).
+  // When there's no active conversation, EmptyContext renders instead and
+  // stale recommendations are simply never shown — no need to reset them.
+  useEffect(() => {
+    if (!conv) return;
+    let cancelled = false;
+    fetchRecommendations(conv.id)
+      .then((recs) => { if (!cancelled) setRecommendations(recs); })
+      .catch(() => { if (!cancelled) setRecommendations([]); });
+    return () => { cancelled = true; };
+    // Depend on the id, not `conv` itself: the store returns a new object
+    // reference on every unrelated update to the active conversation (e.g. a
+    // new chat message), which would otherwise refetch recommendations on
+    // every incoming message instead of only when the conversation changes.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [conv?.id]);
 
   if (!conv) return (
     <div className="h-full bg-[var(--card)] border-s border-[var(--border)] flex flex-col">
@@ -175,13 +195,6 @@ export function CustomerContext() {
     </div>
   );
 
-  // Mock property recommendations (Sprint 12: from RAG engine)
-  const recommendations = [
-    { title: "شقة 3 غرف، حي النرجس",   price: 800_000, area: 180, district: "النرجس",  score: 0.94 },
-    { title: "شقة دوبلكس 4 غرف",        price: 1_050_000, area: 220, district: "النرجس", score: 0.82 },
-    { title: "شقة 3 غرف، حي القيروان", price: 720_000, area: 160, district: "القيروان", score: 0.75 },
-  ];
-
   return (
     <div className="h-full bg-[var(--card)] border-s border-[var(--border)] flex flex-col overflow-hidden">
 
@@ -189,10 +202,10 @@ export function CustomerContext() {
       <div className="px-4 pt-5 pb-3 border-b border-[var(--border)] shrink-0">
         <h2 className="text-sm font-semibold text-[var(--foreground)] flex items-center gap-2">
           <Brain className="w-4 h-4 text-[var(--accent)]" />
-          سياق AI للعميل
+          سياق العميل
         </h2>
         <p className="text-2xs text-[var(--muted-foreground)] mt-0.5">
-          مُستخرج تلقائياً بالذكاء الاصطناعي
+          معلومات العميل المتاحة لهذه المحادثة
         </p>
       </div>
 
@@ -254,12 +267,17 @@ export function CustomerContext() {
             <h3 className="text-2xs font-semibold text-[var(--muted-foreground)] uppercase tracking-wider">
               عقارات مقترحة
             </h3>
-            <span className="badge badge-gold text-2xs flex items-center gap-0.5">
+            {recommendations.length > 0 && <span className="badge badge-gold text-2xs flex items-center gap-0.5">
               <Zap className="w-2.5 h-2.5" />
               RAG
-            </span>
+            </span>}
           </div>
           <div className="space-y-2">
+            {recommendations.length === 0 && (
+              <p className="text-xs text-[var(--muted-foreground)]">
+                لا توجد اقتراحات متاحة لهذه المحادثة.
+              </p>
+            )}
             {recommendations.map((rec, i) => (
               <PropertySuggestion key={i} {...rec} />
             ))}
@@ -272,15 +290,16 @@ export function CustomerContext() {
             إجراءات سريعة
           </h3>
           <div className="space-y-1.5">
-            <button className="w-full btn-outline text-xs py-2 justify-start gap-2">
+            <p className="text-xs text-[var(--muted-foreground)]">الإجراءات السريعة غير متاحة حاليًا.</p>
+            <button disabled className="w-full btn-outline text-xs py-2 justify-start gap-2 disabled:opacity-50 disabled:cursor-not-allowed">
               <TrendingUp className="w-3.5 h-3.5 text-success" />
               إنشاء تقرير عميل
             </button>
-            <button className="w-full btn-outline text-xs py-2 justify-start gap-2">
+            <button disabled className="w-full btn-outline text-xs py-2 justify-start gap-2 disabled:opacity-50 disabled:cursor-not-allowed">
               <Calendar className="w-3.5 h-3.5 text-info" />
               جدولة موعد زيارة
             </button>
-            <button className="w-full btn-outline text-xs py-2 justify-start gap-2 text-danger border-danger/30 hover:bg-danger/5">
+            <button disabled className="w-full btn-outline text-xs py-2 justify-start gap-2 text-danger border-danger/30 hover:bg-danger/5 disabled:opacity-50 disabled:cursor-not-allowed">
               <AlertCircle className="w-3.5 h-3.5" />
               إضافة ملاحظة تحذير
             </button>

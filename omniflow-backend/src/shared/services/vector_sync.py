@@ -1,15 +1,15 @@
 """
 shared/services/vector_sync.py — Property Listing → Qdrant Vector Sync
 
-Embeds a PropertyListing's text representation using the OpenAI
-text-embedding-3-small model and upserts the vector into the tenant's
-dedicated Qdrant collection.
+Embeds a PropertyListing's text representation via the shared EmbeddingService
+(OpenAI when a real key is configured, otherwise the local fastembed model —
+see ai_workers/rag_engine/embedder.py) and upserts the vector into the
+tenant's dedicated Qdrant collection.
 
 Design principles:
   - Fire-and-forget via asyncio.create_task() — never blocks HTTP responses.
-  - Mock fallback: if OPENAI_API_KEY is absent/empty/"mock", a deterministic
-    dummy 1536-dim vector [0.1] * 1536 is used. Qdrant still receives the
-    point so the rest of the pipeline is exercisable without OpenAI billing.
+  - Real embeddings always: no more dummy-vector fallback (see embedder.py's
+    fastembed path for what runs when no OpenAI key is configured).
   - Errors are logged but NEVER propagated — the HTTP endpoint must always
     succeed even if Qdrant is temporarily unreachable.
 
@@ -46,12 +46,6 @@ from src.shared.qdrant_client.client import qdrant_mgr
 
 logger = structlog.get_logger(__name__)
 _settings = get_settings()
-
-# Qdrant embedding dimension (text-embedding-3-small)
-_EMBEDDING_DIM = 1536
-
-# Dummy vector used when OpenAI is unavailable / mocked
-_MOCK_VECTOR: list[float] = [0.1] * _EMBEDDING_DIM
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -106,52 +100,30 @@ def _build_listing_text(listing: PropertyListing) -> str:
 
 async def _embed_text(text: str) -> list[float]:
     """
-    Embed text using OpenAI text-embedding-3-small.
-
-    MOCK FALLBACK:
-        If OPENAI_API_KEY is missing, empty, or the literal string "mock",
-        returns _MOCK_VECTOR ([0.1] * 1536) and logs a warning. This allows
-        the full Qdrant pipeline to be exercised in dev without OpenAI billing.
-
-    Returns:
-        List of 1536 floats (cosine-normalised by OpenAI).
+    Embed text via the shared EmbeddingService (OpenAI when a real key is
+    configured, otherwise the local fastembed model — see
+    ai_workers/rag_engine/embedder.py). Previously this function had its own
+    independent OpenAI-only implementation that fell back to a constant
+    dummy vector ([0.1] * 1536, identical for every listing — every listing
+    would look equally "relevant" to any query) whenever no key was set,
+    duplicating and diverging from the exact bug already fixed in embedder.py
+    for the query-embedding side of RAG. Reusing the one real implementation
+    means every property listing indexed here is now searchable by the same
+    real embeddings the recommendation/RAG retrieval paths use to find it.
     """
-    api_key = getattr(_settings, "openai_api_key", None) or ""
+    from src.ai_workers.rag_engine.embedder import embedder
 
-    if not api_key or api_key.lower() in ("mock", "none", ""):
-        logger.warning(
-            "vector_sync_mock_embedding",
-            reason="OPENAI_API_KEY not configured — using dummy vector",
-            text_preview=text[:80],
-        )
-        return _MOCK_VECTOR
+    if not embedder.is_configured:
+        embedder.configure()
 
-    try:
-        # Late import — openai package may not be installed in all workers
-        import openai  # type: ignore[import]
-
-        client = openai.AsyncOpenAI(api_key=api_key)
-        response = await client.embeddings.create(
-            model="text-embedding-3-small",
-            input=text,
-            encoding_format="float",
-        )
-        vector: list[float] = response.data[0].embedding
-        logger.debug(
-            "vector_sync_embedded",
-            text_length=len(text),
-            vector_dim=len(vector),
-        )
-        return vector
-
-    except Exception as exc:
-        logger.error(
-            "vector_sync_embedding_failed",
-            error=str(exc),
-            exc_type=type(exc).__name__,
-            reason="Falling back to mock vector",
-        )
-        return _MOCK_VECTOR
+    vector = await embedder.embed_query(text)
+    logger.debug(
+        "vector_sync_embedded",
+        provider=embedder.provider,
+        text_length=len(text),
+        vector_dim=len(vector),
+    )
+    return vector
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -291,7 +263,6 @@ async def sync_listing_to_qdrant(
             "vector_sync_complete",
             listing_id=listing_id_str,
             tenant_id=str(tenant_id),
-            mock=vector == _MOCK_VECTOR,
         )
 
     except Exception as exc:

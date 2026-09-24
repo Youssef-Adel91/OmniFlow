@@ -25,16 +25,19 @@ import asyncio
 import json
 import uuid
 from collections.abc import AsyncGenerator
-from typing import Annotated
+from datetime import timezone
+from typing import Annotated, Literal
 
 import structlog
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from fastapi.responses import StreamingResponse
+from fastapi.security import HTTPAuthorizationCredentials
 from jose import JWTError
 from pydantic import BaseModel, Field
 
-from src.gateway.dependencies import ConversationRepo, CurrentUser
+from src.gateway.dependencies import ConversationRepo, CurrentUser, get_current_user, get_tenant_id
 from src.shared.db.repository import ConversationRepository
+from src.shared.core.enums import Channel, ConversationStatus, TenantUserRole
 from src.shared.redis_client.client import redis_mgr
 from src.shared.security.jwt import is_token_blacklisted, verify_clerk_token
 
@@ -86,14 +89,19 @@ class ConversationOut(BaseModel):
         engagement  = getattr(customer, "engagement_score", None) or 0
         is_vip      = getattr(customer, "is_vip", False)
         msg_count   = min(getattr(conv, "message_count", 0) or 0, 50)
-        status_val  = str(conv.status.value if hasattr(conv.status, "value") else conv.status)
+        status_val  = str(conv.status.value if hasattr(conv.status, "value") else conv.status).lower()
         status_bonus = (
-            20 if status_val == "ESCALATED"
-            else 10 if status_val in ("AI_ACTIVE", "HUMAN_ACTIVE")
+            20 if status_val == "escalated"
+            else 10 if status_val in ("ai_active", "human_active")
             else 0
         )
         raw_score = engagement * 0.6 + (15 if is_vip else 0) + msg_count * 0.4 + status_bonus
         lead_score = max(0, min(100, round(raw_score)))
+        # Legacy databases store this field as naive UTC. Always return an
+        # explicit offset so browsers do not interpret it as their local time.
+        last_message_at = conv.last_message_at
+        if last_message_at is not None and last_message_at.tzinfo is None:
+            last_message_at = last_message_at.replace(tzinfo=timezone.utc)
 
         return cls(
             id              = str(conv.conversation_id),
@@ -103,9 +111,9 @@ class ConversationOut(BaseModel):
             channel         = str(conv.channel.value if hasattr(conv.channel, "value") else conv.channel),
             status          = status_val,
             last_message    = "",  # denormalised field — updated by SSE events
-            last_message_at = conv.last_message_at.isoformat() if conv.last_message_at else "",
+            last_message_at = last_message_at.isoformat() if last_message_at else "",
             unread_count    = 0,   # managed client-side via SSE
-            is_ai_active    = conv.assigned_agent_id is None,
+            is_ai_active    = status_val == ConversationStatus.AI_ACTIVE,
             lead_score      = lead_score,
         )
 
@@ -131,6 +139,8 @@ class MessageOut(BaseModel):
     tier:            str | None   = None
     model:           str | None   = None
     latency_ms:      int | None   = None
+    s3_media_url:    str | None   = None
+    delivery_status: str | None  = None
 
     class Config:
         from_attributes = True
@@ -148,6 +158,8 @@ class MessageOut(BaseModel):
             is_read         = False,
             tier            = msg.llm_routing_tier,
             latency_ms      = msg.latency_ms,
+            s3_media_url     = msg.s3_media_url,
+            delivery_status = msg.delivery_status,
         )
 
 
@@ -169,9 +181,30 @@ class PaginatedMessages(BaseModel):
     limit:  int
 
 
+class PropertyRecommendation(BaseModel):
+    """One Qdrant-retrieved property suggestion for the inbox context panel.
+
+    `score` is the raw cosine similarity from Qdrant (0-1) — not a bespoke
+    weighted match-rule score. There is no separate preference-extraction
+    step yet (see get_conversation_recommendations' docstring); this is the
+    simplest reasonable default, not a documented SRS requirement.
+    """
+    title:    str
+    price:    float
+    area:     float
+    district: str
+    score:    float
+
+
 class SendMessageRequest(BaseModel):
     text:        str  = Field(..., min_length=1, max_length=4096)
-    sender_type: str  = Field(default="human_agent")
+    sender_type: Literal["human_agent"] = "human_agent"
+
+
+def _require_agent(user: CurrentUser) -> None:
+    """Auditors can read conversations, but cannot take over or send messages."""
+    if user.role not in (TenantUserRole.ADMIN, TenantUserRole.AGENT):
+        raise HTTPException(status_code=403, detail={"code": "FORBIDDEN", "message": "Agent role required."})
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -239,6 +272,65 @@ async def get_messages(
 # POST /api/v1/conversations/{conversation_id}/messages
 # ══════════════════════════════════════════════════════════════════════════════
 
+@router.get(
+    "/conversations/{conversation_id}/recommendations",
+    response_model=list[PropertyRecommendation],
+    summary="Real-estate property suggestions for this conversation",
+    description=(
+        "Semantic search over the tenant's Qdrant-indexed property listings, "
+        "using the conversation's own recent customer messages as the query — "
+        "no separate preference-extraction step exists yet, so this reuses "
+        "whatever intent/budget/location signal is already present in what "
+        "the customer actually wrote. Returns [] if the conversation has no "
+        "customer messages yet or no listings score above the threshold."
+    ),
+)
+async def get_conversation_recommendations(
+    conversation_id: uuid.UUID,
+    user:            CurrentUser,
+    repo:            ConversationRepo,
+    limit:           Annotated[int, Query(ge=1, le=10)] = 3,
+) -> list[PropertyRecommendation]:
+    conversation = await repo.get_or_404(conversation_id)
+
+    # Oldest-first page is all get_messages offers; take the tail in Python
+    # rather than adding a new reverse-order repository method for one caller.
+    messages = await repo.get_messages(conversation_id=conversation_id, offset=0, limit=200)
+    customer_texts = [m.text_content for m in messages if m.sender_type == "customer" and m.text_content]
+    if not customer_texts:
+        return []
+    query_text = " ".join(customer_texts[-5:])
+
+    from src.ai_workers.rag_engine.embedder import embedder
+    from src.ai_workers.rag_engine.retriever import _map_property_type
+    from src.shared.qdrant_client.client import qdrant_mgr
+
+    if not embedder.is_configured:
+        embedder.configure()
+    if not qdrant_mgr._started:
+        await qdrant_mgr.start()
+
+    query_vector = await embedder.embed_query(query_text)
+    results = await qdrant_mgr.search_properties(
+        conversation.tenant_id, query_vector, limit=limit, score_threshold=0.0,
+    )
+
+    recommendations = []
+    for point in results:
+        p = point.payload or {}
+        district = p.get("district") or ""
+        city = p.get("city") or ""
+        title = f"{_map_property_type(p.get('property_type', ''))} في {district or city or 'موقع غير محدد'}"
+        recommendations.append(PropertyRecommendation(
+            title=title,
+            price=p.get("price_sar") or 0,
+            area=p.get("area_sqm") or 0,
+            district=district or city or "—",
+            score=round(point.score, 3),
+        ))
+    return recommendations
+
+
 @router.post(
     "/conversations/{conversation_id}/messages",
     response_model=MessageOut,
@@ -251,11 +343,19 @@ async def send_message(
     user:            CurrentUser,
     repo:            ConversationRepo,
 ) -> MessageOut:
+    _require_agent(user)
+    conv = await repo.get_or_404(conversation_id)
+    if str(conv.channel) != Channel.WHATSAPP:
+        raise HTTPException(status_code=422, detail={"code": "UNSUPPORTED_CHANNEL", "message": "Human delivery is available for WhatsApp."})
+    if str(conv.status).lower() != ConversationStatus.HUMAN_ACTIVE or conv.assigned_agent_id != user.user_id:
+        raise HTTPException(status_code=409, detail={"code": "TAKEOVER_REQUIRED", "message": "Take over this conversation before sending."})
     message = await repo.create_message(
         conversation_id=conversation_id,
-        sender_type=body.sender_type,
+        sender_type="human_agent",
         text=body.text,
+        agent_id=user.user_id,
     )
+    # PENDING is the durable outbox: Celery publishes after this transaction commits.
     msg_out = MessageOut.from_orm_model(message)
     # Publish to Redis pub/sub so the SSE stream picks it up
     await _publish_sse_event(
@@ -280,11 +380,12 @@ async def takeover_conversation(
     user:            CurrentUser,
     repo:            ConversationRepo,
 ) -> ConversationOut:
-    conv = await repo.update_status(
+    _require_agent(user)
+    conv = await repo.assign_agent(
         conversation_id=conversation_id,
-        status="HUMAN_ACTIVE",
-        is_ai_active=False,
+        agent_id=user.user_id,
     )
+    conv = await repo.get_with_messages(conversation_id)
     conv_out = ConversationOut.from_orm_model(conv)
     await _publish_sse_event(
         tenant_id=str(user.tenant_id),
@@ -308,11 +409,16 @@ async def return_to_ai(
     user:            CurrentUser,
     repo:            ConversationRepo,
 ) -> ConversationOut:
+    _require_agent(user)
+    current = await repo.get_or_404(conversation_id)
+    if current.assigned_agent_id not in (None, user.user_id) and user.role != TenantUserRole.ADMIN:
+        raise HTTPException(status_code=403, detail={"code": "FORBIDDEN", "message": "Conversation belongs to another agent."})
     conv = await repo.update_status(
         conversation_id=conversation_id,
-        status="AI_ACTIVE",
+        status=ConversationStatus.AI_ACTIVE,
         is_ai_active=True,
     )
+    conv = await repo.get_with_messages(conversation_id)
     conv_out = ConversationOut.from_orm_model(conv)
     await _publish_sse_event(
         tenant_id=str(user.tenant_id),
@@ -334,7 +440,7 @@ async def return_to_ai(
         "The native EventSource API cannot send custom headers, so the JWT "
         "is passed via `?token=<jwt>`. The backend validates the full token "
         "(signature, expiry, type, blacklist) and extracts tenant_id from the claims. "
-        "A bare `?tenant_id=<uuid>` fallback is permitted ONLY in development mode."
+        "The tenant is always resolved from the authenticated user."
     ),
     response_class=StreamingResponse,
     include_in_schema=True,
@@ -472,101 +578,17 @@ async def _resolve_tenant_from_request(
     token:           str | None,
     tenant_id_param: str | None,
 ) -> str | None:
-    """
-    Resolve the tenant_id from the request, with proper JWT validation.
+    """Use the same authentication and revocation checks as the REST API."""
+    if not token:
+        return None
+    try:
+        user = await get_current_user(
+            HTTPAuthorizationCredentials(scheme="Bearer", credentials=token)
+        )
+        return str(await get_tenant_id(user))
+    except HTTPException:
+        return None
 
-    Priority order:
-      1. JWT token query param → full validation (signature, expiry, type, blacklist)
-      2. tenant_id query param  → DEVELOPMENT ONLY, never in production
-      3. Auto dev-mode bypass   → APP_ENV=development with no params at all
-
-    Returns the tenant_id string, or None if authentication fails.
-    All failure paths log a warning; no internal details are returned to callers.
-    """
-    from src.shared.core.config import get_settings as _gs
-    settings = _gs()
-
-    # ── Path 1: Full JWT validation (production + development) ────────────────
-    if token:
-        try:
-            payload = verify_clerk_token(token)
-        except JWTError as exc:
-            logger.warning("sse_jwt_invalid", error=str(exc))
-            return None
-
-        clerk_id = payload.get("sub")
-        if not clerk_id:
-            logger.warning("sse_jwt_missing_clerk_id")
-            return None
-
-        from src.shared.db.session import get_system_session
-        from src.shared.db.models import TenantUser
-        from sqlalchemy import select
-        
-        async with get_system_session() as session:
-            result = await session.execute(
-                select(TenantUser)
-                .where(TenantUser.clerk_id == clerk_id)
-                .where(TenantUser.is_active == True)
-            )
-            user = result.scalar_one_or_none()
-
-            if not user:
-                from src.shared.core.config import get_settings
-                if get_settings().is_development:
-                    from src.shared.db.models import Tenant
-                    from src.shared.core.enums import SubscriptionStatus, OnboardingStatus, TenantUserRole
-                    new_tenant = Tenant(
-                        business_name=f"Dev Workspace",
-                        fal_license_number=f"DEV-{clerk_id[:8]}",
-                        status=SubscriptionStatus.TRIAL,
-                        onboarding_status=OnboardingStatus.PENDING_SELECTION
-                    )
-                    session.add(new_tenant)
-                    await session.flush()
-                    
-                    user = TenantUser(
-                        clerk_id=clerk_id,
-                        tenant_id=new_tenant.tenant_id,
-                        full_name="Local Dev User",
-                        email="dev@example.com",
-                        role=TenantUserRole.ADMIN,
-                        hashed_password="clerk_managed",
-                    )
-                    session.add(user)
-                    # get_system_session() owns the transaction (it opens
-                    # `async with session.begin()`), so flush here and let the
-                    # context manager commit on exit.
-                    await session.flush()
-                    logger.info("sse_auth_dev_auto_provisioned", clerk_id=clerk_id)
-                else:
-                    logger.warning("sse_auth_user_not_found_in_db", clerk_id=clerk_id)
-                    return None
-
-        tenant_id = str(user.tenant_id)
-        logger.debug("sse_jwt_resolved", tenant_id=tenant_id, user_id=clerk_id)
-        return tenant_id
-
-    # ── Path 2: Bare tenant_id param — DEVELOPMENT ONLY ───────────────────────
-    if tenant_id_param:
-        if settings.is_production:
-            # Never allow bare tenant_id in production — reject silently
-            logger.warning("sse_bare_tenant_id_rejected_in_production")
-            return None
-        try:
-            uuid.UUID(tenant_id_param)   # format validation
-            logger.debug("sse_dev_tenant_id_fallback", tenant_id=tenant_id_param)
-            return tenant_id_param
-        except ValueError:
-            return None
-
-    # ── Path 3: Fully unauthenticated dev bypass ───────────────────────────────
-    if settings.is_development:
-        _DEV_TENANT = "00000000-0000-0000-0000-000000000001"
-        logger.debug("sse_dev_auto_bypass", tenant_id=_DEV_TENANT)
-        return _DEV_TENANT
-
-    return None
 
 # ══════════════════════════════════════════════════════════════════════════════
 # POST /api/v1/chat/simulate-mock (WIZARD OF OZ SIMULATOR)
@@ -592,4 +614,3 @@ async def simulate_mock_chat(body: MockChatRequest) -> dict:
         response = "أهلاً بك في شركة النخبة العقارية، كيف يمكنني مساعدتك اليوم؟"
         
     return {"response": response}
-

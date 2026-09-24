@@ -91,7 +91,10 @@ export default function OnboardingPage() {
     businessCategory: "",
     aboutText: "",
     productsText: "", // comma-separated, split into a list on submit
+    detailedInstructions: "",
   });
+  const [knowledgeFiles, setKnowledgeFiles] = useState<File[]>([]);
+  const [isUploadingFiles, setIsUploadingFiles] = useState(false);
   const businessNameValid = businessProfile.businessName.trim().length >= 2;
 
   const businessProfilePayload = () => {
@@ -104,7 +107,34 @@ export default function OnboardingPage() {
       business_category: businessProfile.businessCategory.trim() || undefined,
       about_text: businessProfile.aboutText.trim() || undefined,
       products: products.length ? products : undefined,
+      detailed_instructions: businessProfile.detailedInstructions.trim() || undefined,
     };
+  };
+
+  // Uploads whatever files were attached in the business-profile section to
+  // the real Knowledge Base pipeline (S3 -> Celery -> chunk/embed -> Qdrant)
+  // — the same one the dashboard's separate Knowledge screen uses. Best
+  // effort: a failed file doesn't block finishing onboarding, since the
+  // WhatsApp link (the other half of this form) already succeeded by the
+  // time this runs.
+  const uploadKnowledgeFiles = async () => {
+    if (knowledgeFiles.length === 0) return;
+    setIsUploadingFiles(true);
+    const { uploadKnowledgeDocument } = await import("@/lib/api/knowledge");
+    let failed = 0;
+    for (const file of knowledgeFiles) {
+      try {
+        await uploadKnowledgeDocument(file);
+      } catch {
+        failed += 1;
+      }
+    }
+    setIsUploadingFiles(false);
+    if (failed > 0) {
+      addToast("error", `فشل رفع ${failed} من ${knowledgeFiles.length} ملف. يمكنك إعادة المحاولة من صفحة قاعدة المعرفة.`);
+    } else {
+      addToast("success", `تم رفع ${knowledgeFiles.length} ملف بنجاح إلى قاعدة المعرفة.`);
+    }
   };
   // Auto-dismiss toasts after 5 s
   useEffect(() => {
@@ -141,6 +171,7 @@ export default function OnboardingPage() {
         whatsapp_phone_number_id: formData.phoneId,
         whatsapp_waba_id: formData.wabaId,
       });
+      await uploadKnowledgeFiles();
 
       addToast("success", "🎉 تم ربط قنواتك بنجاح! جاري الانتقال إلى لوحة التحكم...");
 
@@ -174,6 +205,7 @@ export default function OnboardingPage() {
         option: "white_glove",
         ...businessProfilePayload(),
       });
+      await uploadKnowledgeFiles();
 
       // Show full-screen success state instead of navigating immediately
       setShowWhiteGloveSuccess(true);
@@ -303,6 +335,42 @@ export default function OnboardingPage() {
                 placeholder="مثال: أجهزة مساج القدم، أجهزة مساج الركبة"
                 className="w-full bg-[#0A0F1C] border border-white/10 rounded-lg py-3 px-4 text-white placeholder-gray-600 focus:outline-none focus:ring-2 focus:ring-[#C9A84C] focus:border-transparent transition-all"
               />
+            </div>
+            <div className="mt-4">
+              <label className="block text-sm font-medium text-gray-300 mb-2">
+                تعليمات تفصيلية للمساعد الذكي (سياسات، أسئلة شائعة، طريقة الرد...)
+              </label>
+              <textarea
+                value={businessProfile.detailedInstructions}
+                onChange={(e) =>
+                  setBusinessProfile({ ...businessProfile, detailedInstructions: e.target.value })
+                }
+                rows={4}
+                placeholder="مثال: سياسة الاستبدال والاسترجاع خلال 14 يوم، مواعيد الشحن، كيفية الرد على استفسارات الضمان..."
+                className="w-full bg-[#0A0F1C] border border-white/10 rounded-lg py-3 px-4 text-white placeholder-gray-600 focus:outline-none focus:ring-2 focus:ring-[#C9A84C] focus:border-transparent transition-all resize-none"
+              />
+            </div>
+            <div className="mt-4">
+              <label className="block text-sm font-medium text-gray-300 mb-2">
+                ملفات إضافية (كتالوج، قائمة أسعار، أسئلة شائعة — PDF/DOCX/TXT/CSV، حتى 20 ميجا لكل ملف)
+              </label>
+              <input
+                type="file"
+                multiple
+                accept=".pdf,.docx,.txt,.csv"
+                onChange={(e) => setKnowledgeFiles(Array.from(e.target.files || []))}
+                className="w-full bg-[#0A0F1C] border border-white/10 rounded-lg py-3 px-4 text-gray-300 file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:bg-[#C9A84C]/10 file:text-[#C9A84C] file:cursor-pointer hover:file:bg-[#C9A84C]/20"
+              />
+              {knowledgeFiles.length > 0 && (
+                <p className="text-xs text-gray-500 mt-2">
+                  {knowledgeFiles.length} ملف جاهز للرفع — سيُرفع تلقائيًا بعد إتمام الربط، ويُعالج من قاعدة المعرفة (استخراج → تقسيم → فهرسة).
+                </p>
+              )}
+              {isUploadingFiles && (
+                <p className="text-xs text-[#C9A84C] mt-2 flex items-center gap-2">
+                  <Loader2 className="w-3 h-3 animate-spin" /> جاري رفع الملفات...
+                </p>
+              )}
             </div>
           </div>
         </div>

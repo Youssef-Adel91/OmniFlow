@@ -115,6 +115,10 @@ class TenantOnboardingUpdate(BaseModel):
     business_category: Optional[str] = Field(default=None, max_length=255)
     about_text: Optional[str] = Field(default=None, max_length=2000)
     products: Optional[list[str]] = Field(default=None, max_length=50)
+    detailed_instructions: Optional[str] = Field(
+        default=None, max_length=4000,
+        description="Free-form policies/how-to-answer instructions for the AI (-> CompanyProfile.policies_text).",
+    )
     meta_access_token: Optional[str] = Field(default=None)
     whatsapp_phone_number_id: Optional[str] = Field(default=None, max_length=30)
     whatsapp_waba_id: Optional[str] = Field(default=None, max_length=30)

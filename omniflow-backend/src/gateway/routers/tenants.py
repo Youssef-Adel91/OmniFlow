@@ -139,7 +139,7 @@ async def update_tenant_onboarding(
         # docstring) — not a second, disconnected place data goes to die.
         wrote_business_profile = any((
             payload.business_name, payload.business_category,
-            payload.about_text, payload.products,
+            payload.about_text, payload.products, payload.detailed_instructions,
         ))
         if wrote_business_profile:
             if payload.business_name:
@@ -179,6 +179,8 @@ async def update_tenant_onboarding(
             services = [s for s in (payload.business_category, *(payload.products or [])) if s]
             if services:
                 profile.services_offered = services
+            if payload.detailed_instructions:
+                profile.policies_text = payload.detailed_instructions
 
         invalidate_company_context(tenant_uuid)
 

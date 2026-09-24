@@ -1,4 +1,5 @@
 import type { Config } from "tailwindcss";
+import plugin from "tailwindcss/plugin";
 
 const config: Config = {
   // Scan all source files for class usage
@@ -159,7 +160,7 @@ const config: Config = {
   plugins: [
     // RTL variant — generates rtl: prefix for all utilities
     // Usage: <div className="mr-4 rtl:ml-4 rtl:mr-0">
-    require("tailwindcss/plugin")(({ addVariant }: { addVariant: Function }) => {
+    plugin(({ addVariant }: { addVariant: Function }) => {
       addVariant("rtl", '[dir="rtl"] &');
       addVariant("ltr", '[dir="ltr"] &');
     }),

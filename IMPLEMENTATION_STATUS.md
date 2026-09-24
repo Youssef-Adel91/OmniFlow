@@ -262,6 +262,18 @@ Audited the full path: `PropertyListing.rega_ad_number`/`is_verified` fields exi
 
 **Not covered**: `safety`'s commercial vulnerability DB wasn't used (only the free `pip-audit`/OSV data) — this is unlikely to matter (both draw from overlapping public CVE sources) but is worth noting as unverified against safety's own DB specifically.
 
+### CI/CD pipeline (item 20) — 2026-09-24
+
+`omniflow-deploy/RELEASE_CHECKLIST.md` documented manual local commands only (`unittest discover`, `node --test`, `npm run lint/build`) with no automation running them on push/PR — confirmed via `find`/`ls`, no `.github/workflows/` or any other CI config existed anywhere in the repo before this.
+
+Added [`.github/workflows/ci.yml`](.github/workflows/ci.yml): two jobs on every push/PR to `main`.
+- **backend**: installs the exact pinned dependency set from item 19 (`torch==2.13.0+cpu` from the CPU index, then `requirements-lock.txt`, then the local package with `--no-deps` — the same three commands the Dockerfile now uses, so CI and the production image install identically), runs `bandit` and fails the build only on a new HIGH-severity finding (the 1 known MEDIUM false-positive and 22 LOW findings from item 19 don't block), runs `pip-audit` as a report-only step (the one unfixable `ecdsa` CVE shouldn't block every build), then runs the real 37-test `unittest` suite.
+- **frontend**: `npm ci`, `eslint`, `tsc --noEmit`, the real `node --test` suite (12 tests), then `next build` (with placeholder Clerk/API env vars — a real build-time key isn't needed to prove the build succeeds).
+
+**Verified for real, not just written**: every command in both jobs was actually run locally against this repo before being put in the workflow — `bandit`/`pip-audit`/the gate script exit 0 as expected, `pip install --no-deps -e .` succeeds, and separately `npm run lint` (0 errors, pre-existing warnings only), `npm run type-check` (clean), `node --test` (12/12 pass), and `npm run build` with placeholder env vars (succeeds) were all run directly, matching exactly what the workflow YAML executes. The YAML itself was parsed with PyYAML to confirm it's syntactically valid.
+
+**Not covered**: this does not run the `scripts/validate_*.py` real-dependency drills (Kafka/Postgres/Redis/Qdrant integration tests) in CI — those need service containers wired up (Postgres, Redpanda, Redis, Qdrant) as a separate, heavier job, which is real additional work beyond this pass. The workflow has never actually executed on GitHub's runners (no push to trigger it happened as part of this session) — local verification of each exact command is the evidence here, not a green Actions run.
+
 ## Next steps and known gaps
 
 1. Real database inbox/report integration and synthetic Kafka/Redis transport checks pass. Next validate the authenticated browser journey and the combined worker flow; the inbox validator still mocks transport/channel boundaries.

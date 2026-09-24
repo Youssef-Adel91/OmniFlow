@@ -1,0 +1,84 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  backend:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: omniflow-backend
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install pinned dependencies
+        run: |
+          pip install --no-cache-dir torch==2.13.0+cpu --index-url https://download.pytorch.org/whl/cpu
+          pip install --no-cache-dir -r requirements-lock.txt
+          pip install --no-cache-dir --no-deps -e .
+
+      - name: Security lint (bandit)
+        run: |
+          pip install --no-cache-dir bandit
+          # item 19 baseline: 1 MEDIUM (B104, intentional 0.0.0.0 bind in a
+          # container), rest LOW/false-positive. Fail only on HIGH so a real
+          # new finding blocks the build without re-litigating known noise.
+          bandit -r src -q -f json -o bandit-report.json || true
+          python -c "
+          import json, sys
+          data = json.load(open('bandit-report.json', encoding='utf-8'))
+          high = [r for r in data['results'] if r['issue_severity'] == 'HIGH']
+          for r in high:
+              print(f\"HIGH {r['test_id']} {r['filename']}:{r['line_number']} {r['issue_text']}\")
+          sys.exit(1 if high else 0)
+          "
+
+      - name: Dependency vulnerability scan (pip-audit)
+        run: |
+          pip install --no-cache-dir pip-audit
+          pip-audit -r requirements-lock.txt || true
+
+      - name: Unit tests
+        run: python -m unittest discover -s tests -t . -q
+        env:
+          PYTHONIOENCODING: utf-8
+
+  frontend:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: omniflow-frontend
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+          cache-dependency-path: omniflow-frontend/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Type check
+        run: npm run type-check
+
+      - name: Unit tests
+        run: node --test --test-isolation=none tests/*.test.cjs
+
+      - name: Build
+        run: npm run build
+        env:
+          NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY: pk_test_placeholder-for-ci-build-only
+          NEXT_PUBLIC_API_URL: http://localhost:8000

@@ -314,6 +314,13 @@ Audited both halves of "settings alone aren't instrumentation" separately, since
 
 **Not covered**: PostgreSQL's restore drill was already done in an earlier session (per `RELEASE_CHECKLIST.md`) and isn't re-tested here. A production run of `restore.sh` still assumes the same trusted operator context as `backup.sh` (direct Docker access to the deployment host) — no additional access-control hardening was added.
 
+### Items 21–24: audited, all genuinely blocked on external input — 2026-09-24
+
+- **21 (production domain/TLS/provider keys)**: no domain, no TLS cert, no production Moyasar/Tap/Meta credentials exist anywhere in this repo. Nothing to build without them.
+- **22 (refreshed SRS-vs-code review)**: the item itself requires "explicit sign-off from the user on what's in vs. explicitly deferred for v1" — this is a collaborative decision-making item, not a coding task. The individual scope decisions it would cover (voice/image, VIP tiering, channel scope) have already been made and documented per-item throughout this pass; a single consolidated re-review is best done as one pass over the now-updated `IMPLEMENTATION_STATUS.md` with the user, not invented unilaterally here.
+- **23 (staging acceptance/load tests)**: transitively blocked — needs a staging environment, which needs the domain/hosting from item 21.
+- **24 (privacy policy/terms/support channel)**: not drafted. A privacy policy/ToS needs real business facts this session doesn't have and shouldn't guess — legal entity name, registered address, jurisdiction, a real DPO/support contact. Saudi PDPL and consumer-protection requirements make guessed placeholders for these specifically risky to ship even as a "draft," unlike a code default that's easy to flag and revisit. Deferred until those facts are provided, rather than fabricated.
+
 ## Next steps and known gaps
 
 1. Real database inbox/report integration and synthetic Kafka/Redis transport checks pass. Next validate the authenticated browser journey and the combined worker flow; the inbox validator still mocks transport/channel boundaries.

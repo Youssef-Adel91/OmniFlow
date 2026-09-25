@@ -35,7 +35,7 @@ import structlog
 from aiokafka.structs import ConsumerRecord
 
 from src.shared.core.config import get_settings
-from src.shared.core.enums import ConversationStatus, MessageType, RoutingTier
+from src.shared.core.enums import Channel, ConversationStatus, MessageType, RoutingTier
 from src.shared.events.canonical import CanonicalInboundEvent
 from src.shared.kafka.consumer import BaseKafkaConsumer
 from src.shared.kafka.producer import KafkaProducerManager
@@ -352,7 +352,20 @@ class SemanticRouterWorker(BaseKafkaConsumer):
         from src.shared.core.enums import CustomerVCardState
         vcard_state = event.vcard_state or (session and session.get("vcard_state")) or CustomerVCardState.NEW
 
-        if settings.feature_vcard_gatekeeper and vcard_state == CustomerVCardState.NEW:
+        # WhatsApp-only: the gate is "save our WhatsApp business card as a
+        # contact" — meaningless on Instagram/Messenger, where the customer
+        # already has a persistent DM thread with the page. Found in the same
+        # P0 audit that removed Instagram's ad-hoc auto-reply: without this
+        # check, a non-WhatsApp customer's first-ever message was routed here
+        # anyway, `vcard_gatekeeper` built a WhatsApp-format VCard, and
+        # `outbound_dispatcher` rejected it outright (only sends WhatsApp) —
+        # a guaranteed-to-DLQ dead end with `skip_llm=True`, so that customer
+        # never got so much as an LLM reply attempt either.
+        if (
+            settings.feature_vcard_gatekeeper
+            and event.channel == Channel.WHATSAPP
+            and vcard_state == CustomerVCardState.NEW
+        ):
             base.target_tier = RoutingTier.VCARD_GATEKEEPER
             base.skip_llm = True
             base.route_reason = "vcard_gatekeeper_interception"

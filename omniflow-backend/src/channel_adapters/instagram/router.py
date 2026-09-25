@@ -36,14 +36,11 @@ import uuid
 from datetime import datetime, timezone
 from typing import Any
 
-import httpx
 import structlog
 from fastapi import APIRouter, BackgroundTasks, Query, Request, Response, status
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field, ValidationError
 
-from src.ai_engine import LLMOrchestrator
-from src.channel_adapters.instagram.client import send_message
 from src.shared.core.config import get_settings
 from src.shared.core.enums import Channel, MessageType
 from src.shared.db.persistence import persist_inbound_message
@@ -52,9 +49,6 @@ from src.shared.kafka.producer import kafka_producer
 
 logger = structlog.get_logger(__name__)
 settings = get_settings()
-
-# ── Shared LLM orchestrator (singleton) ──────────────────────────────────
-orchestrator = LLMOrchestrator()
 
 router = APIRouter(
     prefix="/webhooks/meta",
@@ -367,49 +361,26 @@ async def _process_messaging_event(
             return
 
         # ── Persist + Publish ─────────────────────────────────────────────────────
+        # NOTE: this used to be followed by an inline "test auto-reply" that
+        # called the LLM orchestrator directly and posted straight to Graph API
+        # with a single global settings.meta_instagram_page_access_token —
+        # removed as a real, live safety issue found during a P0 WhatsApp
+        # incident audit: it bypassed the VCard gate, per-tenant persona/RAG,
+        # tenant credential isolation (one hardcoded token for every tenant in
+        # a multi-tenant product), and the LLM-failure fallback safety net,
+        # and could fire a second, uncontrolled reply alongside whatever the
+        # real Kafka pipeline below does with the same message. The real
+        # pipeline (this publish) is the only reply path now — see
+        # IMPLEMENTATION_STATUS.md for why it currently cannot actually
+        # deliver a reply for this channel yet (outbound_dispatcher only
+        # sends WhatsApp), which is a real, separate, documented gap rather
+        # than something worth papering over with the removed shortcut.
         await _persist_and_publish(
             canonical=canonical,
             tenant_id=tenant_id,
             platform_msg_id=canonical.platform_message_id,
             log_label="meta_messaging",
         )
-
-        # ── Test Auto-Reply for Incoming Text ─────────────────────────────────────
-        print(f"[META WEBHOOK] [CHECK] Checking auto-reply conditions for sender {sender_id}...")
-        if not event.message:
-            print("[META WEBHOOK] [ERROR] Auto-reply skipped: No 'message' field in event.")
-        elif not event.message.text:
-            print("[META WEBHOOK] [ERROR] Auto-reply skipped: No 'text' in event.message.")
-        elif event.message.is_echo:
-            print("[META WEBHOOK] [ERROR] Auto-reply skipped: event.message.is_echo is True (page's own message).")
-        else:
-            incoming_text = event.message.text
-            safe_incoming = incoming_text.encode("ascii", "backslashreplace").decode("ascii")
-            print(f"[META WEBHOOK] [RECV] Received real text message from {sender_id}: {safe_incoming!r} - Calling LLM for auto-reply!")
-
-            # ── Invoke L1 LLM ─────────────────────────────────────────────
-            user_message_text = incoming_text
-            print(f"[META WEBHOOK] [LLM] Sending message to LLM orchestrator: {safe_incoming!r}")
-            llm_reply = await orchestrator.invoke_l1(user_message_text)
-            
-            safe_reply = llm_reply.encode("ascii", "backslashreplace").decode("ascii")
-            print(f"[META WEBHOOK] [SUCCESS] LLM reply received: {safe_reply!r}")
-
-            url = f"https://graph.facebook.com/v26.0/me/messages?access_token={settings.meta_instagram_page_access_token}"
-            payload = {
-                "recipient": {"id": sender_id},
-                "message": {"text": llm_reply}
-            }
-
-            try:
-                async with httpx.AsyncClient() as client:
-                    resp = await client.post(url, json=payload, timeout=10.0)
-                    print(f"=== META API RESPONSE ===\nStatus: {resp.status_code}\nBody: {resp.text}")
-                    print(f"[META WEBHOOK] [SEND] Auto-reply sent to {sender_id}. Status Code: {resp.status_code}")
-                    logger.info("meta_auto_reply_sent", sender_id=sender_id, status_code=resp.status_code)
-            except Exception as e:
-                print(f"[META WEBHOOK] [ERROR] Failed to send auto-reply to {sender_id}: {e}")
-                logger.error("meta_auto_reply_failed", sender_id=sender_id, error=str(e))
     except Exception as exc:
         safe_exc = repr(exc).encode("ascii", "backslashreplace").decode("ascii")
         print(f"[META WEBHOOK] [ERROR] _process_messaging_event unhandled error: {safe_exc}")

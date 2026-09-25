@@ -327,7 +327,14 @@ class OutboundDispatcherWorker(BaseKafkaConsumer):
                     phone_number_id=creds.phone_number_id,
                     file_bytes=vcf_bytes,
                     filename="contact.vcf",
-                    mime_type="text/vcard",
+                    # Meta's Media API rejects "text/vcard" outright (real,
+                    # documented whitelist — confirmed via a real live send:
+                    # 400 "(#100) Param file must be a file with one of the
+                    # following types: ... text/plain ..."). "text/plain" is
+                    # accepted and WhatsApp still renders it as a contact
+                    # card client-side, keyed off the ".vcf" filename below,
+                    # not this upload-time MIME type.
+                    mime_type="text/plain",
                     access_token=creds.access_token,
                 )
                 result = await whatsapp_client.send_document_message(

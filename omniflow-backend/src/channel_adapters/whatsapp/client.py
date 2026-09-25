@@ -125,7 +125,15 @@ class WhatsAppClient:
             ),
             http2=True,     # Meta Graph API supports HTTP/2
             headers={
-                "Content-Type": "application/json",
+                # Deliberately NOT setting Content-Type here — found via a
+                # real live send that this httpx version applies a
+                # client-level default Content-Type even to multipart
+                # requests, overriding the auto-generated
+                # "multipart/form-data; boundary=..." that `files=` should
+                # produce in upload_media(). httpx sets the correct
+                # Content-Type per-request automatically for both
+                # `json=` (send_*) and `files=` (upload_media) — a client
+                # default only breaks that.
                 "User-Agent": f"OmniFlowAI/2.0 (+https://omniflow.ai)",
             },
         )

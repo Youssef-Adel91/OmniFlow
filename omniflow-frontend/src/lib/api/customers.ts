@@ -16,6 +16,8 @@ import { apiClient } from "@/lib/api/client";
 
 // ── Types (mirror backend CustomerResponse) ────────────────────────────────
 
+export type LeadTier = "hot" | "warm" | "cold";
+
 export interface Customer {
   id:                       string;
   tenant_id?:               string | null;
@@ -25,11 +27,11 @@ export interface Customer {
   email?:                   string | null;
   is_vip:                   boolean;
   is_processing_restricted: boolean;
-  lead_score?:              number | null;
-  intent?:                  string | null;
-  budget?:                  number | null;
-  looking_in?:              string | null;
-  property_type?:           string | null;
+  vcard_state?:             string | null;
+  vcard_opened_at?:         string | null;
+  /** 0-100 purchase-likelihood score, computed server-side (see lead_scoring.py). */
+  lead_score:               number;
+  lead_tier:                LeadTier;
   last_interaction_at?:     string | null;
   created_at?:              string | null;
   updated_at?:              string | null;
@@ -49,6 +51,8 @@ export interface ListCustomersParams {
   /** Free-text search (name / phone) — ignored by the backend if unsupported. */
   search?:    string;
   is_vip?:    boolean;
+  /** 'lead_score' returns the ranked (highest-purchase-likelihood-first) view. */
+  sort?:      "created_at" | "lead_score";
 }
 
 /** PATCH body — only the three fields the backend accepts. */
@@ -75,11 +79,10 @@ function normalizeCustomer(raw: any): Customer {
     email:                    raw.email ?? null,
     is_vip:                   Boolean(raw.is_vip),
     is_processing_restricted: Boolean(raw.is_processing_restricted),
-    lead_score:               raw.lead_score ?? null,
-    intent:                   raw.intent ?? null,
-    budget:                   raw.budget ?? null,
-    looking_in:               raw.looking_in ?? null,
-    property_type:            raw.property_type ?? null,
+    vcard_state:              raw.vcard_state ?? null,
+    vcard_opened_at:          raw.vcard_opened_at ?? null,
+    lead_score:               raw.lead_score ?? 0,
+    lead_tier:                (raw.lead_tier as LeadTier) ?? "cold",
     last_interaction_at:      raw.last_interaction_at ?? raw.updated_at ?? null,
     created_at:               raw.created_at ?? null,
     updated_at:               raw.updated_at ?? null,
@@ -111,6 +114,7 @@ export async function fetchCustomers(
       page_size,
       search: params.search || undefined,
       is_vip: params.is_vip,
+      sort: params.sort,
     },
   });
 

@@ -19,22 +19,30 @@ import {
   Calendar,
   Star,
   Flame,
+  Sun,
   Snowflake,
   ShieldOff,
   AlertTriangle,
   RefreshCw,
   Loader2,
+  MailCheck,
+  Contact,
 } from "lucide-react";
 import {
   fetchCustomers,
   updateCustomer,
   type Customer,
   type CustomerPage,
+  type LeadTier,
 } from "@/lib/api/customers";
 
 const PAGE_SIZE = 20;
-/** Lead score above which a customer is considered "hot". */
-const HOT_LEAD_THRESHOLD = 75;
+
+const TIER_STYLE: Record<LeadTier, { label: string; icon: typeof Flame; className: string }> = {
+  hot:  { label: "ساخن",   icon: Flame,     className: "bg-red-500/10 text-red-400 border-red-500/20" },
+  warm: { label: "دافئ",   icon: Sun,       className: "bg-amber-500/10 text-amber-400 border-amber-500/20" },
+  cold: { label: "بارد",   icon: Snowflake, className: "bg-blue-500/10 text-blue-400 border-blue-500/20" },
+};
 
 // ── Helpers ────────────────────────────────────────────────────────────────
 
@@ -60,7 +68,7 @@ function timeAgo(iso: string | null | undefined): string {
 function SkeletonRow() {
   return (
     <tr className="border-b border-white/5">
-      {Array.from({ length: 6 }).map((_, i) => (
+      {Array.from({ length: 7 }).map((_, i) => (
         <td key={i} className="py-4 px-6">
           <div
             className="h-4 rounded bg-white/5 animate-pulse"
@@ -100,6 +108,7 @@ export default function CustomersPage() {
         page,
         page_size: PAGE_SIZE,
         search: debouncedSearch || undefined,
+        sort: "lead_score",
       });
       setData(result);
     } catch (err: any) {
@@ -169,7 +178,7 @@ export default function CustomersPage() {
             العملاء والفرص البيعية
           </h1>
           <p className="text-gray-400 mt-2 text-sm">
-            إدارة جهات الاتصال الخاصة بك وتتبع اهتماماتهم عبر الذكاء الاصطناعي.
+            مرتّبون تلقائياً من الأقرب للشراء إلى الأبرد، بناءً على سلوك المحادثة وسجل التفاعل.
           </p>
         </div>
         <button
@@ -230,10 +239,11 @@ export default function CustomersPage() {
           <table className="w-full text-right">
             <thead>
               <tr className="border-b border-white/10 bg-white/5 text-gray-400 text-sm">
+                <th className="py-4 px-6 font-medium w-10">#</th>
                 <th className="py-4 px-6 font-medium">اسم العميل</th>
                 <th className="py-4 px-6 font-medium">رقم الهاتف</th>
-                <th className="py-4 px-6 font-medium">مستوى الاهتمام</th>
-                <th className="py-4 px-6 font-medium">الاهتمام العقاري</th>
+                <th className="py-4 px-6 font-medium">احتمالية الشراء</th>
+                <th className="py-4 px-6 font-medium">حالة بطاقة التواصل</th>
                 <th className="py-4 px-6 font-medium">آخر تفاعل</th>
                 <th className="py-4 px-6 font-medium text-center">VIP</th>
               </tr>
@@ -243,7 +253,7 @@ export default function CustomersPage() {
                 Array.from({ length: 5 }).map((_, i) => <SkeletonRow key={i} />)
               ) : items.length === 0 ? (
                 <tr>
-                  <td colSpan={6} className="text-center py-20 px-6">
+                  <td colSpan={7} className="text-center py-20 px-6">
                     <Users className="w-12 h-12 text-gray-600 mx-auto mb-4" />
                     <h3 className="text-lg font-semibold text-gray-200 mb-1">
                       {debouncedSearch ? "لا توجد نتائج مطابقة" : "لا يوجد عملاء بعد"}
@@ -256,15 +266,20 @@ export default function CustomersPage() {
                   </td>
                 </tr>
               ) : (
-                items.map((customer) => {
+                items.map((customer, index) => {
                   const name  = customer.display_name || customer.whatsapp_profile_name || "عميل غير معروف";
-                  const score = customer.lead_score ?? 0;
-                  const isHot = score > HOT_LEAD_THRESHOLD;
+                  const score = customer.lead_score;
+                  const tier  = TIER_STYLE[customer.lead_tier] ?? TIER_STYLE.cold;
+                  const TierIcon = tier.icon;
+                  const rank  = (page - 1) * PAGE_SIZE + index + 1;
+                  const vcardOpened = Boolean(customer.vcard_opened_at);
+                  const vcardSaved  = customer.vcard_state === "STATE_CONTACT_SAVED_VERIFIED";
                   return (
                     <tr
                       key={customer.id}
                       className="border-b border-white/5 hover:bg-white/[0.02] transition-colors group"
                     >
+                      <td className="py-4 px-6 text-gray-500 text-sm font-medium">{rank}</td>
                       <td className="py-4 px-6">
                         <div className="flex items-center gap-3">
                           <div className="w-10 h-10 rounded-full bg-gradient-to-br from-[#C9A84C] to-yellow-700 flex items-center justify-center text-[#0A0F1C] font-bold text-sm shrink-0">
@@ -290,18 +305,36 @@ export default function CustomersPage() {
                         </div>
                       </td>
                       <td className="py-4 px-6">
-                        {isHot ? (
-                          <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-red-500/10 text-red-400 text-xs font-medium border border-red-500/20">
-                            <Flame className="w-3.5 h-3.5" /> ساخن ({score})
+                        <div className="flex items-center gap-2.5">
+                          <div className="w-16 h-1.5 rounded-full bg-white/10 overflow-hidden shrink-0">
+                            <div
+                              className={`h-full rounded-full ${
+                                customer.lead_tier === "hot" ? "bg-red-500"
+                                : customer.lead_tier === "warm" ? "bg-amber-500"
+                                : "bg-blue-500"
+                              }`}
+                              style={{ width: `${score}%` }}
+                            />
+                          </div>
+                          <span
+                            className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-medium border shrink-0 ${tier.className}`}
+                          >
+                            <TierIcon className="w-3.5 h-3.5" /> {tier.label} · {score}%
+                          </span>
+                        </div>
+                      </td>
+                      <td className="py-4 px-6 text-sm">
+                        {vcardOpened ? (
+                          <span className="inline-flex items-center gap-1.5 text-emerald-400">
+                            <MailCheck className="w-4 h-4" /> تم فتح البطاقة
+                          </span>
+                        ) : vcardSaved ? (
+                          <span className="inline-flex items-center gap-1.5 text-[#C9A84C]">
+                            <Contact className="w-4 h-4" /> تم حفظ الرقم
                           </span>
                         ) : (
-                          <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-blue-500/10 text-blue-400 text-xs font-medium border border-blue-500/20">
-                            <Snowflake className="w-3.5 h-3.5" /> مستكشف ({score})
-                          </span>
+                          <span className="text-gray-500">لم تُحفظ بعد</span>
                         )}
-                      </td>
-                      <td className="py-4 px-6 text-gray-300 text-sm">
-                        {customer.intent || customer.property_type || customer.looking_in || "—"}
                       </td>
                       <td className="py-4 px-6 text-gray-400 text-sm">
                         <div className="flex items-center gap-2">

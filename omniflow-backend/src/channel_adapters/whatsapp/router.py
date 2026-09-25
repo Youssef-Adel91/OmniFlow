@@ -41,7 +41,7 @@ from src.channel_adapters.whatsapp.security import VerifiedWebhookBody
 from src.shared.core.config import get_settings
 from src.shared.core.enums import Channel, MessageType
 from src.shared.db.models import Tenant
-from src.shared.db.persistence import persist_inbound_message
+from src.shared.db.persistence import persist_inbound_message, update_message_delivery_status_by_wamid
 from src.shared.db.session import get_system_session
 from src.shared.events.canonical import CanonicalInboundEvent
 from src.shared.kafka.producer import kafka_producer
@@ -272,6 +272,50 @@ async def _process_whatsapp_value(value: dict[str, Any]) -> None:
             logger.error(
                 "whatsapp_message_processing_error",
                 msg_id=msg.get("id"),
+                error=str(exc),
+                exc_type=type(exc).__name__,
+            )
+
+    # ── Process delivery-status updates ──────────────────────────────────────
+    # Found via a real live test (item 8/12's documented gap, confirmed with
+    # a real Meta webhook): this "messages" field webhook ALSO carries
+    # status updates (sent/delivered/read/failed) under value["statuses"],
+    # not just value["messages"] — Meta genuinely sends these, but until now
+    # nothing here ever read them, so a real send failure (e.g. error 131047,
+    # the 24h customer-service-window rule) was silently invisible: the
+    # message just sat at whatever status persist_outbound_message set
+    # initially, forever, with no "failed" flag anywhere.
+    for status_entry in value.get("statuses", []):
+        try:
+            wamid = status_entry.get("id")
+            new_status = str(status_entry.get("status", "")).upper()
+            if not wamid or not new_status:
+                continue
+
+            failure_reason = None
+            if new_status == "FAILED":
+                errors = status_entry.get("errors") or []
+                if errors:
+                    err = errors[0]
+                    failure_reason = f"{err.get('code')}: {err.get('title') or err.get('message') or ''}".strip()
+
+            updated = await update_message_delivery_status_by_wamid(
+                tenant_id=tenant_id,
+                platform_message_id=wamid,
+                delivery_status=new_status,
+                failure_reason=failure_reason,
+            )
+            logger.info(
+                "whatsapp_status_webhook_processed",
+                wamid=wamid,
+                status=new_status,
+                failure_reason=failure_reason,
+                message_found=updated,
+            )
+        except Exception as exc:
+            logger.error(
+                "whatsapp_status_processing_error",
+                status_id=status_entry.get("id"),
                 error=str(exc),
                 exc_type=type(exc).__name__,
             )

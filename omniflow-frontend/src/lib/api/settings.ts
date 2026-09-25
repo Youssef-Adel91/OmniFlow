@@ -30,10 +30,15 @@ export interface TenantSettings {
   ai_system_prompt?:         string | null;
 }
 
-/** Only the fields the UI is allowed to change via the generic PATCH. */
+/**
+ * Only the fields the UI is allowed to change via the generic PATCH.
+ * whatsapp_phone_number_id/meta_access_token/whatsapp_waba_id are NOT here —
+ * the backend's TenantSettingsPatch schema never accepted them (silently
+ * dropped, not an error), so they must go through PATCH /tenants/onboarding
+ * instead. See the "reconnect via onboarding" link in the settings page.
+ */
 export interface TenantSettingsUpdate {
   business_name?:            string;
-  whatsapp_phone_number_id?: string | null;
   max_ai_conversations?:     number | null;
 }
 

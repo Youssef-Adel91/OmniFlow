@@ -631,7 +631,12 @@ class Message(Base, TimestampMixin):
         String(20),
         nullable=True,
         default="PENDING",
-        comment="'PENDING' | 'SENT' | 'DELIVERED' | 'FAILED'",
+        comment="'PENDING' | 'SENT' | 'DELIVERED' | 'READ' | 'FAILED'",
+    )
+    failure_reason: Mapped[Optional[str]] = mapped_column(
+        Text,
+        nullable=True,
+        comment="Meta status-webhook error, set only when delivery_status='FAILED'",
     )
 
     # ── Relationships ─────────────────────────────────────────────────────────

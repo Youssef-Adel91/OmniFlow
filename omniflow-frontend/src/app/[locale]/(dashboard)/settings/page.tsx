@@ -193,7 +193,6 @@ export default function SettingsPage() {
     try {
       const updated = await updateSettings({
         business_name: businessName.trim(),
-        whatsapp_phone_number_id: phoneNumberId.trim() || null,
         max_ai_conversations: parsedMax,
       });
       applySettings(updated);
@@ -390,17 +389,21 @@ export default function SettingsPage() {
                   </div>
 
                   <div>
-                    <label className="block text-sm font-medium text-gray-300 mb-2">
-                      Phone Number ID
+                    <label className="flex items-center gap-1.5 text-sm font-medium text-gray-300 mb-2">
+                      <Lock className="w-3.5 h-3.5 text-gray-500" />
+                      Phone Number ID (للقراءة فقط)
                     </label>
                     <input
                       type="text"
-                      value={phoneNumberId}
-                      onChange={(e) => setPhoneNumberId(e.target.value)}
-                      placeholder="103...xxxx"
-                      className={inputClass}
+                      value={phoneNumberId || "غير مربوط"}
+                      readOnly
+                      aria-readonly="true"
+                      className={readOnlyClass}
                       dir="ltr"
                     />
+                    <p className="text-xs text-gray-500 mt-2">
+                      لتغييره استخدم صفحة الربط (Onboarding).
+                    </p>
                   </div>
 
                   {settings?.whatsapp_waba_id && (
@@ -423,6 +426,22 @@ export default function SettingsPage() {
                       <CheckCircle2 className="w-4 h-4" /> القناة مربوطة
                     </p>
                   )}
+
+                  {/* Meta token/Phone Number ID/WABA ID are only ever actually
+                      written by PATCH /tenants/onboarding — this generic
+                      settings PATCH deliberately can't touch them (see
+                      IMPLEMENTATION_STATUS.md). Route here instead of
+                      pretending they're editable in this form. */}
+                  <Link
+                    href={`/${localeParam}/onboarding`}
+                    className="flex items-center justify-between gap-3 bg-[#C9A84C]/10 border border-[#C9A84C]/30 rounded-xl px-4 py-3 hover:bg-[#C9A84C]/15 transition-colors"
+                  >
+                    <span className="flex items-center gap-2.5 text-sm text-[#E4D5A5]">
+                      <RefreshCw className="w-4 h-4 shrink-0 text-[#C9A84C]" />
+                      لتحديث Meta Access Token أو Phone Number ID أو WABA ID، أعد الربط من صفحة الإعداد
+                    </span>
+                    <ArrowLeft className="w-4 h-4 shrink-0 text-[#C9A84C]" />
+                  </Link>
                 </div>
               )}
 

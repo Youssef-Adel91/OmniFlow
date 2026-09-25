@@ -326,6 +326,55 @@ async def update_message_delivery_status(
         )
 
 
+async def update_message_delivery_status_by_wamid(
+    *,
+    tenant_id: uuid.UUID,
+    platform_message_id: str,
+    delivery_status: str,
+    failure_reason: str | None = None,
+) -> bool:
+    """
+    Update delivery status from a real Meta status webhook (sent/delivered/
+    read/failed), looked up by wamid rather than our own internal message_id
+    — the webhook only ever gives us the wamid.
+
+    Returns False (and updates nothing) if no message with this wamid exists
+    yet — e.g. the status webhook for a just-sent message can arrive before
+    our own outbound-dispatcher has finished persisting the row. Callers
+    should log this rather than treat it as fatal; the status is simply lost
+    for that message, same as if the webhook never enforced ordering.
+    """
+    from sqlalchemy import select
+    from src.shared.db.models import Message
+
+    message_id: uuid.UUID | None = None
+    conversation_id: uuid.UUID | None = None
+    async with get_tenant_session(tenant_id) as session:
+        msg = await session.scalar(
+            select(Message).where(Message.platform_message_id == platform_message_id)
+        )
+        if msg is not None:
+            msg.delivery_status = delivery_status
+            msg.failure_reason = failure_reason
+            message_id = msg.message_id
+            conversation_id = msg.conversation_id
+
+    if message_id is None:
+        return False
+
+    await _publish_sse(
+        tenant_id=tenant_id,
+        event_type="message_status_update",
+        data={
+            "id": str(message_id),
+            "conversation_id": str(conversation_id),
+            "delivery_status": delivery_status,
+            "failure_reason": failure_reason,
+        },
+    )
+    return True
+
+
 # ══════════════════════════════════════════════════════════════════════════════
 # Private helpers
 # ══════════════════════════════════════════════════════════════════════════════

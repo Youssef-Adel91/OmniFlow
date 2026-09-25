@@ -13,7 +13,7 @@ import structlog
 from aiokafka.structs import ConsumerRecord
 
 from src.ai_workers.semantic_router.worker import RoutingDecision
-from src.ai_workers.llm_invoker.worker import OutboundMessage
+from src.shared.events.outbound import OutboundMessage
 from src.shared.core.config import get_settings
 from src.shared.core.enums import CustomerVCardState
 from src.shared.kafka.consumer import BaseKafkaConsumer
@@ -78,6 +78,16 @@ class VCardGatekeeperWorker(BaseKafkaConsumer):
         next_state = current_state
         response_text = ""
 
+        # NOTE: as of the semantic_router fix for a real live-test finding
+        # (a genuine follow-up question got gated behind a "تم/حفظت"
+        # confirmation instead of reaching the AI — see that worker's
+        # comment), semantic_router now only ever routes here when
+        # current_state == NEW. The "vcard_confirmation_received" and
+        # AWAITING_VALIDATION/other-state branches below are consequently
+        # unreachable via that path today; left in place (not deleted)
+        # since the reminder Celery tasks (vcard_tasks.py) can still queue
+        # work against this worker independently of semantic_router, and
+        # ripping out the state machine here was out of scope for that fix.
         if decision.route_reason == "vcard_confirmation_received":
             next_state = CustomerVCardState.CONTACT_SAVED_VERIFIED
             response_text = "ممتاز! شكراً لحفظ الرقم 🎉 يسعدنا خدمتك في أي وقت، يمكنك الآن استخدام جميع ميزات المساعد الذكي."
@@ -91,7 +101,7 @@ class VCardGatekeeperWorker(BaseKafkaConsumer):
                     "بعد الحفظ، أرسل كلمة 'تم' أو 'حفظت' لتفعيل كامل مميزات المساعد الذكي."
                 )
                 log.info("vcard_sent_initial")
-                
+
                 # Schedule 1-hour reminder
                 schedule_vcard_reminder(
                     tenant_id=str(tenant_id),
@@ -110,8 +120,17 @@ class VCardGatekeeperWorker(BaseKafkaConsumer):
             customer_phone,
             {"vcard_state": next_state}
         )
-        
-        # Note: Database sync for vcard_state is assumed to be handled asynchronously or by a separate sync worker.
+        from sqlalchemy import update
+        from src.shared.db.models import Customer
+        from src.shared.db.session import get_tenant_session
+
+        if decision.customer_id is None:
+            raise ValueError("VCard requires a resolved customer")
+        async with get_tenant_session(tenant_id) as db_session:
+            await db_session.execute(
+                update(Customer).where(Customer.customer_id == decision.customer_id)
+                .values(vcard_state=next_state)
+            )
 
         latency_ms = int((asyncio.get_event_loop().time() - start_ns) * 1000)
         

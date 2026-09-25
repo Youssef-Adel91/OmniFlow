@@ -42,6 +42,7 @@ from src.shared.kafka.producer import KafkaProducerManager
 from src.shared.redis_client.client import redis_mgr
 from src.ai_workers.semantic_router.tenant_resolver import TenantResolver
 from src.ai_workers.semantic_router.classifier import SemanticClassifier
+from src.shared.services.conversation_state import load_conversation_state
 
 logger = structlog.get_logger(__name__)
 settings = get_settings()
@@ -205,6 +206,19 @@ class SemanticRouterWorker(BaseKafkaConsumer):
         # ── 3. Load session state from Redis ──────────────────────────────────
         customer_phone = event.customer_phone or event.platform_user_id
         session = await redis_mgr.get_session_state(tenant_id, customer_phone)
+        # Database state takes precedence over cached takeover / privacy flags.
+        state = await load_conversation_state(
+            tenant_id,
+            platform_conversation_id=event.platform_conversation_id,
+            channel=str(event.channel),
+        )
+        session = {**(session or {}), **state}
+        event = event.model_copy(update={
+            "master_customer_id": uuid.UUID(state["customer_id"]),
+            "is_human_active": state["is_human_active"],
+            "is_processing_restricted": state["is_processing_restricted"],
+            "vcard_state": state["vcard_state"],
+        })
 
         # ── 4. Determine routing decision ─────────────────────────────────────
         decision = await self._make_routing_decision(event, tenant_id, session)
@@ -273,6 +287,8 @@ class SemanticRouterWorker(BaseKafkaConsumer):
             event=event,
             tenant_id=tenant_id,
             session_state=session,
+            conversation_id=uuid.UUID(session["conversation_id"]) if session and session.get("conversation_id") else None,
+            customer_id=uuid.UUID(session["customer_id"]) if session and session.get("customer_id") else None,
             target_tier=RoutingTier.L1_TRIAGE,
             route_reason="default_triage",
         )
@@ -317,17 +333,29 @@ class SemanticRouterWorker(BaseKafkaConsumer):
 
         classification = await self._classifier.classify(event, history)
 
-        # ── Rule 3: VCard Gatekeeper (Enforce saved contact) ──────────────────
-        from src.shared.core.enums import CustomerVCardState, IntentCategory
+        # ── Rule 3: VCard Gatekeeper — one-time first-contact step only ────────
+        # The SRS (§5.5.4) actually specifies gating EVERY message behind an
+        # explicit "تم/حفظت" confirmation word (state stays AWAITING_VALIDATION,
+        # every other message gets only a "limited reply" nudge, not a real
+        # answer) — confirmed by reading that section directly, this was not
+        # a misreading. A real live test on the Naeem tenant surfaced this as
+        # a real product problem: a genuine customer question on their
+        # *second* message got intercepted into another VCard/reminder
+        # instead of a real AI reply. Per explicit client direction, this is
+        # now a deliberate SRS deviation, not a bug fix pretending to match
+        # spec: intercept ONLY a customer's genuinely first-ever message
+        # (vcard_state == NEW). Every state after that — VCARD_SENT,
+        # AWAITING_VALIDATION, REMINDER_1/2, DORMANT, CONTACT_SAVED_VERIFIED —
+        # flows straight to the normal AI pipeline. The customer still gets
+        # the VCard once; nothing about the AI's usefulness after that is
+        # held hostage to them replying a specific keyword first.
+        from src.shared.core.enums import CustomerVCardState
         vcard_state = event.vcard_state or (session and session.get("vcard_state")) or CustomerVCardState.NEW
-        
-        if vcard_state != CustomerVCardState.CONTACT_SAVED_VERIFIED:
+
+        if settings.feature_vcard_gatekeeper and vcard_state == CustomerVCardState.NEW:
             base.target_tier = RoutingTier.VCARD_GATEKEEPER
             base.skip_llm = True
-            if classification.intent != IntentCategory.VCARD_CONFIRMATION:
-                base.route_reason = "vcard_gatekeeper_interception"
-            else:
-                base.route_reason = "vcard_confirmation_received"
+            base.route_reason = "vcard_gatekeeper_interception"
             logger.info("semantic_router_vcard_intercept", tenant_id=str(tenant_id), vcard_state=vcard_state, reason=base.route_reason)
             return base
 

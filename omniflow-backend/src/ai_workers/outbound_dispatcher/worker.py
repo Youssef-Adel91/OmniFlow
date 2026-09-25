@@ -51,7 +51,7 @@ from src.shared.kafka.consumer import BaseKafkaConsumer
 from src.shared.redis_client.client import redis_mgr
 from src.shared.services.conversation_state import load_conversation_state
 from src.shared.db.session import get_tenant_session
-from src.shared.db.models import Tenant, Message
+from src.shared.db.models import Tenant, Message, CompanyProfile
 from sqlalchemy import select
 
 logger = structlog.get_logger(__name__)
@@ -309,12 +309,24 @@ class OutboundDispatcherWorker(BaseKafkaConsumer):
                 # generated fresh from the tenant's own DB row every time.
                 async with get_tenant_session(msg.tenant_id) as session:
                     tenant = await session.scalar(select(Tenant).where(Tenant.tenant_id == msg.tenant_id))
+                    profile = await session.scalar(
+                        select(CompanyProfile).where(CompanyProfile.tenant_id == msg.tenant_id)
+                    )
                 if not tenant:
                     raise RuntimeError(f"Cannot build VCard: tenant {msg.tenant_id} not found")
 
+                # A real live test caught this: with only business_name, the
+                # resulting card had a name and nothing else — no phone
+                # number defeats the whole point. Pull whatever real
+                # business info onboarding actually collected.
+                category = (profile.services_offered or [None])[0] if profile else None
                 vcf_bytes = vcard_builder.build_tenant_vcard(
                     business_name=tenant.business_name,
                     phone=tenant.whatsapp_display_phone_number,
+                    category=category,
+                    note=profile.business_description if profile else None,
+                    email=profile.contact_email if profile else None,
+                    website=(profile.social_links or {}).get("website") if profile else None,
                 )
                 if not tenant.whatsapp_display_phone_number:
                     log.warning(

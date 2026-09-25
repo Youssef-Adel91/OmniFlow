@@ -75,6 +75,12 @@ _L0_RESPONSES: dict[str, str] = {
         "عذرًا، لا يمكنني حاليًا الاستماع للرسائل الصوتية أو تحليل الصور تلقائيًا. "
         "يسعدني مساعدتك إذا كتبت طلبك نصيًا 🙏"
     ),
+    # Sent when the LLM call fails twice in a row (see process_message) —
+    # never leave the customer with total silence just because the model
+    # provider had a bad moment.
+    "llm_unavailable_fallback": (
+        "عذرًا، حصل تأخير بسيط في الرد. سيتواصل معك فريقنا في أقرب وقت 🙏"
+    ),
 }
 
 
@@ -331,23 +337,40 @@ class LLMInvokerWorker(BaseKafkaConsumer):
                 tier=tier,
             )
 
-        # ── 6. Call Gemini ────────────────────────────────────────────────────
-        try:
-            llm_response = await gemini_client.generate_response(
-                messages=gemini_messages,
-                tier=tier,
-                system_prompt=system_prompt,
-                tenant_context=tenant_context,
-                rag_context=rag_context,
+        # ── 6. Call Gemini, with one immediate retry before giving up ──────────
+        # Previously: a timeout silently escalated to human with no message to
+        # the customer, and any other exception was re-raised for Kafka's
+        # redelivery/DLQ machinery — also customer-silent, and (per a real
+        # live-test finding) indistinguishable from the bot just not working.
+        # One retry absorbs a transient blip; if that also fails, the customer
+        # gets a real natural-language reply instead of nothing, and the
+        # conversation is still escalated so a human follows up.
+        llm_response = None
+        last_exc: Exception | None = None
+        for attempt in range(2):
+            try:
+                llm_response = await gemini_client.generate_response(
+                    messages=gemini_messages,
+                    tier=tier,
+                    system_prompt=system_prompt,
+                    tenant_context=tenant_context,
+                    rag_context=rag_context,
+                )
+                break
+            except Exception as exc:
+                last_exc = exc
+                log.warning("llm_invoker_call_failed", attempt=attempt + 1, error=str(exc)[:200])
+
+        if llm_response is None:
+            log.error("llm_invoker_fallback_after_retry", tier=tier, error=str(last_exc)[:200] if last_exc else None)
+            await self._publish_outbound(
+                decision=decision,
+                text=_L0_RESPONSES["llm_unavailable_fallback"],
+                llm_response=None,
+                latency_ms=int((asyncio.get_event_loop().time() - start_ns) * 1000),
             )
-        except asyncio.TimeoutError:
-            # On timeout: escalate to human rather than retrying (SLA protection)
-            log.error("llm_invoker_timeout_escalating_to_human", tier=tier)
             await self._publish_escalation_event(decision)
             return
-        except Exception as exc:
-            # Will be caught by BaseKafkaConsumer retry loop
-            raise RuntimeError(f"LLM API error: {exc}") from exc
 
         # Handle safety block
         if llm_response.was_blocked:

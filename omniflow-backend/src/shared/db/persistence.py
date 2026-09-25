@@ -344,8 +344,8 @@ async def update_message_delivery_status_by_wamid(
     should log this rather than treat it as fatal; the status is simply lost
     for that message, same as if the webhook never enforced ordering.
     """
+    from datetime import datetime, timezone
     from sqlalchemy import select
-    from src.shared.db.models import Message
 
     message_id: uuid.UUID | None = None
     conversation_id: uuid.UUID | None = None
@@ -358,6 +358,16 @@ async def update_message_delivery_status_by_wamid(
             msg.failure_reason = failure_reason
             message_id = msg.message_id
             conversation_id = msg.conversation_id
+
+            # Lead-scoring signal: WhatsApp has no "contact saved" event, but a
+            # real read receipt on the vcard message itself is the closest
+            # honest proxy for "the customer actually saw it." Stamped once.
+            if delivery_status == "READ" and msg.message_type == "vcard":
+                conv = await session.get(Conversation, msg.conversation_id)
+                if conv is not None:
+                    customer = await session.get(Customer, conv.customer_id)
+                    if customer is not None and customer.vcard_opened_at is None:
+                        customer.vcard_opened_at = datetime.now(tz=timezone.utc)
 
     if message_id is None:
         return False

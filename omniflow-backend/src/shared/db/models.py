@@ -326,6 +326,11 @@ class Customer(Base, TimestampMixin, TenantScopedMixin):
         default=CustomerVCardState.NEW,
         comment="State in the VCard follow-up drip sequence",
     )
+    vcard_opened_at: Mapped[Optional[datetime]] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+        comment="Set the first time the vcard message's delivery_status reaches READ (lead scoring signal)",
+    )
 
     # AI Lead Scoring
     engagement_score: Mapped[Optional[int]] = mapped_column(

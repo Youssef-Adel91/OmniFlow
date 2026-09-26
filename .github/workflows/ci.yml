@@ -9,6 +9,24 @@ on:
 jobs:
   backend:
     runs-on: self-hosted
+    env:
+      # Real root cause, found step by step against actual runner logs
+      # (not guessed): bare `python` on this self-hosted Windows runner
+      # resolves to MSYS2's C:\msys64\mingw64\bin\python.exe -- a stripped
+      # build meant as an MSYS2 toolchain dependency, not a general-purpose
+      # interpreter (no pip, and its own ensurepip-driven self-install of
+      # pip fails with no usable diagnostic output). This is almost
+      # certainly the same interpreter the user's own interactive
+      # `python --version` check found, since it reports the same 3.12.7 --
+      # so there was never a second, already-working system Python that
+      # PATH ordering alone could have preferred.
+      #
+      # Fix: call the real CPython 3.12 install by its full absolute path
+      # everywhere, instead of the bare `python` command. This sidesteps
+      # PATH order entirely (no dependency on the Actions service
+      # account's PATH matching an interactively logged-in user's PATH,
+      # and no need for anyone to have admin rights to edit system PATH).
+      PYTHON_EXE: 'C:\Users\DELL\AppData\Local\Programs\Python\Python312\python.exe'
     defaults:
       run:
         working-directory: omniflow-backend
@@ -33,67 +51,47 @@ jobs:
       # cleanup, then a generic "Error happened during Python installation"
       # after the actual installer hung for 3+ hours). Avoiding that code
       # path entirely rather than granting the runner admin rights: this
-      # runner already has Python 3.12.7 installed system-wide, so this
-      # step is removed and every command below just uses whatever
-      # `python`/`pip` is already on PATH. pyproject.toml's
+      # runner already has a real Python 3.12 installed (the path in the
+      # job's PYTHON_EXE env var above), so this step is removed. pyproject.toml's
       # `requires-python = ">=3.11"` is a floor, not a ceiling -- verified
       # the full dependency set (every package in requirements-lock.txt,
       # plus torch==2.13.0+cpu) actually installs under real Python 3.12
       # and the full test suite passes unchanged before relying on this.
 
-      # The very next run after removing setup-python failed the install
-      # step in <1s with ZERO captured output (not even a "not recognized"
-      # message) -- so before guessing why, make the runner state visible:
-      # if `python` itself isn't resolvable to this job's shell (e.g. a
-      # per-user-only install not on the Actions service account's PATH,
-      # as opposed to the interactive user's PATH the user checked
-      # `python --version` from), this step fails with a clear message
-      # instead of silence, and if it prints a version, the problem is
-      # narrower than "python isn't found" and the next log will show it.
+      # Confirms the log shows exactly which interpreter every later step
+      # is using, rather than inferring it from an error message.
       #
-      # It printed a version (3.12.7) -- but the real failure that
-      # revealed was one step further than expected: `python` on this
-      # runner resolves to MSYS2's C:\msys64\mingw64\bin\python.exe (a
-      # 3.12.7 build too, which is almost certainly the exact same
-      # interpreter the user's own interactive `python --version` check
-      # found -- there may be no separate system-wide Python at all).
-      # MSYS2's python package doesn't ship pip; sys.executable is now
-      # printed explicitly so this is confirmed from the log directly
-      # rather than inferred from a pip error message every time.
+      # Every invocation below is prefixed with `&` (PowerShell's call
+      # operator) rather than calling the quoted path bare: PowerShell
+      # treats a bare quoted string as a plain string expression, not a
+      # command to run, unless `&` tells it otherwise -- easy to get
+      # wrong silently (it would just echo the path instead of running
+      # it). This assumes the PowerShell default this job already
+      # depends on (see the `shell` note above); it would need `&`
+      # removed if this job ever ran under bash instead.
       - name: Diagnose Python on this runner
         run: |
-          python --version
-          python -c "import sys; print(sys.executable)"
+          & "${{ env.PYTHON_EXE }}" --version
+          & "${{ env.PYTHON_EXE }}" -c "import sys; print(sys.executable)"
 
-      # Bootstraps pip using CPython's own bundled wheel -- no network
-      # needed, verified locally by reproducing this exact "No module
-      # named pip" state in a --without-pip venv and confirming ensurepip
-      # fixes it offline. Assumption this makes, disclosed rather than
-      # silently relied on: MSYS2's python package still includes the
-      # ensurepip stdlib module even though it strips pip itself out (the
-      # common MSYS2 packaging pattern otherwise expects pip via pacman
-      # instead) -- if ensurepip is ALSO missing, this step's own error
-      # will say so plainly, and the fix becomes a pacman install on the
-      # runner rather than anything in this workflow.
+      # Cheap safety net: a no-op if this real CPython install already has
+      # pip (expected for a normal python.org install), but costs nothing
+      # if it doesn't. Uses CPython's own bundled wheel -- no network
+      # needed, verified locally by reproducing "No module named pip" in a
+      # --without-pip venv and confirming ensurepip fixes it offline.
       - name: Ensure pip is available
-        run: python -m ensurepip --upgrade
+        run: |
+          & "${{ env.PYTHON_EXE }}" -m ensurepip --upgrade
 
-      # Every command below now goes through `python -m X` rather than a
-      # bare `pip`/`bandit`/`pip-audit` command. This means everything
-      # resolves through the one interpreter the diagnostic step above
-      # just proved is reachable, instead of also depending on a separate
-      # Scripts/bin directory (where those tools' own console-script
-      # wrappers land) being on the same PATH -- a second, independent way
-      # the silent failure above could have happened.
       - name: Install pinned dependencies
         run: |
-          python -m pip install --no-cache-dir torch==2.13.0+cpu --index-url https://download.pytorch.org/whl/cpu
-          python -m pip install --no-cache-dir -r requirements-lock.txt
-          python -m pip install --no-cache-dir --no-deps -e .
+          & "${{ env.PYTHON_EXE }}" -m pip install --no-cache-dir torch==2.13.0+cpu --index-url https://download.pytorch.org/whl/cpu
+          & "${{ env.PYTHON_EXE }}" -m pip install --no-cache-dir -r requirements-lock.txt
+          & "${{ env.PYTHON_EXE }}" -m pip install --no-cache-dir --no-deps -e .
 
       - name: Security lint (bandit)
         run: |
-          python -m pip install --no-cache-dir bandit
+          & "${{ env.PYTHON_EXE }}" -m pip install --no-cache-dir bandit
           # item 19 baseline: 1 MEDIUM (B104, intentional 0.0.0.0 bind in a
           # container), rest LOW/false-positive. Fail only on HIGH so a real
           # new finding blocks the build without re-litigating known noise.
@@ -102,16 +100,17 @@ jobs:
           # script here), PowerShell does not stop a multi-line script on a
           # non-zero exit code from an external command, so the next line
           # (the actual pass/fail decision) always runs regardless.
-          python -m bandit -r src -q -f json -o bandit-report.json
-          python scripts/ci_check_bandit_high.py
+          & "${{ env.PYTHON_EXE }}" -m bandit -r src -q -f json -o bandit-report.json
+          & "${{ env.PYTHON_EXE }}" scripts/ci_check_bandit_high.py
 
       - name: Dependency vulnerability scan (pip-audit)
         run: |
-          python -m pip install --no-cache-dir pip-audit
-          python -m pip_audit -r requirements-lock.txt
+          & "${{ env.PYTHON_EXE }}" -m pip install --no-cache-dir pip-audit
+          & "${{ env.PYTHON_EXE }}" -m pip_audit -r requirements-lock.txt
 
       - name: Unit tests
-        run: python -m unittest discover -s tests -t . -q
+        run: |
+          & "${{ env.PYTHON_EXE }}" -m unittest discover -s tests -t . -q
         env:
           PYTHONIOENCODING: utf-8
 

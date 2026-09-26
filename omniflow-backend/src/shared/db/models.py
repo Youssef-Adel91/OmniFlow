@@ -332,6 +332,20 @@ class Customer(Base, TimestampMixin, TenantScopedMixin):
         comment="Set the first time the vcard message's delivery_status reaches READ (lead scoring signal)",
     )
 
+    # AI-extracted explicit profile (sector-agnostic buying signals) ────────
+    extracted_profile: Mapped[Optional[dict]] = mapped_column(
+        JSONB,
+        nullable=True,
+        comment='Generic LLM-extracted buying signals, e.g. {"budget_min":..,"budget_max":..,'
+                '"location":..,"stated_need":..,"urgency":bool}. Null fields mean not stated. '
+                "See shared/services/customer_profile_extractor.py.",
+    )
+    extracted_profile_updated_at: Mapped[Optional[datetime]] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+        comment="When extracted_profile was last (re)computed",
+    )
+
     # AI Lead Scoring
     engagement_score: Mapped[Optional[int]] = mapped_column(
         nullable=True,

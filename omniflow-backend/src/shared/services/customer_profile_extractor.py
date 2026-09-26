@@ -133,7 +133,12 @@ async def extract_and_persist_customer_profile(
         return profile
 
     existing = customer.extracted_profile or {}
-    merged = dict(existing)
+    # Seed from the full schema so every key is always explicitly present
+    # (None, not absent) — a run that extracts nothing new must not leave
+    # the dict missing keys entirely, just carrying over whatever was
+    # already known.
+    merged = dict(EMPTY_PROFILE)
+    merged.update(existing)
     for key in ("budget_min", "budget_max", "location", "stated_need"):
         if profile.get(key) is not None:
             merged[key] = profile[key]

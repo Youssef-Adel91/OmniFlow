@@ -106,7 +106,18 @@ jobs:
       - name: Dependency vulnerability scan (pip-audit)
         run: |
           & "${{ env.PYTHON_EXE }}" -m pip install --no-cache-dir pip-audit
+          # Informational only, same as this step always was (never meant
+          # to gate the build -- it just reports, e.g. the known ecdsa
+          # PYSEC-2026-1325 finding). Real bug in the PowerShell port,
+          # caught by an actual run: pip_audit is the LAST command in this
+          # step, so unlike the bandit step above (whose last command is a
+          # separate Python script that makes the real pass/fail decision),
+          # nothing here overrides its own exit code -- Actions' PowerShell
+          # wrapper reads $LASTEXITCODE after the script the same way bash
+          # reads the last command's status, with or without `-e`. Explicit
+          # reset restores the original always-non-blocking behavior.
           & "${{ env.PYTHON_EXE }}" -m pip_audit -r requirements-lock.txt
+          $LASTEXITCODE = 0
 
       - name: Unit tests
         run: |

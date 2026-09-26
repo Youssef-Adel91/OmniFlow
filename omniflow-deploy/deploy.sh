@@ -22,7 +22,7 @@
 # release ran `alembic upgrade head`, downgrade explicitly before starting the
 # old code:
 #     docker compose --env-file .env.prod -f docker-compose.prod.yml \
-#         run --rm fastapi-backend alembic downgrade <previous_revision>
+#         run --rm --no-deps migrate alembic downgrade <previous_revision>
 # ...or restore the pre-deploy dump produced by backup.sh.
 # ═════════════════════════════════════════════════════════════════════════════
 
@@ -128,9 +128,9 @@ echo "✅ Validating compose configuration..."
 $COMPOSE config --quiet
 
 # ── 8. Build and deploy ──────────────────────────────────────────────────────
-echo "✅ Building and starting services (network isolated)..."
-# --remove-orphans cleans up containers no longer defined in the compose file.
-$COMPOSE up -d --build --remove-orphans
+echo "✅ Building application images and starting the data plane..."
+$COMPOSE --profile maintenance build
+$COMPOSE up -d postgres redis redpanda qdrant minio
 
 # ── 9. Wait for the database to be genuinely ready ───────────────────────────
 echo "⏳ Waiting for PostgreSQL to report healthy..."
@@ -156,14 +156,19 @@ fi
 
 # ── 10. Database migrations ──────────────────────────────────────────────────
 echo "🗄️  Applying database migrations (alembic upgrade head)..."
-if $COMPOSE exec -T fastapi-backend alembic upgrade head; then
+if $COMPOSE run --rm --no-deps migrate; then
     echo "✅ Migrations applied."
 else
-    echo "❌ Migration failed. The new code is running against an OUTDATED schema."
+    echo "❌ Migration failed. New application services have not been started."
     echo "   Investigate:  $COMPOSE logs fastapi-backend"
     echo "   Roll back:    see the ROLLBACK section at the top of this script."
     exit 1
 fi
+
+echo "🔐 Provisioning the non-privileged application role..."
+$COMPOSE exec -T postgres sh -c 'psql -X -q -v ON_ERROR_STOP=1 -U "$POSTGRES_USER" -d "$POSTGRES_DB"' < provision-app-role.sql
+echo "✅ Starting application services after schema and role preparation..."
+$COMPOSE up -d --remove-orphans
 
 # ── 11. Post-deploy health check ─────────────────────────────────────────────
 echo "🩺 Running post-deployment health checks..."
@@ -172,7 +177,7 @@ for i in $(seq 1 20); do
     # nginx redirects :80 -> :443, so probe the dedicated nginx liveness route
     # first, then the backend through the proxy (-k: the cert may be self-signed).
     if curl -fsS -o /dev/null http://localhost/nginx-health 2>/dev/null \
-       && curl -fksS -o /dev/null https://localhost/health 2>/dev/null; then
+       && curl -fksS -o /dev/null https://localhost/health/ready 2>/dev/null; then
         HEALTH_OK=1
         break
     fi
@@ -186,7 +191,7 @@ $COMPOSE ps
 echo "───────────────────────────────────────────────────────"
 
 if [ "$HEALTH_OK" -eq 1 ]; then
-    echo "✅ HEALTH CHECK PASSED — nginx is serving and /health returns 200."
+    echo "✅ READINESS CHECK PASSED — database, Redis and Kafka are available."
 else
     echo "❌ HEALTH CHECK FAILED — the stack is up but not answering correctly."
     echo "   Debug with:"
@@ -196,12 +201,8 @@ else
     exit 1
 fi
 
-# ── 12. Cleanup dangling images ──────────────────────────────────────────────
-echo "🧹 Cleaning up unused Docker images..."
-docker image prune -f >/dev/null
-
 echo "=============================================="
-echo "🎉 Deployment successful."
+echo "Stack started. Validate public TLS and product journeys before opening traffic."
 echo "=============================================="
 echo "Logs:"
 echo " - Nginx Ingress : $COMPOSE logs -f nginx"

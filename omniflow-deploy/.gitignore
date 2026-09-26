@@ -17,6 +17,7 @@ nginx/htpasswd
 # ── Backups (never in git — they contain customer PII) ───────────────────────
 backups/
 *.sql
+!provision-app-role.sql
 *.sql.gz
 *.dump
 *.snapshot

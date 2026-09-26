@@ -27,6 +27,9 @@ x-backend-base: &backend-base
   restart: always
   logging: *default-logging
   env_file: .env.prod
+  environment:
+    POSTGRES_USER: ${APP_POSTGRES_USER:?Set a dedicated application database role}
+    POSTGRES_PASSWORD: ${APP_POSTGRES_PASSWORD:?Set the application database password}
   networks:
     - omniflow-prod-net
 
@@ -53,7 +56,9 @@ services:
       POSTGRES_USER: ${POSTGRES_USER}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
       POSTGRES_DB: ${POSTGRES_DB}
-      POSTGRES_INITDB_ARGS: "--encoding=UTF8 --locale=ar_SA.UTF-8"
+      APP_POSTGRES_USER: ${APP_POSTGRES_USER}
+      APP_POSTGRES_PASSWORD: ${APP_POSTGRES_PASSWORD}
+      POSTGRES_INITDB_ARGS: "--encoding=UTF8 --locale=C.UTF-8"
     volumes:
       - postgres_prod_data:/var/lib/postgresql/data
     networks:
@@ -76,8 +81,8 @@ services:
     environment:
       DB_HOST: postgres
       DB_PORT: 5432
-      DB_USER: ${POSTGRES_USER}
-      DB_PASSWORD: ${POSTGRES_PASSWORD}
+      DB_USER: ${APP_POSTGRES_USER}
+      DB_PASSWORD: ${APP_POSTGRES_PASSWORD}
       DB_NAME: ${POSTGRES_DB}
       POOL_MODE: transaction
       MAX_CLIENT_CONN: 2000
@@ -108,7 +113,7 @@ services:
       --requirepass ${REDIS_PASSWORD}
       --appendonly yes
       --maxmemory 1gb
-      --maxmemory-policy allkeys-lru
+      --maxmemory-policy noeviction
     volumes:
       - redis_prod_data:/data
     networks:
@@ -193,6 +198,10 @@ services:
     environment:
       MINIO_ROOT_USER: ${MINIO_ROOT_USER}
       MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD}
+      S3_VAULT_BUCKET: ${S3_VAULT_BUCKET:-omniflow-reports-vault}
+      S3_MEDIA_TEMP_BUCKET: ${S3_MEDIA_TEMP_BUCKET:-omniflow-media-temp}
+      S3_ASSETS_BUCKET: ${S3_ASSETS_BUCKET:-omniflow-public-assets}
+      S3_KNOWLEDGE_BUCKET: ${S3_KNOWLEDGE_BUCKET:-omniflow-knowledge-docs}
     depends_on:
       minio:
         condition: service_healthy
@@ -204,26 +213,36 @@ services:
     #                     genuinely meant to be hot-linked (logos, avatars,
     #                     WhatsApp-facing media that must be fetchable by Meta).
     # Everything else must be served through a backend-issued pre-signed URL.
-    entrypoint: >
-      /bin/sh -c "
-      set -e;
-      mc alias set myminio http://minio:9000 $${MINIO_ROOT_USER} $${MINIO_ROOT_PASSWORD};
-      mc mb --ignore-existing myminio/omniflow-media;
-      mc mb --ignore-existing myminio/omniflow-backups;
-      mc anonymous set none myminio/omniflow-media;
-      mc anonymous set none myminio/omniflow-backups;
-      mc anonymous set download myminio/omniflow-media/public || echo 'WARN: could not set the public/ prefix policy';
-      mc version enable myminio/omniflow-media || true;
-      echo 'MinIO bucket policy applied: bucket private, only public/ is anonymously readable.';
-      "
+    entrypoint:
+      - /bin/sh
+      - -ec
+      - |
+        mc alias set myminio http://minio:9000 "$${MINIO_ROOT_USER}" "$${MINIO_ROOT_PASSWORD}"
+        for bucket in omniflow-media omniflow-backups "$${S3_VAULT_BUCKET}" "$${S3_MEDIA_TEMP_BUCKET}" "$${S3_ASSETS_BUCKET}" "$${S3_KNOWLEDGE_BUCKET}"; do
+          mc mb --ignore-existing "myminio/$$bucket"
+          mc anonymous set none "myminio/$$bucket"
+        done
+        mc anonymous set download myminio/omniflow-media/public
+        mc version enable "myminio/$${S3_VAULT_BUCKET}"
     networks:
       - omniflow-prod-net
 
   # ── Application Plane (Compute & APIs) ──────────────────────────────────────
+  migrate:
+    <<: *backend-base
+    profiles: ["maintenance"]
+    restart: "no"
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      PGBOUNCER_HOST: postgres
+      PGBOUNCER_PORT: 5432
+    command: alembic upgrade head
+
   fastapi-backend:
     <<: *backend-base
     container_name: prod-fastapi
-    command: uvicorn src.gateway.main:create_app --factory --host 0.0.0.0 --port 8000 --workers 4
+    command: uvicorn src.gateway.main:create_app --factory --host 0.0.0.0 --port 8000 --workers 4 --no-access-log
     depends_on:
       postgres:
         condition: service_healthy
@@ -231,14 +250,18 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
+      redpanda:
+        condition: service_healthy
       qdrant:
         condition: service_healthy
       minio:
         condition: service_healthy
+      minio-init:
+        condition: service_completed_successfully
     healthcheck:
       # Uses the interpreter that is guaranteed to be in the image instead of
       # assuming curl/wget are installed.
-      test: ["CMD-SHELL", "python -c \"import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=5).status == 200 else 1)\""]
+      test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health/ready', timeout=5)\""]
       interval: 15s
       timeout: 10s
       retries: 5
@@ -248,6 +271,9 @@ services:
     build:
       context: ../omniflow-frontend
       dockerfile: Dockerfile
+      args:
+        NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY: ${NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY}
+        NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL}
     container_name: prod-nextjs
     restart: always
     logging: *default-logging

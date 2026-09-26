@@ -8,10 +8,16 @@ on:
 
 jobs:
   backend:
-    runs-on: ubuntu-latest
+    runs-on: self-hosted
     defaults:
       run:
         working-directory: omniflow-backend
+        # This job's steps use bash-only syntax (multi-line quoted strings,
+        # `||`, embedded Python via `-c "..."` with backslash-escaped
+        # quotes). Windows runners default to pwsh, which parses none of
+        # that the same way, so pin bash explicitly -- requires Git Bash
+        # (bash.exe) on PATH, which Git for Windows installs by default.
+        shell: bash
     steps:
       - uses: actions/checkout@v4
 
@@ -52,10 +58,15 @@ jobs:
           PYTHONIOENCODING: utf-8
 
   frontend:
-    runs-on: ubuntu-latest
+    runs-on: self-hosted
     defaults:
       run:
         working-directory: omniflow-frontend
+        # Same reasoning as the backend job: `tests/*.test.cjs` below relies
+        # on shell globbing, which pwsh does not do for external-command
+        # arguments (it would pass the literal, unexpanded string to node).
+        # Pin bash so this keeps working unchanged on a Windows runner.
+        shell: bash
     steps:
       - uses: actions/checkout@v4
 

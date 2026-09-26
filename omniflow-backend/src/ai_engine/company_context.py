@@ -47,10 +47,15 @@ _MAX_FAQ_ANSWER_CHARS: Final[int] = 300
 # tenant_id (str) → (expires_at_epoch, rendered_block_or_None)
 _CACHE: dict[str, tuple[float, str | None]] = {}
 
+# tenant_id (str) → (expires_at_epoch, ai_system_prompt_or_None)
+_PERSONA_CACHE: dict[str, tuple[float, str | None]] = {}
+
 
 def invalidate_company_context(tenant_id: str | uuid.UUID) -> None:
-    """Drop the cached block for a tenant (call after any profile write)."""
-    _CACHE.pop(str(tenant_id), None)
+    """Drop the cached block/persona for a tenant (call after any profile or persona write)."""
+    key = str(tenant_id)
+    _CACHE.pop(key, None)
+    _PERSONA_CACHE.pop(key, None)
 
 
 def _clean(value: Any) -> str:
@@ -210,6 +215,46 @@ async def get_company_context(tenant_id: str | uuid.UUID | None) -> str | None:
     return block
 
 
+async def get_tenant_persona(tenant_id: str | uuid.UUID | None) -> str | None:
+    """
+    Load (and cache) `Tenant.ai_system_prompt` — the per-tenant persona set at
+    onboarding or via Settings. Returns None if unset or on any error, so
+    callers can fall back to a generic default; never raises.
+
+    Same cache/TTL/invalidation contract as `get_company_context` (both are
+    cleared together by `invalidate_company_context`), kept as a separate
+    cache because most callers of `get_company_context` today do not also
+    need the persona, and vice versa.
+    """
+    if not tenant_id:
+        return None
+
+    key = str(tenant_id)
+    now = time.monotonic()
+
+    cached = _PERSONA_CACHE.get(key)
+    if cached and cached[0] > now:
+        return cached[1]
+
+    persona: str | None = None
+    try:
+        from src.shared.db.models import Tenant  # noqa: PLC0415
+        from src.shared.db.session import get_tenant_session  # noqa: PLC0415
+
+        tenant_uuid = uuid.UUID(key)
+        async with get_tenant_session(tenant_uuid) as session:
+            persona = await session.scalar(
+                select(Tenant.ai_system_prompt).where(Tenant.tenant_id == tenant_uuid)
+            )
+    except Exception as exc:  # noqa: BLE001 — degradation, never a hard failure
+        logger.warning("tenant_persona_load_failed", tenant_id=key, error=str(exc)[:300])
+        _PERSONA_CACHE[key] = (now + 30, None)
+        return None
+
+    _PERSONA_CACHE[key] = (now + _CACHE_TTL_SECONDS, persona)
+    return persona
+
+
 def compose_system_prompt(base_prompt: str, company_block: str | None) -> str:
     """
     Combine the tenant persona with the company knowledge block.
@@ -226,5 +271,6 @@ __all__ = [
     "compose_system_prompt",
     "format_company_profile",
     "get_company_context",
+    "get_tenant_persona",
     "invalidate_company_context",
 ]

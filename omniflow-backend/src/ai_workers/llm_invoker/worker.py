@@ -41,6 +41,7 @@ from aiokafka.structs import ConsumerRecord
 from pydantic import BaseModel, Field
 from sqlalchemy import update
 
+from src.ai_engine.company_context import compose_system_prompt, get_company_context, get_tenant_persona
 from src.ai_workers.llm_invoker.client import LLMResponse, gemini_client
 from src.ai_workers.llm_invoker.persona import DEFAULT_SYSTEM_PROMPT, get_system_prompt
 from src.ai_workers.rag_engine.retriever import rag_retriever
@@ -302,8 +303,24 @@ class LLMInvokerWorker(BaseKafkaConsumer):
         gemini_messages = self._history_to_gemini_format(history) + [current_message]
 
         # ── 4. Build system prompt ────────────────────────────────────────────
+        # Real bug fixed here (P0 persona-regression investigation): this used
+        # to call ONLY _build_persona(tenant_context), where tenant_context
+        # came from Redis session_state["business_name"] — a key nothing in
+        # the entire pipeline ever writes (confirmed by a full-repo grep), so
+        # that branch was permanently dead and EVERY tenant's real message
+        # fell back to DEFAULT_SYSTEM_PROMPT, the hardcoded "Ahmad Al-Sayegh,
+        # Elite Properties" real-estate persona — regardless of their real,
+        # correctly-onboarded Tenant.ai_system_prompt/CompanyProfile, which
+        # this code path never read at all. Not a cache/race/cross-tenant
+        # leak: a 100%-reproducible, always-on structural gap that affected
+        # every tenant equally. ai_engine/llm_orchestrator.py already had the
+        # correct pattern (tenant.ai_system_prompt + get_company_context) —
+        # this now uses the same real per-tenant DB-backed persona.
         tenant_context = await self._get_tenant_context(tenant_id, decision.session_state)
-        system_prompt = self._build_persona(tenant_context)
+        real_persona = await get_tenant_persona(tenant_id)
+        base_prompt = real_persona.strip() if real_persona and real_persona.strip() else self._build_persona(tenant_context)
+        company_block = await get_company_context(tenant_id)
+        system_prompt = compose_system_prompt(base_prompt, company_block)
 
         # ── 5. RAG context injection (L2) ────────────────────────────────────
         rag_context: str | None = None

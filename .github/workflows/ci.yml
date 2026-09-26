@@ -41,15 +41,34 @@ jobs:
       # plus torch==2.13.0+cpu) actually installs under real Python 3.12
       # and the full test suite passes unchanged before relying on this.
 
+      # The very next run after removing setup-python failed the install
+      # step in <1s with ZERO captured output (not even a "not recognized"
+      # message) -- so before guessing why, make the runner state visible:
+      # if `python` itself isn't resolvable to this job's shell (e.g. a
+      # per-user-only install not on the Actions service account's PATH,
+      # as opposed to the interactive user's PATH the user checked
+      # `python --version` from), this step fails with a clear message
+      # instead of silence, and if it prints a version, the problem is
+      # narrower than "python isn't found" and the next log will show it.
+      - name: Diagnose Python on this runner
+        run: python --version
+
+      # Every command below now goes through `python -m X` rather than a
+      # bare `pip`/`bandit`/`pip-audit` command. This means everything
+      # resolves through the one interpreter the diagnostic step above
+      # just proved is reachable, instead of also depending on a separate
+      # Scripts/bin directory (where those tools' own console-script
+      # wrappers land) being on the same PATH -- a second, independent way
+      # the silent failure above could have happened.
       - name: Install pinned dependencies
         run: |
-          pip install --no-cache-dir torch==2.13.0+cpu --index-url https://download.pytorch.org/whl/cpu
-          pip install --no-cache-dir -r requirements-lock.txt
-          pip install --no-cache-dir --no-deps -e .
+          python -m pip install --no-cache-dir torch==2.13.0+cpu --index-url https://download.pytorch.org/whl/cpu
+          python -m pip install --no-cache-dir -r requirements-lock.txt
+          python -m pip install --no-cache-dir --no-deps -e .
 
       - name: Security lint (bandit)
         run: |
-          pip install --no-cache-dir bandit
+          python -m pip install --no-cache-dir bandit
           # item 19 baseline: 1 MEDIUM (B104, intentional 0.0.0.0 bind in a
           # container), rest LOW/false-positive. Fail only on HIGH so a real
           # new finding blocks the build without re-litigating known noise.
@@ -58,13 +77,13 @@ jobs:
           # script here), PowerShell does not stop a multi-line script on a
           # non-zero exit code from an external command, so the next line
           # (the actual pass/fail decision) always runs regardless.
-          bandit -r src -q -f json -o bandit-report.json
+          python -m bandit -r src -q -f json -o bandit-report.json
           python scripts/ci_check_bandit_high.py
 
       - name: Dependency vulnerability scan (pip-audit)
         run: |
-          pip install --no-cache-dir pip-audit
-          pip-audit -r requirements-lock.txt
+          python -m pip install --no-cache-dir pip-audit
+          python -m pip_audit -r requirements-lock.txt
 
       - name: Unit tests
         run: python -m unittest discover -s tests -t . -q

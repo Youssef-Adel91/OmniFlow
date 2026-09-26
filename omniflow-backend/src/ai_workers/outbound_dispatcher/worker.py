@@ -242,10 +242,9 @@ class OutboundDispatcherWorker(BaseKafkaConsumer):
 
         # ── 2. Channel routing ────────────────────────────────────────────────
         # Instagram DM / Messenger real delivery added in a P0 channel-parity
-        # pass -- comments are NOT wired here yet (a separate, disclosed gap:
-        # OutboundMessage has no field distinguishing "reply to a DM" from
-        # "reply to a comment", and send_comment_reply needs a different
-        # Graph API call). TikTok/Snapchat/X remain fully unbuilt.
+        # pass; page/feed comment replies wired in the same pass via
+        # msg.reply_target_type (see step 6 below). TikTok/Snapchat/X remain
+        # fully unbuilt.
         if msg.channel not in (Channel.WHATSAPP, Channel.INSTAGRAM):
             log.warning(
                 "outbound_unsupported_channel",
@@ -336,19 +335,39 @@ class OutboundDispatcherWorker(BaseKafkaConsumer):
         # ── 6. Dispatch (── route by channel, then by message_type) ─────────────
         try:
             if msg.channel == Channel.INSTAGRAM:
-                # DM only -- msg.customer_phone actually holds the IGSID/PSID
-                # for this channel (llm_invoker publishes
-                # event.customer_phone or event.platform_user_id into that
-                # field; Instagram events never have a real phone number).
-                from src.channel_adapters.instagram.client import send_message as ig_send_message
+                if msg.reply_target_type == "comment":
+                    # Reply to a public page/feed comment: a different Graph
+                    # API endpoint than DMs (POST /{comment_id}/comments) --
+                    # platform_conversation_id holds the comment_id itself,
+                    # not a PSID/IGSID (see router.py's _process_comment_event
+                    # and CanonicalInboundEvent.reply_target_type).
+                    from src.channel_adapters.instagram.client import send_comment_reply
 
-                ig_result = await ig_send_message(
-                    recipient_id=msg.customer_phone,
-                    text=msg.text,
-                    access_token=instagram_access_token,
-                )
-                result = SimpleNamespace(wamid=ig_result.message_id)
-                log.info("outbound_instagram_dispatched", message_id=ig_result.message_id)
+                    comment_result = await send_comment_reply(
+                        comment_id=msg.platform_conversation_id,
+                        text=msg.text,
+                        access_token=instagram_access_token,
+                    )
+                    result = SimpleNamespace(wamid=str(comment_result.get("id", "")))
+                    log.info(
+                        "outbound_instagram_comment_dispatched",
+                        comment_id=msg.platform_conversation_id,
+                        reply_id=result.wamid,
+                    )
+                else:
+                    # DM -- msg.customer_phone actually holds the IGSID/PSID
+                    # for this channel (llm_invoker publishes
+                    # event.customer_phone or event.platform_user_id into that
+                    # field; Instagram events never have a real phone number).
+                    from src.channel_adapters.instagram.client import send_message as ig_send_message
+
+                    ig_result = await ig_send_message(
+                        recipient_id=msg.customer_phone,
+                        text=msg.text,
+                        access_token=instagram_access_token,
+                    )
+                    result = SimpleNamespace(wamid=ig_result.message_id)
+                    log.info("outbound_instagram_dispatched", message_id=ig_result.message_id)
             elif msg.message_type == "vcard":
                 # VCard Gatekeeper (SRS §5.5): attach a real .vcf contact
                 # card, not just the instructional text. Uploaded to Meta's

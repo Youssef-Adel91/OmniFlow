@@ -130,6 +130,16 @@ class Tenant(Base, TimestampMixin):
         nullable=True,
         comment="Meta WhatsApp Business Account ID",
     )
+    instagram_page_id: Mapped[Optional[str]] = mapped_column(
+        String(30),
+        nullable=True,
+        comment="Meta Page ID connected for Instagram DM / Messenger delivery",
+    )
+    instagram_page_access_token: Mapped[Optional[str]] = mapped_column(
+        Text,
+        nullable=True,
+        comment="Per-tenant Meta Page access token for Instagram DM / Messenger sends",
+    )
     whatsapp_display_phone_number: Mapped[Optional[str]] = mapped_column(
         String(30),
         nullable=True,

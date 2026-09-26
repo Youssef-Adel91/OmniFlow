@@ -411,6 +411,15 @@ class LLMInvokerWorker(BaseKafkaConsumer):
             self._publish_analytics(decision, llm_response, total_latency_ms)
         )
 
+        # ── 9b. Generic explicit-profile extraction (fire-and-forget) ─────────
+        # Runs for every tenant/vertical, not just real estate — see
+        # shared/services/customer_profile_extractor.py. Feeds lead_scoring's
+        # explicit-profile-data component. Never blocks the reply.
+        if decision.customer_id and event.text_content:
+            asyncio.create_task(
+                self._extract_customer_profile_background(decision)
+            )
+
         log.info(
             "llm_invoker_response_published",
             model=llm_response.model_used,
@@ -560,6 +569,61 @@ class LLMInvokerWorker(BaseKafkaConsumer):
             )
         except Exception as exc:
             logger.warning("analytics_publish_failed", error=str(exc))
+
+    async def _extract_customer_profile_background(
+        self, decision: RoutingDecision
+    ) -> None:
+        """Fire-and-forget: extract generic buying signals onto Customer.extracted_profile.
+
+        Pulls the customer's own recent messages from real Postgres rather
+        than the Redis conversation-history cache — that cache is only ever
+        written with the AI's own replies (see append_message_to_history's
+        one call site), never the customer's inbound text, so it would
+        always be empty here.
+
+        Never raises into the caller — a failure here must not affect the
+        real reply that already went out.
+        """
+        from sqlalchemy import select
+        from src.shared.db.models import Message
+        from src.shared.services.customer_profile_extractor import extract_and_persist_customer_profile
+
+        try:
+            async with get_tenant_session(decision.tenant_id) as session:
+                customer_texts: list[str] = []
+                if decision.conversation_id:
+                    rows = (
+                        await session.execute(
+                            select(Message.text_content)
+                            .where(
+                                Message.conversation_id == decision.conversation_id,
+                                Message.sender_type == "customer",
+                                Message.text_content.is_not(None),
+                            )
+                            .order_by(Message.created_at.desc())
+                            .limit(8)
+                        )
+                    ).scalars().all()
+                    customer_texts = list(reversed(rows))
+                if not customer_texts and decision.event.text_content:
+                    customer_texts = [decision.event.text_content]
+
+                merged = await extract_and_persist_customer_profile(
+                    session=session,
+                    customer_id=decision.customer_id,
+                    customer_texts=customer_texts,
+                )
+            logger.info(
+                "customer_profile_extraction_updated",
+                tenant_id=str(decision.tenant_id),
+                customer_id=str(decision.customer_id),
+                has_budget=merged.get("budget_min") is not None or merged.get("budget_max") is not None,
+                has_location=merged.get("location") is not None,
+                has_need=merged.get("stated_need") is not None,
+                urgency=merged.get("urgency"),
+            )
+        except Exception as exc:
+            logger.warning("customer_profile_extraction_background_failed", error=str(exc))
 
     @staticmethod
     def _get_l0_response(decision: RoutingDecision) -> str:

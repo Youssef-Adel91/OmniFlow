@@ -122,6 +122,8 @@ class TenantOnboardingUpdate(BaseModel):
     meta_access_token: Optional[str] = Field(default=None)
     whatsapp_phone_number_id: Optional[str] = Field(default=None, max_length=30)
     whatsapp_waba_id: Optional[str] = Field(default=None, max_length=30)
+    instagram_page_id: Optional[str] = Field(default=None, max_length=30)
+    instagram_page_access_token: Optional[str] = Field(default=None)
 
 
 class TenantResponse(_OrmBase, _TimestampMixin):

@@ -129,6 +129,10 @@ async def update_tenant_onboarding(
                 tenant.whatsapp_phone_number_id = payload.whatsapp_phone_number_id
             if payload.whatsapp_waba_id:
                 tenant.whatsapp_waba_id = payload.whatsapp_waba_id
+            if payload.instagram_page_id:
+                tenant.instagram_page_id = payload.instagram_page_id
+            if payload.instagram_page_access_token:
+                tenant.instagram_page_access_token = payload.instagram_page_access_token
 
         # ── Business profile step ────────────────────────────────────────────
         # Previously nothing in onboarding collected this at all — a brand-new

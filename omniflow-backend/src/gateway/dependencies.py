@@ -5,17 +5,15 @@ This module is the DI wiring layer. Every FastAPI endpoint that needs DB
 access, tenant context, or a repository instance uses Depends() from here.
 
 Dependency graph:
-    X-Tenant-ID header
+    Clerk access token
         └─► get_tenant_id()           → uuid.UUID
                 └─► get_tenant_db_session() → AsyncSession  (RLS context set)
                         ├─► get_customer_repo()       → CustomerRepository
                         └─► get_conversation_repo()   → ConversationRepository
 
 Security Note:
-    `get_tenant_id` currently reads from the X-Tenant-ID header.
-    In Sprint 4 (Auth), this will be replaced by JWT claims:
-        tenant_id = jwt_payload["tenant_id"]
-    The swap is a single-line change here — all endpoints remain unchanged.
+    All tenant sessions derive their identity from the authenticated user.
+    X-Tenant-ID cannot select another tenant or the system bypass context.
 
 RLS Note:
     `get_tenant_db_session` calls `get_tenant_session(tenant_id)` which
@@ -27,10 +25,9 @@ from __future__ import annotations
 
 import uuid
 from collections.abc import AsyncGenerator
-from collections.abc import AsyncGenerator
 from typing import Annotated
 
-from fastapi import Depends, Header, HTTPException, Security, status
+from fastapi import Depends, HTTPException, Security, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from jose import JWTError
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -50,142 +47,6 @@ from src.shared.security.jwt import (
 )
 
 _settings = get_settings()
-
-# Dev-mode placeholder tenant UUID (same as used in whatsapp/router.py sطر 201)
-_DEV_TENANT_ID = uuid.UUID("00000000-0000-0000-0000-000000000001")
-
-
-# ══════════════════════════════════════════════════════════════════════════════
-# 1. Tenant Identity — extracts tenant_id from the request
-# ══════════════════════════════════════════════════════════════════════════════
-
-async def get_tenant_id(
-    x_tenant_id: Annotated[
-        str | None,
-        Header(
-            alias="X-Tenant-ID",
-            description=(
-                "Tenant UUID injected by the API gateway / reverse proxy. "
-                "In production this comes from the verified JWT claim. "
-                "Required on all tenant-scoped endpoints."
-            ),
-        ),
-    ] = None,
-) -> uuid.UUID:
-    """
-    Extract and validate the tenant_id from the X-Tenant-ID header.
-
-    DEV MODE: If the header is missing and APP_ENV=development, falls back
-    to the default dev tenant UUID (00000000-0000-0000-0000-000000000001).
-    This allows the Inbox frontend to work without auth during local testing.
-
-    PRODUCTION: Header is mandatory — raises HTTP 400 if missing/malformed.
-
-    Future (Sprint 13): replace header extraction with JWT decode:
-        payload = decode_jwt(authorization_header)
-        return uuid.UUID(payload["tenant_id"])
-    """
-    if not x_tenant_id:
-        # Dev bypass — avoids auth friction during end-to-end local testing
-        if _settings.is_development:
-            return _DEV_TENANT_ID
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail={
-                "code": "MISSING_TENANT_ID",
-                "message": "X-Tenant-ID header is required.",
-            },
-        )
-    try:
-        return uuid.UUID(x_tenant_id.strip())
-    except ValueError:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail={
-                "code": "INVALID_TENANT_ID",
-                "message": f"X-Tenant-ID '{x_tenant_id}' is not a valid UUID.",
-            },
-        )
-
-
-# Shorthand type alias used in endpoint signatures
-TenantId = Annotated[uuid.UUID, Depends(get_tenant_id)]
-
-
-# ══════════════════════════════════════════════════════════════════════════════
-# 2. DB Session — tenant-scoped AsyncSession with RLS GUC injected
-# ══════════════════════════════════════════════════════════════════════════════
-
-async def get_tenant_db_session(
-    tenant_id: TenantId,
-) -> AsyncGenerator[AsyncSession, None]:
-    """
-    Yield a tenant-scoped AsyncSession.
-
-    Internally calls `get_tenant_session(tenant_id)` which:
-      1. Opens an AsyncSession from AsyncSessionFactory
-      2. Begins a transaction
-      3. Executes SET LOCAL app.current_tenant_id = '<tenant_id>'
-      4. Yields the session (PostgreSQL RLS now active)
-      5. Commits on clean exit; rolls back on exception
-
-    This is a FastAPI generator dependency — FastAPI handles the
-    `async for` / cleanup lifecycle automatically.
-    """
-    async with get_tenant_session(tenant_id) as session:
-        yield session
-
-
-# Shorthand type alias
-TenantSession = Annotated[AsyncSession, Depends(get_tenant_db_session)]
-
-
-# ══════════════════════════════════════════════════════════════════════════════
-# 3. Repository Providers
-# ══════════════════════════════════════════════════════════════════════════════
-
-def get_customer_repo(
-    session: TenantSession,
-) -> CustomerRepository:
-    """
-    Provide a CustomerRepository bound to the tenant-scoped session.
-
-    The repository inherits RLS from the session — no extra work needed.
-    Instantiation is synchronous and negligible cost.
-
-    Usage in endpoint:
-        @router.get("/customers/{customer_id}")
-        async def get_customer(
-            customer_id: uuid.UUID,
-            repo: Annotated[CustomerRepository, Depends(get_customer_repo)],
-        ) -> CustomerResponse:
-            return await repo.get_or_404(customer_id)
-    """
-    return CustomerRepository(session)
-
-
-def get_conversation_repo(
-    session: TenantSession,
-) -> ConversationRepository:
-    """
-    Provide a ConversationRepository bound to the tenant-scoped session.
-
-    Usage in endpoint:
-        @router.get("/conversations/{conv_id}/messages")
-        async def get_conversation(
-            conv_id: uuid.UUID,
-            repo: Annotated[ConversationRepository, Depends(get_conversation_repo)],
-        ) -> ConversationResponse:
-            conv = await repo.get_with_messages(conv_id)
-            ...
-    """
-    return ConversationRepository(session)
-
-
-# ── Annotated shorthands for cleaner endpoint signatures ─────────────────────
-CustomerRepo = Annotated[CustomerRepository, Depends(get_customer_repo)]
-ConversationRepo = Annotated[ConversationRepository, Depends(get_conversation_repo)]
-
 
 # ══════════════════════════════════════════════════════════════════════════════
 # 4. JWT Authentication — get_current_user
@@ -325,6 +186,100 @@ CurrentUser = Annotated[TenantUser, Depends(get_current_user)]
 
 
 # ══════════════════════════════════════════════════════════════════════════════
+# 1. Tenant Identity — resolved from the authenticated user
+# ══════════════════════════════════════════════════════════════════════════════
+
+async def get_tenant_id(user: CurrentUser) -> uuid.UUID:
+    """Use the verified user's tenant; client-supplied headers are never trusted."""
+    tenant_id = uuid.UUID(str(user.tenant_id))
+    if tenant_id.int == 0:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail={"code": "FORBIDDEN", "message": "System tenant cannot access the dashboard."},
+        )
+    return tenant_id
+
+
+# Shorthand type alias used in endpoint signatures
+TenantId = Annotated[uuid.UUID, Depends(get_tenant_id)]
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# 2. DB Session — tenant-scoped AsyncSession with RLS GUC injected
+# ══════════════════════════════════════════════════════════════════════════════
+
+async def get_tenant_db_session(
+    tenant_id: TenantId,
+) -> AsyncGenerator[AsyncSession, None]:
+    """
+    Yield a tenant-scoped AsyncSession.
+
+    Internally calls `get_tenant_session(tenant_id)` which:
+      1. Opens an AsyncSession from AsyncSessionFactory
+      2. Begins a transaction
+      3. Executes SET LOCAL app.current_tenant_id = '<tenant_id>'
+      4. Yields the session (PostgreSQL RLS now active)
+      5. Commits on clean exit; rolls back on exception
+
+    This is a FastAPI generator dependency — FastAPI handles the
+    `async for` / cleanup lifecycle automatically.
+    """
+    async with get_tenant_session(tenant_id) as session:
+        yield session
+
+
+# Shorthand type alias
+TenantSession = Annotated[AsyncSession, Depends(get_tenant_db_session)]
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# 3. Repository Providers
+# ══════════════════════════════════════════════════════════════════════════════
+
+def get_customer_repo(
+    session: TenantSession,
+) -> CustomerRepository:
+    """
+    Provide a CustomerRepository bound to the tenant-scoped session.
+
+    The repository inherits RLS from the session — no extra work needed.
+    Instantiation is synchronous and negligible cost.
+
+    Usage in endpoint:
+        @router.get("/customers/{customer_id}")
+        async def get_customer(
+            customer_id: uuid.UUID,
+            repo: Annotated[CustomerRepository, Depends(get_customer_repo)],
+        ) -> CustomerResponse:
+            return await repo.get_or_404(customer_id)
+    """
+    return CustomerRepository(session)
+
+
+def get_conversation_repo(
+    session: TenantSession,
+) -> ConversationRepository:
+    """
+    Provide a ConversationRepository bound to the tenant-scoped session.
+
+    Usage in endpoint:
+        @router.get("/conversations/{conv_id}/messages")
+        async def get_conversation(
+            conv_id: uuid.UUID,
+            repo: Annotated[ConversationRepository, Depends(get_conversation_repo)],
+        ) -> ConversationResponse:
+            conv = await repo.get_with_messages(conv_id)
+            ...
+    """
+    return ConversationRepository(session)
+
+
+# ── Annotated shorthands for cleaner endpoint signatures ─────────────────────
+CustomerRepo = Annotated[CustomerRepository, Depends(get_customer_repo)]
+ConversationRepo = Annotated[ConversationRepository, Depends(get_conversation_repo)]
+
+
+# ══════════════════════════════════════════════════════════════════════════════
 # 5. RBAC guards for property write operations
 # ══════════════════════════════════════════════════════════════════════════════
 
@@ -404,7 +359,7 @@ async def get_property_listing_repo(
         ) -> PropertyListingResponse:
             ...
     """
-    async with get_tenant_session(user.tenant_id) as session:
+    async with get_tenant_session(await get_tenant_id(user)) as session:
         yield PropertyListingRepository(session)
 
 
@@ -419,9 +374,8 @@ PropertyListingRepo = Annotated[
 #
 # Preferred session dependency for ALL new endpoints.
 #
-# Unlike `TenantSession` (which trusts the client-supplied X-Tenant-ID header
-# and silently falls back to a dev tenant), this derives the RLS context from
-# the verified Clerk JWT, so a client cannot address another tenant's rows.
+# Like `TenantSession`, this derives the RLS context from the verified Clerk
+# user. Both aliases are retained for existing router imports.
 # ══════════════════════════════════════════════════════════════════════════════
 
 async def get_authenticated_tenant_session(
@@ -433,7 +387,7 @@ async def get_authenticated_tenant_session(
     The transaction is committed when the endpoint returns normally and rolled
     back if it raises — handled by `get_tenant_session`.
     """
-    async with get_tenant_session(user.tenant_id) as session:
+    async with get_tenant_session(await get_tenant_id(user)) as session:
         yield session
 
 

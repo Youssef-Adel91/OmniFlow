@@ -38,7 +38,7 @@ from typing import Any
 import structlog
 from aiokafka import AIOKafkaConsumer, AIOKafkaProducer
 from aiokafka.errors import KafkaError, CommitFailedError
-from aiokafka.structs import ConsumerRecord
+from aiokafka.structs import ConsumerRecord, TopicPartition
 
 from src.shared.core.config import get_settings
 from src.shared.redis_client.client import redis_mgr
@@ -182,10 +182,6 @@ class BaseKafkaConsumer(ABC):
                         timeout_ms=1_000,
                         max_records=self.batch_size,
                     )
-                    for tp, records in batch.items():
-                        for record in records:
-                            await self._handle_record(record)
-
                 except KafkaError as exc:
                     logger.error(
                         "kafka_consumer_poll_error",
@@ -193,6 +189,13 @@ class BaseKafkaConsumer(ABC):
                         worker=self.__class__.__name__,
                     )
                     await asyncio.sleep(1)
+                    continue
+
+                # Processing/DLQ failures must stop this consumer. Fetching the
+                # next batch could commit past an unacknowledged record.
+                for tp, records in batch.items():
+                    for record in records:
+                        await self._handle_record(record)
 
         except asyncio.CancelledError:
             logger.info("kafka_consumer_cancelled", worker=self.__class__.__name__)
@@ -214,7 +217,8 @@ class BaseKafkaConsumer(ABC):
         event_id = self._extract_event_id(record)
 
         # ── Idempotency guard ─────────────────────────────────────────────────
-        if event_id and await redis_mgr.is_duplicate_event(event_id):
+        processed_key = f"processed:{self.group_id}:{record.topic}:{record.partition}:{record.offset}"
+        if await redis_mgr.get_raw(processed_key):
             logger.debug(
                 "kafka_consumer_duplicate_skipped",
                 event_id=event_id,
@@ -230,6 +234,7 @@ class BaseKafkaConsumer(ABC):
         for attempt in range(1, self.max_retries + 1):
             try:
                 await self.process_message(record)
+                await redis_mgr.set_raw(processed_key, "1", ttl=7 * 24 * 60 * 60)
                 await self._commit_offset(record)
                 return
 
@@ -264,7 +269,9 @@ class BaseKafkaConsumer(ABC):
     async def _commit_offset(self, record: ConsumerRecord) -> None:
         """Manually commit the offset for a processed record."""
         try:
-            await self._consumer.commit()  # type: ignore[union-attr]
+            await self._consumer.commit({  # type: ignore[union-attr]
+                TopicPartition(record.topic, record.partition): record.offset + 1,
+            })
         except CommitFailedError as exc:
             # Offset commit failure is non-fatal — the record may be reprocessed
             # after a rebalance but idempotency guard will deduplicate it.
@@ -285,7 +292,7 @@ class BaseKafkaConsumer(ABC):
         DLQ payload wraps the original record value with error metadata.
         """
         if not self._dlq_producer:
-            return
+            raise KafkaError("DLQ producer is unavailable; record must not be acknowledged")
 
         dlq_topic = f"{record.topic}.dlq"
         dlq_payload = json.dumps(
@@ -293,7 +300,7 @@ class BaseKafkaConsumer(ABC):
                 "original_topic": record.topic,
                 "original_partition": record.partition,
                 "original_offset": record.offset,
-                "original_key": record.key,
+                "original_key": record.key.decode("utf-8", errors="replace") if isinstance(record.key, bytes) else record.key,
                 "original_value": record.value.decode("utf-8", errors="replace")
                 if isinstance(record.value, bytes)
                 else str(record.value),
@@ -316,6 +323,7 @@ class BaseKafkaConsumer(ABC):
                 dlq_topic=dlq_topic,
                 error=str(dlq_exc),
             )
+            raise
 
     @staticmethod
     def _extract_event_id(record: ConsumerRecord) -> str | None:

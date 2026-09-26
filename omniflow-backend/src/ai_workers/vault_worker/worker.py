@@ -15,12 +15,13 @@ from aiokafka.structs import ConsumerRecord
 from sqlalchemy import select
 
 from src.ai_workers.semantic_router.worker import RoutingDecision
-from src.ai_workers.llm_invoker.worker import OutboundMessage
+from src.shared.events.outbound import OutboundMessage
 from src.shared.core.config import get_settings
 from src.shared.db.models import CustomerReport
 from src.shared.db.session import get_tenant_session
 from src.shared.kafka.consumer import BaseKafkaConsumer
 from src.shared.kafka.producer import KafkaProducerManager
+from src.shared.services.report_download import report_download_url
 
 logger = structlog.get_logger(__name__)
 settings = get_settings()
@@ -86,13 +87,17 @@ class VaultWorker(BaseKafkaConsumer):
             return
 
         # Generate pre-signed URLs
-        # TODO: integrate with real S3 client. Using mock URLs for now.
         lines = ["هذه هي التقارير والملفات الموجودة في خزانتك الرقمية:"]
         for report in reports:
-            # Mock S3 presigned URL
-            mock_url = f"https://api.omniflow.ai/v1/vault/download?report_id={report.report_id}&sig=xyz"
+            download_url = await report_download_url(report)
+            if not download_url:
+                continue
             lines.append(f"\n📄 {report.report_type.upper()}:")
-            lines.append(f"[تنزيل الملف]({mock_url})")
+            lines.append(f"تنزيل الملف (الرابط صالح لمدة 15 دقيقة): {download_url}")
+
+        if len(lines) == 1:
+            await self._send_fallback_message(decision, start_ns, "ملفات تقاريرك غير جاهزة للتنزيل حاليًا. يرجى التواصل مع فريق الدعم.")
+            return
 
         response_text = "\n".join(lines)
 

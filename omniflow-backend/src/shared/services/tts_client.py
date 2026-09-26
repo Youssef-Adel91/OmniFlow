@@ -161,6 +161,8 @@ class TTSClient:
         text_trimmed = text.strip()[:_MAX_CHARS]
 
         if self.is_mock:
+            if settings.is_production:
+                raise TTSGenerationError("A real speech provider is required in production")
             return await self._synthesize_mock(text_trimmed, tenant_id=tenant_id)
 
         return await self._synthesize_real(
@@ -262,7 +264,7 @@ class TTSClient:
             synthesis_id=synthesis_id,
             tenant_id=tenant_id,
         )
-        log.info("tts_audio_uploaded", url=audio_url)
+        log.info("tts_audio_uploaded")
         return audio_url
 
     async def _upload_audio(
@@ -296,8 +298,7 @@ class TTSClient:
             "tts_audio_stored",
             synthesis_id=synthesis_id,
             tenant_id=tenant_id,
-            url=url,
-            is_minio=bool(_settings.minio_endpoint),
+            is_minio=bool(settings.minio_endpoint),
         )
         return url
 

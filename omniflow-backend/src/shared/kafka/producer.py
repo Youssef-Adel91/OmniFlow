@@ -19,7 +19,7 @@ Architecture:
         await kafka_producer.publish(topic, event)
 
 Producer guarantees:
-  - enable_idempotence=True  → exactly-once delivery per partition
+  - enable_idempotence=True  → suppress broker-retry duplicates per producer session
   - acks="all"               → all ISR replicas must confirm
   - max_in_flight_requests=5 → Kafka 1.0+ safe with idempotence
   - compression_type="lz4"   → fast compression for JSON payloads
@@ -90,15 +90,13 @@ class KafkaProducerManager:
             bootstrap_servers=settings.kafka_bootstrap_servers,
             # All ISR replicas must acknowledge before the send future resolves
             acks="all",
+            enable_idempotence=True,
             # gzip is built-in (lz4 requires python-lz4 which isn't installed in dev)
             compression_type="gzip",
             # Micro-batching: wait up to 5ms to collect messages into a batch
             linger_ms=5,
             # 64KB batch size — aiokafka 0.14 uses max_batch_size (was batch_size)
             max_batch_size=65_536,
-            # NOTE: enable_idempotence, retries, request_timeout_ms,
-            # value_serializer, key_serializer, and
-            # max_in_flight_requests_per_connection were removed in aiokafka ≥ 0.14.
         )
 
         # Retry startup — Redpanda may still be initializing on first compose up
@@ -121,6 +119,16 @@ class KafkaProducerManager:
                     raise
                 await asyncio.sleep(2 ** attempt)  # 2s, 4s, 8s, 16s, 32s
 
+    async def ping(self) -> bool:
+        """Query broker metadata without publishing a message."""
+        if not self._started or self._producer is None:
+            return False
+        try:
+            await self._producer.client.fetch_all_metadata()
+            return True
+        except Exception:
+            return False
+
     async def stop(self) -> None:
         """
         Flush pending messages and shut down the producer gracefully.
@@ -128,7 +136,7 @@ class KafkaProducerManager:
         Called during FastAPI shutdown (lifespan context manager).
         Waits up to 10s for in-flight messages to complete.
         """
-        if not self._started or self._producer is None:
+        if self._producer is None:
             return
         try:
             await asyncio.wait_for(self._producer.stop(), timeout=10.0)

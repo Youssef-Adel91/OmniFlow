@@ -1,8 +1,8 @@
 """
 src/ai_engine/llm_orchestrator.py — LLMOrchestrator (OpenAI Edition)
 
-Multi-tier LLM invocation pipeline powered entirely by the OpenAI async SDK.
-All Google GenAI / Gemini dependencies have been removed.
+Multi-tier LLM invocation pipeline using the OpenAI-compatible async SDK.
+Provider, endpoint, and models are shared with the Kafka invocation worker.
 
 Architecture — 4-Model Routing:
     Intent Classification  → gpt-4o-mini        (fast JSON-mode classifier)
@@ -33,6 +33,7 @@ References: SRS §2.3 Steps 5-7 — LLM Invocation & Outbound Dispatch
 from __future__ import annotations
 
 import json
+import re
 import time
 import uuid
 from typing import Any
@@ -44,6 +45,7 @@ from src.ai_engine.company_context import compose_system_prompt, get_company_con
 from src.ai_engine.schemas import RoutingDecision, RoutingRequest
 from src.shared.core.config import get_settings
 from src.shared.core.enums import RoutingTier
+from src.shared.services.llm_provider import create_chat_client, provider_options, completion_options
 
 logger = structlog.get_logger(__name__)
 
@@ -52,34 +54,18 @@ logger = structlog.get_logger(__name__)
 # ══════════════════════════════════════════════════════════════════════════════
 
 _settings = get_settings()
-_OPENAI_API_KEY: str = _settings.openai_api_key
-
-if not _OPENAI_API_KEY:
+# Gateway and Kafka workers use the same provider and model configuration.
+_openai_client = create_chat_client(_settings)
+if _openai_client is None:
     if _settings.is_production:
-        raise RuntimeError(
-            "OPENAI_API_KEY is not configured. Set it in the environment "
-            "before starting the LLM orchestrator in production."
-        )
-    logger.warning(
-        "openai_api_key_missing",
-        hint="Set OPENAI_API_KEY in .env — live OpenAI calls will fail.",
-    )
-    _openai_client: AsyncOpenAI | None = None
-else:
-    _openai_client = AsyncOpenAI(
-        api_key=_OPENAI_API_KEY,
-        max_retries=_settings.openai_max_retries,
-        timeout=float(_settings.openai_timeout),
-    )
+        raise RuntimeError("Configure the selected LLM provider API key before startup")
+    logger.warning("llm_api_key_missing", provider=_settings.llm_primary_provider)
 
-# ══════════════════════════════════════════════════════════════════════════════
-# Model identifiers
-# ══════════════════════════════════════════════════════════════════════════════
-
-_MODEL_CLASSIFIER = "gpt-4o-mini"   # Intent classification (JSON mode)
-_MODEL_L1         = "gpt-4o-mini"   # Simple FAQs / greetings
-_MODEL_L2         = "gpt-4o-mini"   # Moderate — negotiations / dynamic context
-_MODEL_L3         = "gpt-4o"        # Deep consultation / legal / complex deals
+_, _, _models = provider_options(_settings)
+_MODEL_CLASSIFIER = _models["ROUTER"]
+_MODEL_L1 = _models["L1"]
+_MODEL_L2 = _models["L2"]
+_MODEL_L3 = _models["L3"]
 
 # Max output tokens per tier
 _MAX_OUTPUT_TOKENS: dict[str, int] = {
@@ -210,7 +196,8 @@ class LLMOrchestrator:
                 model=_MODEL_CLASSIFIER,
                 response_format={"type": "json_object"},
                 temperature=0.0,
-                max_tokens=20,
+                max_tokens=512 if _settings.llm_primary_provider == "groq" else 20,
+                **completion_options(_MODEL_CLASSIFIER, _settings),
                 messages=[
                     {"role": "system", "content": _CLASSIFIER_SYSTEM},
                     {"role": "user",   "content": message},
@@ -308,6 +295,7 @@ class LLMOrchestrator:
                 messages=messages,  # type: ignore[arg-type]
                 max_tokens=max_tokens,
                 temperature=temperature,
+                **completion_options(model, _settings),
             )
             response_text = (completion.choices[0].message.content or "").strip()
             if not response_text:

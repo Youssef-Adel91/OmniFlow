@@ -75,11 +75,17 @@ class TenantResolver:
         perform the lookup. Sprint 6 will pass the actual phone_number_id
         from the adapter via an event header.
         """
-        # For WhatsApp, use the configured phone_number_id
-        # TODO Sprint 6: extract from event headers published by the adapter
-        phone_number_id = settings.meta_whatsapp_phone_number_id
-
-        return await self.resolve_by_phone_number_id(phone_number_id)
+        # Channel adapters resolve the destination account before publishing.
+        # Replacing it with the global phone number would cross tenant boundaries.
+        if event.tenant_id.int == 0:
+            return None
+        async with get_system_session() as session:
+            return await session.scalar(
+                select(Tenant.tenant_id).where(
+                    Tenant.tenant_id == event.tenant_id,
+                    Tenant.status.in_(["active", "trial"]),
+                )
+            )
 
     async def resolve_by_phone_number_id(
         self, phone_number_id: str

@@ -84,9 +84,11 @@ _SET_TENANT_SQL = text("SELECT set_config(:guc, :tenant_id, true)")
 engine = create_async_engine(
     settings.database_url,
     poolclass=NullPool,       # PgBouncer manages the pool
-    echo=settings.is_development,
+    echo=settings.app_debug,
     future=True,
     connect_args={
+        "prepared_statement_cache_size": 0,
+        "statement_cache_size": 0,
         "server_settings": {
             "application_name": settings.app_name,
             "timezone": settings.app_timezone,

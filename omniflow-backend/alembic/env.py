@@ -33,7 +33,7 @@ settings = get_settings()
 config = context.config
 
 # Override the placeholder URL in alembic.ini with the real async URL
-config.set_main_option("sqlalchemy.url", settings.database_url)
+config.set_main_option("sqlalchemy.url", settings.database_url.replace("%", "%%"))
 
 # Set up Python logging from alembic.ini [loggers] section
 if config.config_file_name is not None:
@@ -90,6 +90,7 @@ async def run_async_migrations() -> None:
         config.get_section(config.config_ini_section, {}),
         prefix="sqlalchemy.",
         poolclass=pool.NullPool,
+        connect_args={"prepared_statement_cache_size": 0, "statement_cache_size": 0},
     )
     async with connectable.connect() as connection:
         await connection.run_sync(do_run_migrations)
@@ -105,5 +106,7 @@ def run_migrations_online() -> None:
 # ─────────────────────────────────────────────────────────────────────────────
 if context.is_offline_mode():
     run_migrations_offline()
+elif config.attributes.get("connection") is not None:
+    do_run_migrations(config.attributes["connection"])
 else:
     run_migrations_online()

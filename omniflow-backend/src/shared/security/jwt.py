@@ -171,22 +171,42 @@ from jwt import PyJWKClient
 _jwk_clients: dict[str, PyJWKClient] = {}
 
 
+def _clerk_issuer() -> str:
+    """Resolve the trusted issuer from server configuration, never from a JWT."""
+    import base64
+    from urllib.parse import urlsplit
+
+    issuer = _settings.clerk_issuer_url.strip().rstrip("/")
+    if not issuer:
+        key = _settings.clerk_publishable_key
+        if not key.startswith(("pk_test_", "pk_live_")):
+            raise JWTError("Configure CLERK_ISSUER_URL or CLERK_PUBLISHABLE_KEY")
+        encoded = key.split("_", 2)[2]
+        domain = base64.b64decode(encoded + "=" * (-len(encoded) % 4)).decode().rstrip("$")
+        issuer = f"https://{domain}"
+    parsed = urlsplit(issuer)
+    if (parsed.scheme != "https" or not parsed.hostname or parsed.username
+            or parsed.password or parsed.path or parsed.query or parsed.fragment):
+        raise JWTError("Invalid configured Clerk issuer")
+    return issuer
+
+
 def verify_clerk_token(token: str) -> dict[str, Any]:
     """
     Validate and decode a Clerk JWT access token using PyJWT.
     
-    1. Decodes the unverified payload to extract the issuer (iss).
-    2. Fetches the JWKS from the issuer's .well-known/jwks.json endpoint (cached).
-    3. Verifies the RSA signature and expiry.
+    1. Rejects issuers other than the configured Clerk instance before any I/O.
+    2. Fetches keys only from that trusted instance (cached).
+    3. Verifies the RSA signature, issuer, expiry and required subject.
     """
     try:
         unverified_payload = pyjwt.decode(token, options={"verify_signature": False})
         
-        iss = unverified_payload.get("iss")
-        if not iss:
-            raise JWTError("Missing issuer (iss) in token")
+        issuer = _clerk_issuer()
+        if unverified_payload.get("iss") != issuer:
+            raise JWTError("Unexpected token issuer")
             
-        jwks_url = f"{iss.rstrip('/')}/.well-known/jwks.json"
+        jwks_url = f"{issuer}/.well-known/jwks.json"
         
         if jwks_url not in _jwk_clients:
             _jwk_clients[jwks_url] = PyJWKClient(jwks_url)
@@ -198,7 +218,13 @@ def verify_clerk_token(token: str) -> dict[str, Any]:
             token,
             signing_key.key,
             algorithms=["RS256"],
+            issuer=issuer,
+            options={"require": ["exp", "iat", "sub", "iss"]},
         )
+        if not payload.get("sub"):
+            raise JWTError("Missing subject")
+        if payload.get("azp") and payload["azp"] not in _settings.allowed_origins_list:
+            raise JWTError("Unauthorized token origin")
         return payload
     except Exception as e:
         logger.warning("clerk_jwt_decode_failed", error=str(e))

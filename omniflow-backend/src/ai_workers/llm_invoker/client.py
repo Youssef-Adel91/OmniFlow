@@ -41,6 +41,7 @@ from tenacity import (
 
 from src.shared.core.config import get_settings
 from src.shared.core.enums import RoutingTier
+from src.shared.services.llm_provider import create_chat_client, provider_options, completion_options
 
 logger = structlog.get_logger(__name__)
 settings = get_settings()
@@ -133,11 +134,26 @@ class GeminiLLMClient:
     def __init__(self) -> None:
         self._configured = False
 
+    async def close(self) -> None:
+        if getattr(self, "_compatible_client", None) is not None:
+            await self._compatible_client.close()
+        self._configured = False
+
     def configure(self) -> None:
         """
         Initialize the Gemini SDK with the API key from settings.
         Call once during on_startup().
         """
+        self._compatible_client = None
+        if settings.llm_primary_provider != "gemini":
+            self._compatible_client = create_chat_client(settings)
+            if self._compatible_client is None:
+                raise ValueError("Configure the selected LLM provider API key before starting the worker")
+            _, _, self._compatible_models = provider_options(settings)
+            self._configured = True
+            return
+        if settings.llm_free_only:
+            raise ValueError("LLM_FREE_ONLY requires the OpenRouter provider")
         if not settings.google_ai_api_key:
             raise ValueError(
                 "GOOGLE_AI_API_KEY is not set. "
@@ -202,6 +218,9 @@ class GeminiLLMClient:
             tenant_context=tenant_context,
             rag_context=rag_context,
         )
+
+        if getattr(self, "_compatible_client", None) is not None:
+            return await self._generate_compatible(messages, tier, full_system, gen_config)
 
         if getattr(self, "_mock_mode", False):
             await asyncio.sleep(1.0)  # Simulate network latency
@@ -340,6 +359,41 @@ class GeminiLLMClient:
         )
 
         return result
+
+    async def _generate_compatible(self, messages, tier, system_prompt, generation_config):
+        """Keep the worker response contract while using the configured provider."""
+        model = self._compatible_models.get(str(tier), self._compatible_models["L1"])
+        chat = [{"role": "system", "content": system_prompt}]
+        for message in messages:
+            role = "assistant" if message.get("role") == "model" else message.get("role", "user")
+            if role not in {"user", "assistant"}:
+                continue
+            content = message.get("content") or "\n".join(message.get("parts", []))
+            if content:
+                chat.append({"role": role, "content": content})
+        started = asyncio.get_running_loop().time()
+        response = await asyncio.wait_for(
+            self._compatible_client.chat.completions.create(
+                model=model, messages=chat,
+                max_tokens=generation_config["max_output_tokens"],
+                temperature=generation_config["temperature"],
+                **completion_options(model, settings),
+            ),
+            timeout=float(settings.openai_timeout),
+        )
+        choice = response.choices[0]
+        text = (choice.message.content or "").strip()
+        if not text:
+            raise RuntimeError("LLM provider returned an empty response")
+        usage = response.usage
+        return LLMResponse(
+            text=text, model_used=response.model or model, tier=tier,
+            input_tokens=usage.prompt_tokens if usage else 0,
+            output_tokens=usage.completion_tokens if usage else 0,
+            total_tokens=usage.total_tokens if usage else 0,
+            latency_ms=int((asyncio.get_running_loop().time() - started) * 1000),
+            finish_reason={"length": "MAX_TOKENS", "content_filter": "SAFETY"}.get(choice.finish_reason, "STOP"),
+        )
 
     async def _call_gemini_async(
         self,

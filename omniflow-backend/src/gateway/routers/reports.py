@@ -22,6 +22,7 @@ from sqlalchemy import func, select
 
 from src.gateway.dependencies import AuthTenantSession, CurrentUser
 from src.shared.db.models import CustomerReport
+from src.shared.services.report_download import report_download_url
 
 logger = structlog.get_logger(__name__)
 
@@ -41,12 +42,19 @@ class ReportItem(BaseModel):
     price_sar: Optional[float] = None
     payment_reference: Optional[str] = None
     is_delivered: bool
+    status: Literal["pending", "ready"] = "pending"
     created_at: datetime
     updated_at: datetime
 
+    @classmethod
+    def from_report(cls, report: CustomerReport):
+        item = cls.model_validate(report)
+        item.status = "ready" if report.s3_url else "pending"
+        return item
+
 
 class ReportDetail(ReportItem):
-    """Detail view — adds the stored object URL."""
+    """Detail view — adds a short-lived download URL."""
     s3_url: Optional[str] = None
 
 
@@ -104,8 +112,9 @@ _PERIOD_CONFIG: dict[str, tuple[str, int]] = {
     summary="List customer reports",
     description=(
         "Paginated list of generated reports for the authenticated tenant. "
-        "Optionally filter by `customer_id` and/or `report_type` "
-        "(deed_check_29 | municipal_consulting_15 | premium_consultation)."
+        "Optionally filter by `customer_id`, `report_type` "
+        "(deed_check_29 | municipal_consulting_15 | premium_consultation), "
+        "and inclusive UTC dates `date_from` / `date_to`."
     ),
 )
 async def list_reports(
@@ -117,15 +126,23 @@ async def list_reports(
     report_type: Annotated[
         str | None, Query(description="Filter by ReportType value")
     ] = None,
+    date_from: Annotated[date | None, Query(description="Inclusive start date (UTC)")] = None,
+    date_to: Annotated[date | None, Query(description="Inclusive end date (UTC)")] = None,
     page: Annotated[int, Query(ge=1, description="1-indexed page number")] = 1,
     page_size: Annotated[int, Query(ge=1, le=100, description="Items per page")] = 20,
 ) -> ReportPage:
+    if date_from and date_to and date_from > date_to:
+        raise HTTPException(status_code=422, detail="date_from must not exceed date_to")
     stmt = select(CustomerReport)
 
     if customer_id is not None:
         stmt = stmt.where(CustomerReport.customer_id == customer_id)
     if report_type:
         stmt = stmt.where(CustomerReport.report_type == report_type.strip())
+    if date_from:
+        stmt = stmt.where(CustomerReport.created_at >= datetime.combine(date_from, datetime.min.time(), tzinfo=timezone.utc))
+    if date_to:
+        stmt = stmt.where(CustomerReport.created_at <= datetime.combine(date_to, datetime.max.time(), tzinfo=timezone.utc))
 
     total = await session.scalar(
         select(func.count()).select_from(stmt.subquery())
@@ -140,7 +157,7 @@ async def list_reports(
     ).scalars().all()
 
     return ReportPage(
-        items=[ReportItem.model_validate(row) for row in rows],
+        items=[ReportItem.from_report(row) for row in rows],
         total=total,
         page=page,
         page_size=page_size,
@@ -281,13 +298,11 @@ async def revenue_analytics(
     "/{report_id}",
     response_model=ReportDetail,
     status_code=status.HTTP_200_OK,
-    summary="Get a report, including its stored file URL",
+    summary="Get a report, including a temporary download URL",
     description=(
         "Returns the report row plus `s3_url`.\n\n"
-        "NOTE: `s3_url` is the permanent object URL stored at generation time. "
-        "Serving it directly requires the bucket to be reachable by the "
-        "client; the intended production behaviour is to swap this for a "
-        "short-lived pre-signed URL (see `src/shared/storage/s3.py`)."
+        "The tenant-scoped file is signed for 15 minutes. Request this endpoint "
+        "again when the download URL expires. Reports without a file return null."
     ),
 )
 async def get_report(
@@ -303,4 +318,9 @@ async def get_report(
             status_code=status.HTTP_404_NOT_FOUND,
             detail={"code": "NOT_FOUND", "message": "Report not found."},
         )
-    return ReportDetail.model_validate(report)
+    detail = ReportDetail.from_report(report)
+    try:
+        detail.s3_url = await report_download_url(report)
+    except ValueError:
+        raise HTTPException(status_code=409, detail={"code": "INVALID_REPORT_STORAGE", "message": "Report file requires repair."})
+    return detail

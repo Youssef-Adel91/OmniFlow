@@ -29,6 +29,10 @@ class OutboundMessage(BaseModel):
     customer_phone: str
     channel: str = "whatsapp"
     platform_conversation_id: str  # wa_id for WhatsApp routing
+    reply_target_type: Literal["dm", "comment"] = "dm"
+    # "comment": platform_conversation_id holds the Graph API comment_id and
+    # outbound_dispatcher must post to POST /{comment_id}/comments instead of
+    # the DM messages endpoint. See CanonicalInboundEvent.reply_target_type.
 
     # Response content
     text: str

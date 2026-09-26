@@ -1,5 +1,8 @@
 {
   "permissions": {
-    "allow": ["Bash(git push:*)"]
+    "allow": [
+      "Bash(git push:*)",
+      "mcp__Claude_Code_Remote__read_documentation"
+    ]
   }
 }

@@ -8,54 +8,132 @@ on:
 
 jobs:
   backend:
-    runs-on: ubuntu-latest
+    runs-on: self-hosted
+    env:
+      # Real root cause, found step by step against actual runner logs
+      # (not guessed): bare `python` on this self-hosted Windows runner
+      # resolves to MSYS2's C:\msys64\mingw64\bin\python.exe -- a stripped
+      # build meant as an MSYS2 toolchain dependency, not a general-purpose
+      # interpreter (no pip, and its own ensurepip-driven self-install of
+      # pip fails with no usable diagnostic output). This is almost
+      # certainly the same interpreter the user's own interactive
+      # `python --version` check found, since it reports the same 3.12.7 --
+      # so there was never a second, already-working system Python that
+      # PATH ordering alone could have preferred.
+      #
+      # Fix: call the real CPython 3.12 install by its full absolute path
+      # everywhere, instead of the bare `python` command. This sidesteps
+      # PATH order entirely (no dependency on the Actions service
+      # account's PATH matching an interactively logged-in user's PATH,
+      # and no need for anyone to have admin rights to edit system PATH).
+      PYTHON_EXE: 'C:\Users\DELL\AppData\Local\Programs\Python\Python312\python.exe'
     defaults:
       run:
         working-directory: omniflow-backend
+        # Real run on the self-hosted Windows runner (DESKTOP-RK5C8RP)
+        # showed `shell: bash` resolves to the built-in WSL launcher stub
+        # at C:\WINDOWS\system32\bash.exe, not Git Bash -- and no WSL
+        # distro is installed, so it fails immediately
+        # ("execvpe(/bin/bash) failed: No such file or directory").
+        # Leaving `shell` unset lets the runner pick its own default
+        # (pwsh, falling back to Windows PowerShell) instead. Every step
+        # below was rewritten to avoid bash-only syntax (`||`, inline
+        # multi-line quoted Python, shell globbing) so it runs the same
+        # under bash or PowerShell.
     steps:
       - uses: actions/checkout@v4
 
-      - uses: actions/setup-python@v5
-        with:
-          python-version: "3.11"
+      # actions/setup-python's own Python installer hit a separate, real
+      # failure on this self-hosted runner: it needs to write to
+      # HKEY_LOCAL_MACHINE registry keys while installing, and the
+      # runner's service account doesn't have that permission (confirmed:
+      # "Remove-Item : Requested registry access is not allowed" during
+      # cleanup, then a generic "Error happened during Python installation"
+      # after the actual installer hung for 3+ hours). Avoiding that code
+      # path entirely rather than granting the runner admin rights: this
+      # runner already has a real Python 3.12 installed (the path in the
+      # job's PYTHON_EXE env var above), so this step is removed. pyproject.toml's
+      # `requires-python = ">=3.11"` is a floor, not a ceiling -- verified
+      # the full dependency set (every package in requirements-lock.txt,
+      # plus torch==2.13.0+cpu) actually installs under real Python 3.12
+      # and the full test suite passes unchanged before relying on this.
+
+      # Confirms the log shows exactly which interpreter every later step
+      # is using, rather than inferring it from an error message.
+      #
+      # Every invocation below is prefixed with `&` (PowerShell's call
+      # operator) rather than calling the quoted path bare: PowerShell
+      # treats a bare quoted string as a plain string expression, not a
+      # command to run, unless `&` tells it otherwise -- easy to get
+      # wrong silently (it would just echo the path instead of running
+      # it). This assumes the PowerShell default this job already
+      # depends on (see the `shell` note above); it would need `&`
+      # removed if this job ever ran under bash instead.
+      - name: Diagnose Python on this runner
+        run: |
+          & "${{ env.PYTHON_EXE }}" --version
+          & "${{ env.PYTHON_EXE }}" -c "import sys; print(sys.executable)"
+
+      # Cheap safety net: a no-op if this real CPython install already has
+      # pip (expected for a normal python.org install), but costs nothing
+      # if it doesn't. Uses CPython's own bundled wheel -- no network
+      # needed, verified locally by reproducing "No module named pip" in a
+      # --without-pip venv and confirming ensurepip fixes it offline.
+      - name: Ensure pip is available
+        run: |
+          & "${{ env.PYTHON_EXE }}" -m ensurepip --upgrade
 
       - name: Install pinned dependencies
         run: |
-          pip install --no-cache-dir torch==2.13.0+cpu --index-url https://download.pytorch.org/whl/cpu
-          pip install --no-cache-dir -r requirements-lock.txt
-          pip install --no-cache-dir --no-deps -e .
+          & "${{ env.PYTHON_EXE }}" -m pip install --no-cache-dir torch==2.13.0+cpu --index-url https://download.pytorch.org/whl/cpu
+          & "${{ env.PYTHON_EXE }}" -m pip install --no-cache-dir -r requirements-lock.txt
+          & "${{ env.PYTHON_EXE }}" -m pip install --no-cache-dir --no-deps -e .
 
       - name: Security lint (bandit)
         run: |
-          pip install --no-cache-dir bandit
+          & "${{ env.PYTHON_EXE }}" -m pip install --no-cache-dir bandit
           # item 19 baseline: 1 MEDIUM (B104, intentional 0.0.0.0 bind in a
           # container), rest LOW/false-positive. Fail only on HIGH so a real
           # new finding blocks the build without re-litigating known noise.
-          bandit -r src -q -f json -o bandit-report.json || true
-          python -c "
-          import json, sys
-          data = json.load(open('bandit-report.json', encoding='utf-8'))
-          high = [r for r in data['results'] if r['issue_severity'] == 'HIGH']
-          for r in high:
-              print(f\"HIGH {r['test_id']} {r['filename']}:{r['line_number']} {r['issue_text']}\")
-          sys.exit(1 if high else 0)
-          "
+          # No `|| true`: bandit exits non-zero on ANY finding, but unlike
+          # Actions' bash default (which runs with -e and would abort this
+          # script here), PowerShell does not stop a multi-line script on a
+          # non-zero exit code from an external command, so the next line
+          # (the actual pass/fail decision) always runs regardless.
+          & "${{ env.PYTHON_EXE }}" -m bandit -r src -q -f json -o bandit-report.json
+          & "${{ env.PYTHON_EXE }}" scripts/ci_check_bandit_high.py
 
       - name: Dependency vulnerability scan (pip-audit)
         run: |
-          pip install --no-cache-dir pip-audit
-          pip-audit -r requirements-lock.txt || true
+          & "${{ env.PYTHON_EXE }}" -m pip install --no-cache-dir pip-audit
+          # Informational only, same as this step always was (never meant
+          # to gate the build -- it just reports, e.g. the known ecdsa
+          # PYSEC-2026-1325 finding). Real bug in the PowerShell port,
+          # caught by an actual run: pip_audit is the LAST command in this
+          # step, so unlike the bandit step above (whose last command is a
+          # separate Python script that makes the real pass/fail decision),
+          # nothing here overrides its own exit code -- Actions' PowerShell
+          # wrapper reads $LASTEXITCODE after the script the same way bash
+          # reads the last command's status, with or without `-e`. Explicit
+          # reset restores the original always-non-blocking behavior.
+          & "${{ env.PYTHON_EXE }}" -m pip_audit -r requirements-lock.txt
+          $LASTEXITCODE = 0
 
       - name: Unit tests
-        run: python -m unittest discover -s tests -t . -q
+        run: |
+          & "${{ env.PYTHON_EXE }}" -m unittest discover -s tests -t . -q
         env:
           PYTHONIOENCODING: utf-8
 
   frontend:
-    runs-on: ubuntu-latest
+    runs-on: self-hosted
     defaults:
       run:
         working-directory: omniflow-frontend
+        # See the backend job's comment: bash is not reliably available on
+        # this self-hosted Windows runner, so shell is left unset (the
+        # runner's own pwsh/PowerShell default) and the unit-test step
+        # below no longer depends on shell globbing.
     steps:
       - uses: actions/checkout@v4
 
@@ -75,7 +153,24 @@ jobs:
         run: npm run type-check
 
       - name: Unit tests
-        run: node --test --test-isolation=none tests/*.test.cjs
+        # Two real bugs found and fixed together while getting this to run
+        # for real for the first time (every prior CI run on this repo
+        # failed before ever reaching this step):
+        #   1. `--test-isolation=none` was never a valid flag on any Node
+        #      version that supports test isolation at all (it's
+        #      `--experimental-test-isolation`, Node >=22.8) -- this
+        #      command would have failed with "bad option" the moment it
+        #      actually ran, on any OS. The isolation-none workaround was
+        #      only ever needed for a sandboxed local dev environment that
+        #      disallowed spawning subprocesses; CI runners don't have
+        #      that restriction, so the flag is simply dropped.
+        #   2. `tests/*.test.cjs` relies on shell globbing, which pwsh does
+        #      not do for external-command arguments. Passing no path at
+        #      all lets `node --test` use its own default discovery from
+        #      the current directory, which resolves to exactly these 4
+        #      files (verified locally) and does not pick up the unrelated
+        #      Playwright specs under e2e/.
+        run: node --test
 
       - name: Build
         run: npm run build

@@ -444,6 +444,7 @@ async def _process_comment_event(
             event_timestamp=event_ts,
             message_type=MessageType.TEXT,
             text_content=comment_text or None,
+            reply_target_type="comment",
         )
 
         await _persist_and_publish(

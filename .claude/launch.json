@@ -1,0 +1,17 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "omniflow-backend",
+      "runtimeExecutable": "cmd.exe",
+      "runtimeArgs": ["/c", "cd /d omniflow-backend && .venv\\Scripts\\python.exe -m uvicorn src.gateway.main:create_app --factory --host 0.0.0.0 --port 8000"],
+      "port": 8000
+    },
+    {
+      "name": "omniflow-frontend",
+      "runtimeExecutable": "cmd.exe",
+      "runtimeArgs": ["/c", "cd /d omniflow-frontend && npm run dev"],
+      "port": 3000
+    }
+  ]
+}

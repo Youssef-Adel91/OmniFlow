@@ -32,6 +32,7 @@ from __future__ import annotations
 import asyncio
 import uuid
 from datetime import datetime, timezone
+from types import SimpleNamespace
 from typing import Any
 
 import structlog
@@ -44,6 +45,7 @@ from src.channel_adapters.whatsapp.client import (
     WhatsAppInvalidRecipientError,
     whatsapp_client,
 )
+from src.channel_adapters.instagram.client import MetaAuthError, MetaInvalidRecipientError
 from src.shared.core.config import get_settings
 from src.shared.core.enums import Channel
 from src.shared.db.persistence import persist_outbound_message, update_message_delivery_status
@@ -145,6 +147,24 @@ async def _resolve_tenant_credentials(
     return None
 
 
+async def _resolve_instagram_credentials(tenant_id: uuid.UUID) -> str | None:
+    """
+    Resolve the tenant's own Instagram/Messenger Page access token.
+
+    Real, per-tenant DB lookup only -- deliberately no settings/dev fallback
+    here (unlike WhatsApp's resolver): a shared fallback token was exactly
+    the real safety bug found and removed from the Instagram webhook earlier
+    in this P0 pass (one Page token serving every tenant). A tenant with
+    nothing configured simply cannot send yet, which is the correct, honest
+    failure mode until real per-tenant onboarding for this channel exists.
+    """
+    async with get_tenant_session(tenant_id) as session:
+        tenant = await session.scalar(select(Tenant).where(Tenant.tenant_id == tenant_id))
+        if tenant and tenant.instagram_page_access_token:
+            return tenant.instagram_page_access_token
+    return None
+
+
 # ══════════════════════════════════════════════════════════════════════════════
 # OutboundDispatcherWorker
 # ══════════════════════════════════════════════════════════════════════════════
@@ -221,11 +241,16 @@ class OutboundDispatcherWorker(BaseKafkaConsumer):
         )
 
         # ── 2. Channel routing ────────────────────────────────────────────────
-        if msg.channel != Channel.WHATSAPP:
+        # Instagram DM / Messenger real delivery added in a P0 channel-parity
+        # pass -- comments are NOT wired here yet (a separate, disclosed gap:
+        # OutboundMessage has no field distinguishing "reply to a DM" from
+        # "reply to a comment", and send_comment_reply needs a different
+        # Graph API call). TikTok/Snapchat/X remain fully unbuilt.
+        if msg.channel not in (Channel.WHATSAPP, Channel.INSTAGRAM):
             log.warning(
                 "outbound_unsupported_channel",
                 channel=msg.channel,
-                tip="Non-WhatsApp channels handled in Sprint 11",
+                tip="Only WhatsApp and Instagram/Messenger DMs are wired today",
             )
             raise ValueError(f"Unsupported outbound channel: {msg.channel}")
 
@@ -241,13 +266,22 @@ class OutboundDispatcherWorker(BaseKafkaConsumer):
                 return
 
         # ── 3. Resolve tenant credentials ─────────────────────────────────────
-        creds = await _resolve_tenant_credentials(msg.tenant_id)
-        if not creds:
-            # Cannot send without credentials — DLQ
-            raise RuntimeError(
-                f"No Meta credentials for tenant {msg.tenant_id}. "
-                "Message routed to DLQ."
-            )
+        creds: TenantCredentials | None = None
+        instagram_access_token: str | None = None
+        if msg.channel == Channel.WHATSAPP:
+            creds = await _resolve_tenant_credentials(msg.tenant_id)
+            if not creds:
+                raise RuntimeError(
+                    f"No Meta credentials for tenant {msg.tenant_id}. "
+                    "Message routed to DLQ."
+                )
+        else:  # Channel.INSTAGRAM
+            instagram_access_token = await _resolve_instagram_credentials(msg.tenant_id)
+            if not instagram_access_token:
+                raise RuntimeError(
+                    f"No Instagram/Messenger Page token for tenant {msg.tenant_id}. "
+                    "Message routed to DLQ."
+                )
 
         # ── 4. Outbound idempotency — prevent double-sends ────────────────────
         idem_key = f"{_SENT_KEY_PREFIX}{msg.tenant_id}:{msg.message_id}"
@@ -299,9 +333,23 @@ class OutboundDispatcherWorker(BaseKafkaConsumer):
                     )
                 return
 
-        # ── 6. Dispatch via WhatsApp (── route by message_type) ─────────────────────
+        # ── 6. Dispatch (── route by channel, then by message_type) ─────────────
         try:
-            if msg.message_type == "vcard":
+            if msg.channel == Channel.INSTAGRAM:
+                # DM only -- msg.customer_phone actually holds the IGSID/PSID
+                # for this channel (llm_invoker publishes
+                # event.customer_phone or event.platform_user_id into that
+                # field; Instagram events never have a real phone number).
+                from src.channel_adapters.instagram.client import send_message as ig_send_message
+
+                ig_result = await ig_send_message(
+                    recipient_id=msg.customer_phone,
+                    text=msg.text,
+                    access_token=instagram_access_token,
+                )
+                result = SimpleNamespace(wamid=ig_result.message_id)
+                log.info("outbound_instagram_dispatched", message_id=ig_result.message_id)
+            elif msg.message_type == "vcard":
                 # VCard Gatekeeper (SRS §5.5): attach a real .vcf contact
                 # card, not just the instructional text. Uploaded to Meta's
                 # Media API rather than linked by URL — no public storage
@@ -385,7 +433,7 @@ class OutboundDispatcherWorker(BaseKafkaConsumer):
                     access_token=creds.access_token,
                 )
 
-        except WhatsAppAuthError as exc:
+        except (WhatsAppAuthError, MetaAuthError) as exc:
             # Token revoked / expired — do NOT retry (it won't self-heal)
             # Move to DLQ and alert; ops team must rotate token
             if persisted_msg_id:
@@ -397,12 +445,12 @@ class OutboundDispatcherWorker(BaseKafkaConsumer):
             log.error(
                 "outbound_auth_failure_no_retry",
                 error=str(exc),
-                phone_number_id=creds.phone_number_id,
+                phone_number_id=creds.phone_number_id if creds else None,
                 action="message_sent_to_dlq_rotate_token",
             )
             raise  # BaseKafkaConsumer DLQ handler takes over after max_retries
 
-        except WhatsAppInvalidRecipientError as exc:
+        except (WhatsAppInvalidRecipientError, MetaInvalidRecipientError) as exc:
             # Recipient not on WhatsApp — permanent failure, don't retry
             if persisted_msg_id:
                 await update_message_delivery_status(

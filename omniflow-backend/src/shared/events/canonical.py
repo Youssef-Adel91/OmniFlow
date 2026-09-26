@@ -26,7 +26,7 @@ from __future__ import annotations
 
 import uuid
 from datetime import datetime, timezone
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -166,6 +166,19 @@ class CanonicalInboundEvent(BaseModel):
         description=(
             "True if the conversation is already in HUMAN_ACTIVE state. "
             "If True, route to human_agent outbound topic instead of AI."
+        ),
+    )
+    reply_target_type: Literal["dm", "comment"] = Field(
+        default="dm",
+        description=(
+            "'dm' for a normal 1-to-1 thread (WhatsApp, Messenger/Instagram "
+            "DM) where a reply is sent to platform_user_id/platform_conversation_id. "
+            "'comment' for a public Instagram/Facebook page comment, where "
+            "platform_conversation_id holds the Graph API comment_id and a "
+            "reply must be posted to that comment via a different endpoint "
+            "(POST /{comment_id}/comments), not the messages endpoint. Set "
+            "by the channel adapter at ingestion and carried through "
+            "RoutingDecision to OutboundMessage unchanged."
         ),
     )
 

@@ -41,9 +41,13 @@ from fastapi import APIRouter, BackgroundTasks, Query, Request, Response, status
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field, ValidationError
 
+from sqlalchemy import select
+
 from src.shared.core.config import get_settings
 from src.shared.core.enums import Channel, MessageType
+from src.shared.db.models import Tenant
 from src.shared.db.persistence import persist_inbound_message
+from src.shared.db.session import get_system_session
 from src.shared.events.canonical import CanonicalInboundEvent
 from src.shared.kafka.producer import kafka_producer
 
@@ -655,34 +659,42 @@ async def _resolve_tenant_id(page_id: str) -> uuid.UUID:
     """
     Resolve the tenant_id for an inbound Meta page_id.
 
-    Resolution order (fastest first):
-      1. Settings fast-path — check configured META_INSTAGRAM_PAGE_ID.
-         Returns a zero UUID (dev placeholder) when matched.
-      2. Dev fallback — returns zero UUID with a warning log.
+    Real per-tenant lookup, mirroring the WhatsApp adapter's own resolver
+    (channel_adapters/whatsapp/router.py): a real gap found during a P0
+    channel audit was that this always returned a dev placeholder zero UUID
+    keyed off a single global settings.meta_instagram_page_id -- meaning
+    every tenant's Instagram-connected page resolved to the same tenant (or
+    none). Now queries Tenant.instagram_page_id (migration
+    0015_tenant_instagram_creds), same status filter as WhatsApp's resolver.
 
-    Note: Full multi-tenant DB resolution can be added here following the
-    same pattern as the WhatsApp adapter's _resolve_tenant_id().
+    Falls back to the dev placeholder only in development mode, so local
+    testing with an unregistered page_id does not lose messages, matching
+    the WhatsApp adapter's own documented dev-fallback behavior.
     """
-    configured_page_id = settings.meta_instagram_page_id
-    if page_id and page_id == configured_page_id:
-        # Single-tenant fast-path — for now return a dev UUID.
-        # TODO (Sprint N): query tenants table by page_id like WhatsApp adapter.
-        print(f"[META WEBHOOK] [KEY] Tenant resolved via page_id={page_id!r} (dev UUID placeholder)")
-        logger.info(
-            "meta_tenant_resolved_dev_placeholder",
+    if page_id:
+        try:
+            async with get_system_session() as session:
+                tid = await session.scalar(
+                    select(Tenant.tenant_id).where(
+                        Tenant.instagram_page_id == page_id,
+                        Tenant.status.in_(["active", "trial"]),
+                    )
+                )
+                if tid is not None:
+                    logger.info("meta_tenant_resolved_from_db", page_id=page_id, tenant_id=str(tid))
+                    return tid
+        except Exception as exc:
+            logger.error("meta_tenant_resolve_db_error", page_id=page_id, error=str(exc))
+
+    if settings.is_development:
+        logger.warning(
+            "meta_tenant_not_found_using_dev_fallback",
             page_id=page_id,
-            tip="Replace with a real tenant DB lookup in production.",
+            tip="Set Tenant.instagram_page_id for this page in the tenant's onboarding/settings.",
         )
         return uuid.UUID("00000000-0000-0000-0000-000000000000")
 
-    logger.warning(
-        "meta_tenant_not_found_using_dev_fallback",
-        page_id=page_id,
-        configured=configured_page_id,
-        tip="Set META_INSTAGRAM_PAGE_ID in .env to match your Facebook Page ID.",
-    )
-    print(f"[META WEBHOOK] [WARN] page_id={page_id!r} does not match configured={configured_page_id!r} -- using zero UUID")
-    return uuid.UUID("00000000-0000-0000-0000-000000000000")
+    raise ValueError(f"No tenant found for Instagram/Messenger page_id={page_id!r}")
 
 
 def _ts_to_dt(timestamp_ms: int) -> datetime:

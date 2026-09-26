@@ -81,7 +81,7 @@ class MetaSendResult:
 
 # ── HTTP Client ───────────────────────────────────────────────────────────────
 
-async def send_message(recipient_id: str, text: str) -> MetaSendResult:
+async def send_message(recipient_id: str, text: str, *, access_token: str | None = None) -> MetaSendResult:
     """
     Send a plain-text reply to a Messenger or Instagram DM thread.
 
@@ -89,6 +89,14 @@ async def send_message(recipient_id: str, text: str) -> MetaSendResult:
         recipient_id: The PSID (Facebook) or IGSID (Instagram) of the recipient.
         text:         The text message to send (max 2000 chars for Messenger,
                       1000 chars for Instagram DMs).
+        access_token: The tenant's own Page access token. Real per-tenant
+                      credentials must be resolved by the caller (see
+                      outbound_dispatcher's `_resolve_instagram_credentials`)
+                      -- falling back to the single global
+                      `settings.meta_instagram_page_access_token` here would
+                      mean one Page token serving every tenant in a
+                      multi-tenant product. The global setting remains only
+                      as a local-development convenience when omitted.
 
     Returns:
         MetaSendResult with the platform's message ID.
@@ -100,9 +108,8 @@ async def send_message(recipient_id: str, text: str) -> MetaSendResult:
 
     Notes:
         - Retries 3× on transient 5xx / 429 errors with exponential backoff.
-        - The access token is read from `settings.meta_instagram_page_access_token`.
     """
-    access_token = settings.meta_instagram_page_access_token
+    access_token = access_token or settings.meta_instagram_page_access_token
     url = f"{_GRAPH_BASE}/{_API_VERSION}/{_MESSAGES_PATH}"
     payload: dict[str, Any] = {
         "messaging_type": "RESPONSE",
@@ -174,18 +181,19 @@ def _raise_for_status(resp: httpx.Response) -> None:
     raise MetaAPIError(message, status_code=resp.status_code, error_code=code)
 
 
-async def send_comment_reply(comment_id: str, text: str) -> dict[str, Any]:
+async def send_comment_reply(comment_id: str, text: str, *, access_token: str | None = None) -> dict[str, Any]:
     """
     Reply to a public page/feed comment via Graph API.
 
     Args:
         comment_id: The comment's Graph API object ID (e.g. "123456_789012").
         text:       The reply text to post publicly under the comment.
+        access_token: The tenant's own Page access token (see `send_message`).
 
     Returns:
         Raw JSON dict from Graph API (contains "id" of the new comment).
     """
-    access_token = settings.meta_instagram_page_access_token
+    access_token = access_token or settings.meta_instagram_page_access_token
     url = f"{_GRAPH_BASE}/{_API_VERSION}/{comment_id}/comments"
 
     async with httpx.AsyncClient(timeout=_TIMEOUT_SECONDS) as client:

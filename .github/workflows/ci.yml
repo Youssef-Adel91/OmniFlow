@@ -50,8 +50,33 @@ jobs:
       # `python --version` from), this step fails with a clear message
       # instead of silence, and if it prints a version, the problem is
       # narrower than "python isn't found" and the next log will show it.
+      #
+      # It printed a version (3.12.7) -- but the real failure that
+      # revealed was one step further than expected: `python` on this
+      # runner resolves to MSYS2's C:\msys64\mingw64\bin\python.exe (a
+      # 3.12.7 build too, which is almost certainly the exact same
+      # interpreter the user's own interactive `python --version` check
+      # found -- there may be no separate system-wide Python at all).
+      # MSYS2's python package doesn't ship pip; sys.executable is now
+      # printed explicitly so this is confirmed from the log directly
+      # rather than inferred from a pip error message every time.
       - name: Diagnose Python on this runner
-        run: python --version
+        run: |
+          python --version
+          python -c "import sys; print(sys.executable)"
+
+      # Bootstraps pip using CPython's own bundled wheel -- no network
+      # needed, verified locally by reproducing this exact "No module
+      # named pip" state in a --without-pip venv and confirming ensurepip
+      # fixes it offline. Assumption this makes, disclosed rather than
+      # silently relied on: MSYS2's python package still includes the
+      # ensurepip stdlib module even though it strips pip itself out (the
+      # common MSYS2 packaging pattern otherwise expects pip via pacman
+      # instead) -- if ensurepip is ALSO missing, this step's own error
+      # will say so plainly, and the fix becomes a pacman install on the
+      # runner rather than anything in this workflow.
+      - name: Ensure pip is available
+        run: python -m ensurepip --upgrade
 
       # Every command below now goes through `python -m X` rather than a
       # bare `pip`/`bandit`/`pip-audit` command. This means everything

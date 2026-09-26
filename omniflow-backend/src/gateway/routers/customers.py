@@ -49,6 +49,7 @@ class CustomerItem(BaseModel):
     vcard_state: str
     vcard_opened_at: Optional[datetime] = None
     engagement_score: Optional[int] = None
+    extracted_profile: Optional[dict] = None
     created_at: datetime
     updated_at: datetime
     # ── Purchase-likelihood scoring ──────────────────────────────────────
@@ -142,6 +143,7 @@ async def _load_lead_scores(
             last_message_at=agg.last_message_at if agg else None,
             reached_deep_tier=bool(agg.reached_deep_tier) if agg else False,
             customer_message_texts=texts_by_id.get(cid, []),
+            extracted_profile=customer.extracted_profile,
         )
         scores[cid] = compute_lead_score(signals)
     return scores

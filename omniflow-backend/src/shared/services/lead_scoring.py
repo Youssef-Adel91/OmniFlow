@@ -9,16 +9,15 @@ that doesn't exist in the schema):
      hits in the customer's own messages, whether the AI ever escalated the
      conversation to a "deep" routing tier (L2/L3/VAULT — a proxy for "this
      needed real product/negotiation handling, not small talk").
-  2. Explicit profile data:  `Customer.is_vip` is the only generic,
-     structured signal that exists per-customer today across every tenant
-     vertical. Real estate tenants also get a live, on-demand budget/
-     district/property-type extraction (`rag_engine/preference_extractor.py`,
-     item 10) when the recommendations panel is opened for a conversation —
-     but that is not persisted per customer and is real-estate-specific, so
-     it is intentionally NOT wired into this generic formula. **This is a
-     real, flagged gap, not an oversight**: there is no generic structured
-     "stated budget / location / need" store on the Customer row for any
-     vertical. Documented in IMPLEMENTATION_STATUS.md for product sign-off.
+  2. Explicit profile data:  `Customer.is_vip`, plus (as of the sector-
+     agnostic generalization — see `customer_profile_extractor.py`)
+     `Customer.extracted_profile`: a generic, low-hallucination-risk LLM
+     extraction of budget/location/stated-need/urgency that now runs for
+     every tenant's conversations, not just real estate. Real estate
+     tenants additionally get the specialized `rag_engine/preference_
+     extractor.py` (item 10, district/property_type/bedrooms) for the
+     recommendations panel specifically — that one remains separate and
+     unchanged; this formula only reads the generic extraction.
   3. Interaction history:  recency of last activity (decay), number of
      distinct contact sessions (repeat contact), and whether the VCard was
      ever opened (`Customer.vcard_opened_at`, migration 0013 — the closest
@@ -72,6 +71,7 @@ class CustomerSignals:
     last_message_at: datetime | None
     reached_deep_tier: bool
     customer_message_texts: list[str]
+    extracted_profile: dict | None = None
 
 
 @dataclass(frozen=True)
@@ -102,11 +102,28 @@ def _conversation_behavior_score(signals: CustomerSignals) -> tuple[int, int]:
 
 
 def _profile_data_score(signals: CustomerSignals) -> int:
-    # See module docstring: the only generic, structured per-customer signal
-    # available across every tenant vertical today is the VIP flag. Real
-    # structured profile capture (stated budget/location/need) does not
-    # exist on the Customer row for any vertical yet.
-    return 100 if signals.is_vip else 0
+    # 30 points for being VIP, up to 70 spread across the four generic
+    # extracted signals (budget, location, stated need, urgency) — each
+    # worth its own points so the component genuinely varies with how much
+    # a customer has actually revealed, instead of being a flat VIP-or-not
+    # binary. A customer with nothing extracted and no VIP flag scores 0,
+    # same as before this component existed.
+    vip_points = 30.0 if signals.is_vip else 0.0
+
+    profile = signals.extracted_profile or {}
+    has_budget = profile.get("budget_min") is not None or profile.get("budget_max") is not None
+    has_location = bool(profile.get("location"))
+    has_need = bool(profile.get("stated_need"))
+    has_urgency = bool(profile.get("urgency"))
+
+    extraction_points = sum([
+        20.0 if has_budget else 0.0,
+        20.0 if has_location else 0.0,
+        20.0 if has_need else 0.0,
+        10.0 if has_urgency else 0.0,
+    ])
+
+    return round(_clamp(vip_points + extraction_points))
 
 
 def _interaction_history_score(signals: CustomerSignals) -> int:
@@ -156,6 +173,7 @@ def _demo() -> None:
         is_vip=False, vcard_state="STATE_NEW", vcard_opened_at=None,
         conversation_count=1, total_messages=1, last_message_at=None,
         reached_deep_tier=False, customer_message_texts=["مرحبا"],
+        extracted_profile=None,
     )
     hot = CustomerSignals(
         is_vip=True, vcard_state="STATE_CONTACT_SAVED_VERIFIED",
@@ -163,6 +181,8 @@ def _demo() -> None:
         conversation_count=3, total_messages=30, last_message_at=datetime.now(tz=timezone.utc),
         reached_deep_tier=True,
         customer_message_texts=["كام السعر؟", "متوفر عندكم؟", "احجز لي واحد", "الدفع كاش ولا اونلاين؟"],
+        extracted_profile={"budget_min": None, "budget_max": 500.0, "location": "الرياض",
+                            "stated_need": "جهاز مساج للركبة", "urgency": True},
     )
     cold_result = compute_lead_score(cold)
     hot_result = compute_lead_score(hot)
@@ -170,6 +190,8 @@ def _demo() -> None:
     assert hot_result.tier == LeadTier.HOT, hot_result
     assert hot_result.score > cold_result.score
     assert hot_result.buying_intent_hits >= 3
+    assert cold_result.profile_data == 0, "no VIP + no extraction must score 0"
+    assert hot_result.profile_data == 30 + 20 + 20 + 20 + 10, "VIP + budget + location + need + urgency"
     print(f"cold={cold_result}\nhot={hot_result}\nself-check passed")
 
 

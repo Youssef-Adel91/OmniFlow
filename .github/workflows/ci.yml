@@ -25,9 +25,21 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - uses: actions/setup-python@v5
-        with:
-          python-version: "3.11"
+      # actions/setup-python's own Python installer hit a separate, real
+      # failure on this self-hosted runner: it needs to write to
+      # HKEY_LOCAL_MACHINE registry keys while installing, and the
+      # runner's service account doesn't have that permission (confirmed:
+      # "Remove-Item : Requested registry access is not allowed" during
+      # cleanup, then a generic "Error happened during Python installation"
+      # after the actual installer hung for 3+ hours). Avoiding that code
+      # path entirely rather than granting the runner admin rights: this
+      # runner already has Python 3.12.7 installed system-wide, so this
+      # step is removed and every command below just uses whatever
+      # `python`/`pip` is already on PATH. pyproject.toml's
+      # `requires-python = ">=3.11"` is a floor, not a ceiling -- verified
+      # the full dependency set (every package in requirements-lock.txt,
+      # plus torch==2.13.0+cpu) actually installs under real Python 3.12
+      # and the full test suite passes unchanged before relying on this.
 
       - name: Install pinned dependencies
         run: |

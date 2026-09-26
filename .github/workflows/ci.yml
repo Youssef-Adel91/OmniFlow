@@ -12,12 +12,16 @@ jobs:
     defaults:
       run:
         working-directory: omniflow-backend
-        # This job's steps use bash-only syntax (multi-line quoted strings,
-        # `||`, embedded Python via `-c "..."` with backslash-escaped
-        # quotes). Windows runners default to pwsh, which parses none of
-        # that the same way, so pin bash explicitly -- requires Git Bash
-        # (bash.exe) on PATH, which Git for Windows installs by default.
-        shell: bash
+        # Real run on the self-hosted Windows runner (DESKTOP-RK5C8RP)
+        # showed `shell: bash` resolves to the built-in WSL launcher stub
+        # at C:\WINDOWS\system32\bash.exe, not Git Bash -- and no WSL
+        # distro is installed, so it fails immediately
+        # ("execvpe(/bin/bash) failed: No such file or directory").
+        # Leaving `shell` unset lets the runner pick its own default
+        # (pwsh, falling back to Windows PowerShell) instead. Every step
+        # below was rewritten to avoid bash-only syntax (`||`, inline
+        # multi-line quoted Python, shell globbing) so it runs the same
+        # under bash or PowerShell.
     steps:
       - uses: actions/checkout@v4
 
@@ -37,20 +41,18 @@ jobs:
           # item 19 baseline: 1 MEDIUM (B104, intentional 0.0.0.0 bind in a
           # container), rest LOW/false-positive. Fail only on HIGH so a real
           # new finding blocks the build without re-litigating known noise.
-          bandit -r src -q -f json -o bandit-report.json || true
-          python -c "
-          import json, sys
-          data = json.load(open('bandit-report.json', encoding='utf-8'))
-          high = [r for r in data['results'] if r['issue_severity'] == 'HIGH']
-          for r in high:
-              print(f\"HIGH {r['test_id']} {r['filename']}:{r['line_number']} {r['issue_text']}\")
-          sys.exit(1 if high else 0)
-          "
+          # No `|| true`: bandit exits non-zero on ANY finding, but unlike
+          # Actions' bash default (which runs with -e and would abort this
+          # script here), PowerShell does not stop a multi-line script on a
+          # non-zero exit code from an external command, so the next line
+          # (the actual pass/fail decision) always runs regardless.
+          bandit -r src -q -f json -o bandit-report.json
+          python scripts/ci_check_bandit_high.py
 
       - name: Dependency vulnerability scan (pip-audit)
         run: |
           pip install --no-cache-dir pip-audit
-          pip-audit -r requirements-lock.txt || true
+          pip-audit -r requirements-lock.txt
 
       - name: Unit tests
         run: python -m unittest discover -s tests -t . -q
@@ -62,11 +64,10 @@ jobs:
     defaults:
       run:
         working-directory: omniflow-frontend
-        # Same reasoning as the backend job: `tests/*.test.cjs` below relies
-        # on shell globbing, which pwsh does not do for external-command
-        # arguments (it would pass the literal, unexpanded string to node).
-        # Pin bash so this keeps working unchanged on a Windows runner.
-        shell: bash
+        # See the backend job's comment: bash is not reliably available on
+        # this self-hosted Windows runner, so shell is left unset (the
+        # runner's own pwsh/PowerShell default) and the unit-test step
+        # below no longer depends on shell globbing.
     steps:
       - uses: actions/checkout@v4
 
@@ -86,7 +87,24 @@ jobs:
         run: npm run type-check
 
       - name: Unit tests
-        run: node --test --test-isolation=none tests/*.test.cjs
+        # Two real bugs found and fixed together while getting this to run
+        # for real for the first time (every prior CI run on this repo
+        # failed before ever reaching this step):
+        #   1. `--test-isolation=none` was never a valid flag on any Node
+        #      version that supports test isolation at all (it's
+        #      `--experimental-test-isolation`, Node >=22.8) -- this
+        #      command would have failed with "bad option" the moment it
+        #      actually ran, on any OS. The isolation-none workaround was
+        #      only ever needed for a sandboxed local dev environment that
+        #      disallowed spawning subprocesses; CI runners don't have
+        #      that restriction, so the flag is simply dropped.
+        #   2. `tests/*.test.cjs` relies on shell globbing, which pwsh does
+        #      not do for external-command arguments. Passing no path at
+        #      all lets `node --test` use its own default discovery from
+        #      the current directory, which resolves to exactly these 4
+        #      files (verified locally) and does not pick up the unrelated
+        #      Playwright specs under e2e/.
+        run: node --test
 
       - name: Build
         run: npm run build

@@ -5,7 +5,7 @@
  *   GET /reports        → { items, total, page, page_size }
  *                         query params: customer_id, report_type, date_from, date_to
  *   GET /reports/{id}   → ReportResponse (includes `s3_url`)
- *   GET /reports/analytics/revenue?period=monthly → { items: [{ month, total_revenue, count }] }
+ *   GET /reports/analytics/revenue?period=monthly → { series: [{ month, total_revenue, count }] }
  */
 import { apiClient } from "@/lib/api/client";
 
@@ -75,7 +75,7 @@ function normalizeReport(raw: any): Report {
     title:         raw.title ?? null,
     // The contract says `s3_url`; tolerate `url` / `download_url` variants.
     s3_url:        raw.s3_url ?? raw.url ?? raw.download_url ?? null,
-    price:         raw.price ?? null,
+    price:         raw.price_sar ?? raw.price ?? null,
     currency:      raw.currency ?? "SAR",
     created_at:    raw.created_at ?? null,
     updated_at:    raw.updated_at ?? null,
@@ -156,7 +156,7 @@ export async function fetchRevenueAnalytics(
     params: { period },
   });
 
-  const rawItems: any[] = Array.isArray(data) ? data : data?.items ?? [];
+  const rawItems: any[] = Array.isArray(data) ? data : data?.series ?? data?.items ?? [];
 
   return {
     items: rawItems.map((raw: any) => ({
@@ -170,6 +170,9 @@ export async function fetchRevenueAnalytics(
 // ── Labels (bilingual) ─────────────────────────────────────────────────────
 
 export const REPORT_TYPE_LABELS: Record<string, string> = {
+  deed_check_29:       "فحص صك عقاري",
+  municipal_consulting_15: "استشارة بلدية",
+  premium_consultation: "استشارة متخصصة",
   market_analysis:    "تحليل السوق",
   property_valuation: "تقييم عقاري",
   investment:         "دراسة استثمارية",

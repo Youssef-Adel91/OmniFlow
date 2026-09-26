@@ -402,18 +402,14 @@ export default function ReportsPage() {
     setDownloadingId(report.id);
     try {
       const fresh = await fetchReport(report.id);
-      const url = fresh.s3_url ?? report.s3_url;
+      const url = fresh.s3_url;
       if (url) {
         window.open(url, "_blank", "noopener,noreferrer");
       } else {
         setError("رابط التقرير غير متاح بعد. حاول لاحقاً.");
       }
     } catch {
-      if (report.s3_url) {
-        window.open(report.s3_url, "_blank", "noopener,noreferrer");
-      } else {
-        setError("تعذّر فتح التقرير.");
-      }
+      setError("تعذّر فتح التقرير.");
     } finally {
       setDownloadingId(null);
     }

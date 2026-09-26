@@ -35,7 +35,7 @@ interface NavItem {
 }
 
 const PRIMARY_NAV: NavItem[] = [
-  { key: "overview",   href: "/",             icon: LayoutDashboard  },
+  { key: "overview",   href: "/dashboard",    icon: LayoutDashboard  },
   { key: "inbox",      href: "/inbox",        icon: MessageSquare, badge: "unread" },
   { key: "properties", href: "/properties",   icon: Building2        },
   { key: "customers",  href: "/customers",    icon: Users            },

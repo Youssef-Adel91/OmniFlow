@@ -4,8 +4,7 @@
  * Provides the shared <html> and <body> tags for ALL routes under [locale]
  * (both the (auth) and (dashboard) route groups).
  *
- * Note on params: In Next.js 14 (not 15), params is a plain synchronous
- * object — do NOT await it. That change only applies to Next.js 15+.
+ * Route params are asynchronous in Next.js 16.
  */
 import type { Metadata } from "next";
 import { getMessages } from "next-intl/server";
@@ -35,15 +34,14 @@ function localeDir(locale: Locale): "rtl" | "ltr" {
 
 interface RootLocaleLayoutProps {
   children: React.ReactNode;
-  params: { locale: string };
+  params: Promise<{ locale: string }>;
 }
 
 export default async function RootLocaleLayout({
   children,
   params,
 }: RootLocaleLayoutProps) {
-  // Next.js 14: params is a plain object (not a Promise)
-  const locale = params.locale as Locale;
+  const locale = (await params).locale as Locale;
 
   // Validate — fall back to default if somehow invalid
   const safeLocale = (routing.locales as readonly string[]).includes(locale)

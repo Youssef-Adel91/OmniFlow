@@ -725,14 +725,14 @@ export default function LandingPage() {
                   </ul>
 
                   {/* CTA */}
-                  <a
+                  <Link
                     href="/ar/sign-up"
                     id={`pricing-cta-${id}`}
                     className={`mt-auto w-full inline-flex items-center justify-center gap-2 px-5 py-3.5 rounded-xl text-sm font-bold transition-all duration-200 active:scale-95 ${ctaStyle}`}
                   >
                     {cta}
                     <ChevronLeft className="w-4 h-4" />
-                  </a>
+                  </Link>
                 </div>
               )
             )}

@@ -10,6 +10,7 @@ import { routing, type Locale } from "@/i18n/routing";
 import { Sidebar }    from "@/components/layout/Sidebar";
 import { TopNav }     from "@/components/layout/TopNav";
 import { AuthSyncer } from "@/components/auth/AuthSyncer";
+import { DashboardAuth } from "@/components/auth/DashboardAuth";
 import { cn }         from "@/lib/utils";
 
 // ── Metadata ──────────────────────────────────────────────────────────────────
@@ -27,7 +28,7 @@ export const metadata: Metadata = {
 
 interface DashboardLayoutProps {
   children: React.ReactNode;
-  params: { locale: string };
+  params: Promise<{ locale: string }>;
 }
 
 // ── Layout ────────────────────────────────────────────────────────────────────
@@ -36,17 +37,16 @@ export default async function DashboardLayout({
   children,
   params,
 }: DashboardLayoutProps) {
-  // Next.js 14: params is a plain object (not a Promise)
-  const locale = params.locale as Locale;
+  const locale = (await params).locale as Locale;
   const safeLocale = (routing.locales as readonly string[]).includes(locale)
     ? locale
     : routing.defaultLocale;
 
   return (
-    <>
+    <DashboardAuth>
       <AuthSyncer />
       <DashboardShell locale={safeLocale}>{children}</DashboardShell>
-    </>
+    </DashboardAuth>
   );
 }
 

@@ -7,6 +7,10 @@ const withNextIntl = createNextIntlPlugin("./src/i18n/request.ts");
 
 /** @type {import('next').NextConfig} */
 const nextConfig = {
+  output: "standalone",
+  async redirects() {
+    return [{ source: "/test", destination: "/ar/dashboard", permanent: false }];
+  },
   reactStrictMode: true,
   images: {
     remotePatterns: [

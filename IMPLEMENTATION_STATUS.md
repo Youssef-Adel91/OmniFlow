@@ -501,6 +501,20 @@ Follow-up on the "also surfaced" item directly above, investigated properly rath
 
 Full backend suite (37 tests) still passes.
 
+### Instagram/Messenger real DM delivery — 2026-09-26
+
+Per the earlier channel audit's 🟡 finding ("no reply is delivered until `outbound_dispatcher` gets a real, per-tenant Instagram/Messenger send branch"). Closed for DMs.
+
+- **New per-tenant credential storage**: `Tenant.instagram_page_id` (unique) + `Tenant.instagram_page_access_token` (migration `0015_tenant_instagram_creds`) — before this, Instagram/Messenger had no per-tenant credential model at all, only a single global settings field that would have served one Page token to every tenant in a multi-tenant product.
+- **Real per-tenant page resolution**: `channel_adapters/instagram/router.py::_resolve_tenant_id()` now does a real `Tenant.instagram_page_id` DB lookup (mirroring the WhatsApp adapter's own resolver exactly), replacing the dev-placeholder zero-UUID that always fired regardless of which real page sent the webhook. Raises in production for an unresolvable page rather than silently misrouting to tenant zero (dev mode keeps the zero-UUID fallback, matching WhatsApp's own documented dev behavior).
+- **`instagram/client.py`** now accepts a per-tenant `access_token` on `send_message()`/`send_comment_reply()` instead of always reading the global setting.
+- **`outbound_dispatcher` now actually sends Instagram DMs**: previously any non-WhatsApp channel was hard-rejected outright (`raise -> DLQ`), so a reply the real pipeline generated for this channel could never be delivered no matter what. New `_resolve_instagram_credentials()` deliberately has **no settings/dev fallback** — a tenant with nothing configured simply cannot send yet, which is the correct, honest failure mode (a shared fallback token here is exactly the safety bug already found and removed from the webhook side earlier in this pass).
+- **Onboarding**: `PATCH /api/v1/tenants/onboarding` now accepts `instagram_page_id`/`instagram_page_access_token`, same real-write pattern as WhatsApp credentials in the same endpoint.
+- **Scope, disclosed, not silently left broken**: **DMs only.** Page/feed comment replies remain unwired — `OutboundMessage` has no field distinguishing "reply to a DM" from "reply to a comment" today, and `send_comment_reply()` needs a different Graph API endpoint than DMs. This is real, separate follow-up work, not something this pass claims to cover.
+- **Verified**: real Postgres + real Kafka, through the actual `OutboundDispatcherWorker.run()`/`_handle_record()` consumer loop (same bar as the VCard/broadcast validators) — only the Graph API network transport is mocked, since no real Instagram/Messenger test credentials exist yet (the same disclosed limitation every other channel had before its own real test number existed). New script [`scripts/validate_instagram_outbound_delivery.py`](omniflow-backend/scripts/validate_instagram_outbound_delivery.py): Scenario A confirms a tenant's own distinct token is used (not a shared one) and a real `Message` row reaches `delivery_status=SENT`; Scenario B confirms a tenant with no configured credentials gets no send at all rather than falling back to some other tenant's or the global token.
+
+Full backend suite (37 tests) still passes.
+
 ## Next steps and known gaps
 
 1. Real database inbox/report integration and synthetic Kafka/Redis transport checks pass. Next validate the authenticated browser journey and the combined worker flow; the inbox validator still mocks transport/channel boundaries.

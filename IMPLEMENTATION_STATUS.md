@@ -484,6 +484,23 @@ Product decision confirmed: 40/25/35 weights approved as-is. This closes the "ef
 
 Full backend suite (37 tests) still passes throughout.
 
+### P0 root-caused and fixed: real WhatsApp replies never used a tenant's real persona — 2026-09-26
+
+Follow-up on the "also surfaced" item directly above, investigated properly rather than assumed transient, per explicit client direction ("this is a multi-tenant isolation question, treat it seriously").
+
+**1. Exact historical messages, with real timestamps** (real Postgres, Naeem's actual conversation): `2026-09-25 18:19:49 UTC` and `2026-09-25 18:43:16 UTC` — both real AI replies containing *"تخصصنا العقاري فقط"* / *"مكتبنا العقاري"* ("our specialty is only real estate").
+
+**2. Root cause, traced through the actual code, not guessed.** `LLMInvokerWorker._get_tenant_context()` (`ai_workers/llm_invoker/worker.py`) only ever read `session_state["business_name"]` — a Redis session field — to decide whether to build a tenant-specific persona. **A full-repo grep confirmed nothing anywhere in the pipeline (the WhatsApp webhook, `semantic_router`, `conversation_state.py`) ever writes that key.** So the "tenant-aware" branch was permanently unreachable, and `_build_persona()` always took the fallback path to `persona.py`'s `DEFAULT_SYSTEM_PROMPT` — the hardcoded "Ahmad Al-Sayegh, Elite Properties" real-estate persona, whose own pre-written escape line for out-of-scope questions is almost verbatim what Naeem's customer received. **This code path never called `Tenant.ai_system_prompt` or `get_company_context()`/`CompanyProfile` at all** — not once, for any tenant, ever. A separate, unused class (`ai_engine/llm_orchestrator.py`) already had the correct logic (`tenant.ai_system_prompt or default`, then compose with the real company-knowledge block) the entire time; the actual production Kafka pipeline that real WhatsApp messages flow through never used it.
+
+**3. Scope, checked explicitly, not assumed**: this is **not** a cache/race/cross-tenant-isolation leak — audited every module-level cache dict in the codebase (`company_context.py`'s two caches, `embedder.py`'s embedding cache) and confirmed each is correctly keyed per-tenant (or, for the embedding cache, keyed by text content, which is not tenant-private data). No evidence anywhere of tenant A's data reaching tenant B. It is something arguably worse for product quality, if not for privacy: a **100%-reproducible, always-on structural gap** that served the wrong persona to **every tenant, every real message**, unconditionally, since this worker was built — not a transient blip at all.
+
+**4. Fix + real regression test, not "restart clears it."** Added `get_tenant_persona()` to `company_context.py` (same cached, fail-closed, per-tenant-keyed pattern as `get_company_context()`, invalidated together by the same `invalidate_company_context()` calls already wired into the settings/onboarding endpoints) and wired `LLMInvokerWorker` to build `tenant.ai_system_prompt` (or the same default when genuinely unset) composed with the real company-knowledge block — mirroring `llm_orchestrator.py`'s already-correct pattern exactly.
+- New [`scripts/validate_tenant_persona_used.py`](omniflow-backend/scripts/validate_tenant_persona_used.py): reproduces the exact failure condition — a real tenant with a real, distinctive `ai_system_prompt`, and a `RoutingDecision.session_state` with no `business_name` key (what every real production message actually looks like) — and captures the exact `system_prompt` string that would reach the LLM.
+- **Confirmed both states of the same test, not just "looks fine now"**: `git stash` was used to temporarily revert the fix — the test correctly **failed**, catching the real-estate markers leaking into a massage-store tenant's prompt. Restored the fix — the test correctly **passed**.
+- **Also reproduced live against the real Naeem tenant** with a genuine Groq call (a fresh temporary conversation, so the real historical one was left untouched): the AI now correctly replies *"نعم، لدينا أجهزة مساج للركبة..."* ("yes, we have knee massage devices...") instead of deflecting to real estate.
+
+Full backend suite (37 tests) still passes.
+
 ## Next steps and known gaps
 
 1. Real database inbox/report integration and synthetic Kafka/Redis transport checks pass. Next validate the authenticated browser journey and the combined worker flow; the inbox validator still mocks transport/channel boundaries.

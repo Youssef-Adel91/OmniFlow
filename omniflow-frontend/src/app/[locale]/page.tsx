@@ -183,8 +183,8 @@ const PREREQUISITES = [
   },
   {
     icon: Users,
-    title: "حسابات تواصل اجتماعي موثقة",
-    desc: "حسابات تواصل اجتماعي موثقة (Instagram, TikTok, X) لربطها بالمنظومة.",
+    title: "حساب انستقرام موثق",
+    desc: "حساب Instagram Business/Creator مربوط بصفحة Facebook — لربطه بالمنظومة (الرد على الرسائل والتعليقات).",
   },
   {
     icon: FileText,

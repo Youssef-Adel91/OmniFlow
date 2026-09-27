@@ -68,6 +68,19 @@ function ToastContainer({
   );
 }
 
+// Real-time "N / limit" counter so a business owner sees they're near the
+// backend's max length before submitting, instead of a bare 422 after
+// writing a full answer. Turns red past the limit rather than blocking
+// typing outright (paste/IME input shouldn't get silently truncated).
+function CharCounter({ value, limit }: { value: string; limit: number }) {
+  const over = value.length > limit;
+  return (
+    <span className={`text-xs ${over ? "text-red-400" : "text-gray-500"}`}>
+      {value.length.toLocaleString("ar")} / {limit.toLocaleString("ar")}
+    </span>
+  );
+}
+
 // ── Main Page ────────────────────────────────────────────────────────────────
 
 export default function OnboardingPage() {
@@ -92,10 +105,42 @@ export default function OnboardingPage() {
     aboutText: "",
     productsText: "", // comma-separated, split into a list on submit
     detailedInstructions: "",
+    // Distinct from detailedInstructions: that field feeds the AI's
+    // company-FACTS block (policies/FAQs, capped inside a shared 2500-char
+    // knowledge block). This feeds Tenant.ai_system_prompt directly — the
+    // uncapped field that actually controls how the AI talks to a customer
+    // (tone, objections, closing a sale) — see tenants.py's
+    // _upsert_custom_instructions.
+    aiInstructions: "",
   });
+  // Backend hard limits (schemas.py TenantOnboardingUpdate) — mirrored here
+  // so a business owner sees they're near/over a limit before submitting,
+  // instead of typing a full answer and getting an opaque 422 on save.
+  const FIELD_LIMITS = {
+    aboutText: 2000,
+    detailedInstructions: 4000,
+    aiInstructions: 4000,
+  } as const;
   const [knowledgeFiles, setKnowledgeFiles] = useState<File[]>([]);
   const [isUploadingFiles, setIsUploadingFiles] = useState(false);
   const businessNameValid = businessProfile.businessName.trim().length >= 2;
+
+  // Returns an Arabic label naming the first field over its backend limit,
+  // or null if everything fits — used to block submission with one clear
+  // toast instead of the raw Pydantic 422 the API would otherwise return.
+  const FIELD_LABELS: Record<keyof typeof FIELD_LIMITS, string> = {
+    aboutText: "نبذة عن الشركة",
+    detailedInstructions: "سياسات الشركة والأسئلة الشائعة",
+    aiInstructions: "تعليمات سلوك المساعد الذكي",
+  };
+  const overLimitFieldLabel = (): string | null => {
+    for (const key of Object.keys(FIELD_LIMITS) as (keyof typeof FIELD_LIMITS)[]) {
+      if (businessProfile[key].length > FIELD_LIMITS[key]) {
+        return FIELD_LABELS[key];
+      }
+    }
+    return null;
+  };
 
   const businessProfilePayload = () => {
     const products = businessProfile.productsText
@@ -108,6 +153,7 @@ export default function OnboardingPage() {
       about_text: businessProfile.aboutText.trim() || undefined,
       products: products.length ? products : undefined,
       detailed_instructions: businessProfile.detailedInstructions.trim() || undefined,
+      ai_instructions: businessProfile.aiInstructions.trim() || undefined,
     };
   };
 
@@ -161,6 +207,11 @@ export default function OnboardingPage() {
       addToast("error", "من فضلك أدخل اسم الشركة أولاً (في القسم أعلاه).");
       return;
     }
+    const overLimit = overLimitFieldLabel();
+    if (overLimit) {
+      addToast("error", `حقل "${overLimit}" يتجاوز الحد الأقصى المسموح — يرجى تقليل النص.`);
+      return;
+    }
     setIsLoadingSelfService(true);
 
     try {
@@ -196,6 +247,11 @@ export default function OnboardingPage() {
   const handleWhiteGloveSubmit = async () => {
     if (!businessNameValid) {
       addToast("error", "من فضلك أدخل اسم الشركة أولاً (في القسم أعلاه).");
+      return;
+    }
+    const overLimit = overLimitFieldLabel();
+    if (overLimit) {
+      addToast("error", `حقل "${overLimit}" يتجاوز الحد الأقصى المسموح — يرجى تقليل النص.`);
       return;
     }
     setIsLoadingWhiteGlove(true);
@@ -309,16 +365,19 @@ export default function OnboardingPage() {
               </div>
             </div>
             <div className="mt-4">
-              <label className="block text-sm font-medium text-gray-300 mb-2">
-                نبذة عن الشركة
-              </label>
+              <div className="flex items-center justify-between mb-2">
+                <label className="block text-sm font-medium text-gray-300">
+                  نبذة عن الشركة
+                </label>
+                <CharCounter value={businessProfile.aboutText} limit={FIELD_LIMITS.aboutText} />
+              </div>
               <textarea
                 value={businessProfile.aboutText}
                 onChange={(e) =>
                   setBusinessProfile({ ...businessProfile, aboutText: e.target.value })
                 }
                 rows={4}
-                placeholder="اكتب قصة علامتك التجارية بإيجاز..."
+                placeholder="اكتب قصة علامتك التجارية بإيجاز... مثال: متجر متخصص في أجهزة المساج المنزلي منذ 2019، نستهدف العملاء الباحثين عن حلول علاج طبيعي بالمنزل."
                 className="w-full bg-[#0A0F1C] border border-white/10 rounded-lg py-3 px-4 text-white placeholder-gray-600 focus:outline-none focus:ring-2 focus:ring-[#C9A84C] focus:border-transparent transition-all resize-none"
               />
             </div>
@@ -337,18 +396,54 @@ export default function OnboardingPage() {
               />
             </div>
             <div className="mt-4">
-              <label className="block text-sm font-medium text-gray-300 mb-2">
-                تعليمات تفصيلية للمساعد الذكي (سياسات، أسئلة شائعة، طريقة الرد...)
-              </label>
+              <div className="flex items-center justify-between mb-2">
+                <label className="block text-sm font-medium text-gray-300">
+                  سياسات الشركة والأسئلة الشائعة{" "}
+                  <span className="text-gray-500 font-normal">(معلومات حقيقية عن عملك)</span>
+                </label>
+                <CharCounter
+                  value={businessProfile.detailedInstructions}
+                  limit={FIELD_LIMITS.detailedInstructions}
+                />
+              </div>
               <textarea
                 value={businessProfile.detailedInstructions}
                 onChange={(e) =>
                   setBusinessProfile({ ...businessProfile, detailedInstructions: e.target.value })
                 }
                 rows={4}
-                placeholder="مثال: سياسة الاستبدال والاسترجاع خلال 14 يوم، مواعيد الشحن، كيفية الرد على استفسارات الضمان..."
+                placeholder="مثال: سياسة الاستبدال والاسترجاع خلال 14 يوم، مواعيد الشحن (2-5 أيام عمل)، أسعار المنتجات، كيفية الرد على استفسارات الضمان..."
                 className="w-full bg-[#0A0F1C] border border-white/10 rounded-lg py-3 px-4 text-white placeholder-gray-600 focus:outline-none focus:ring-2 focus:ring-[#C9A84C] focus:border-transparent transition-all resize-none"
               />
+              <p className="text-xs text-gray-500 mt-1.5">
+                هذه المعلومات "الحقائق" — ما هو صحيح عن شركتك. لتحديد كيف يتحدث المساعد ويتعامل مع العملاء، استخدم الحقل التالي.
+              </p>
+            </div>
+            <div className="mt-4">
+              <div className="flex items-center justify-between mb-2">
+                <label className="block text-sm font-medium text-gray-300">
+                  تعليمات خاصة لسلوك المساعد الذكي مع العملاء{" "}
+                  <span className="text-gray-500 font-normal">(اختياري)</span>
+                </label>
+                <CharCounter
+                  value={businessProfile.aiInstructions}
+                  limit={FIELD_LIMITS.aiInstructions}
+                />
+              </div>
+              <textarea
+                value={businessProfile.aiInstructions}
+                onChange={(e) =>
+                  setBusinessProfile({ ...businessProfile, aiInstructions: e.target.value })
+                }
+                rows={4}
+                placeholder={
+                  "مثال: تحدث بأسلوب ودود وغير رسمي مع لهجة سعودية خفيفة. إذا اعترض العميل على السعر، اذكر أن هناك خصم 10% عند الشراء من موقعنا وضمان استرجاع 30 يوم. اسأل دائماً إذا كان العميل يريد إتمام الطلب الآن قبل إنهاء المحادثة. لا تناقش أسعار المنافسين."
+                }
+                className="w-full bg-[#0A0F1C] border border-white/10 rounded-lg py-3 px-4 text-white placeholder-gray-600 focus:outline-none focus:ring-2 focus:ring-[#C9A84C] focus:border-transparent transition-all resize-none"
+              />
+              <p className="text-xs text-gray-500 mt-1.5">
+                نغمة الحديث، كيفية التعامل مع تردد العميل أو اعتراضه على السعر، وكيفية توجيه المحادثة لإتمام عملية الشراء. هذا يغيّر فعلياً طريقة رد المساعد الذكي على عملائك — يمكنك تعديله في أي وقت من الإعدادات لاحقاً.
+              </p>
             </div>
             <div className="mt-4">
               <label className="block text-sm font-medium text-gray-300 mb-2">

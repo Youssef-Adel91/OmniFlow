@@ -44,6 +44,26 @@ def _generic_persona(business_name: str, category: str | None) -> str:
     )
 
 
+_CUSTOM_INSTRUCTIONS_MARKER = "\n\n### تعليمات خاصة بسلوك المساعد مع العملاء:\n"
+
+
+def _upsert_custom_instructions(existing_prompt: str, instructions: str) -> str:
+    """
+    Merge onboarding's "how the AI should behave" free text into the live
+    ai_system_prompt, idempotently.
+
+    ai_system_prompt is a single free-text field an admin can also hand-edit
+    later via PATCH /settings/ai-personality — so this can't just blindly
+    append every time onboarding is resubmitted (that would duplicate the
+    same instructions on a second save). Instead it keeps everything BEFORE
+    the marker (the identity/base persona, whether auto-generated or
+    hand-written) and replaces everything from the marker onward with the
+    latest instructions — a real update, not an accumulating duplicate.
+    """
+    base = existing_prompt.split(_CUSTOM_INSTRUCTIONS_MARKER)[0].rstrip()
+    return f"{base}{_CUSTOM_INSTRUCTIONS_MARKER}{instructions.strip()}"
+
+
 # ══════════════════════════════════════════════════════════════════════════════
 # Response Schema
 # ══════════════════════════════════════════════════════════════════════════════
@@ -144,6 +164,7 @@ async def update_tenant_onboarding(
         wrote_business_profile = any((
             payload.business_name, payload.business_category,
             payload.about_text, payload.products, payload.detailed_instructions,
+            payload.ai_instructions,
         ))
         if wrote_business_profile:
             if payload.business_name:
@@ -154,6 +175,16 @@ async def update_tenant_onboarding(
             if tenant.ai_system_prompt is None:
                 tenant.ai_system_prompt = _generic_persona(
                     tenant.business_name, payload.business_category,
+                )
+
+            # Distinct from the base persona above: this is the "how should
+            # the AI behave with a customer" lever (tone, objection handling,
+            # closing a sale, sector-specific guidance) — merged in every
+            # time it's submitted, unlike the base persona which is only
+            # ever auto-generated once.
+            if payload.ai_instructions:
+                tenant.ai_system_prompt = _upsert_custom_instructions(
+                    tenant.ai_system_prompt, payload.ai_instructions,
                 )
 
         # Capture the value INSIDE the session before commit closes the transaction

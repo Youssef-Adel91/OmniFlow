@@ -47,20 +47,16 @@ dependencies = [
   # The Kafka LLM worker still uses the Google GenAI client.
   "google-genai>=1.0.0",
   "google-api-core>=2.0.0",
-  "anthropic>=0.37.0",              # Claude fallback
   "tiktoken>=0.8.0",                # Token counting
 
   # ─── Embeddings & ML ──────────────────────────────────────────
-  "sentence-transformers>=3.2.0",
   "fastembed>=0.4.0",               # Lightweight embeddings in Rust
   "torch>=2.4.0",                   # For self-hosted Whisper
-  "transformers>=4.46.0",
   "openai-whisper>=20240927",       # Self-hosted Whisper-large-v3
 
   # ─── RAG / Document Processing ────────────────────────────────
-  "langchain>=0.3.0",
-  "langchain-community>=0.3.0",
-  "unstructured[all-docs]>=0.15.0", # Document parsing (PDF, DOCX, etc.)
+  "unstructured[all-docs]>=0.15.0", # Document parsing (PDF, DOCX, etc.) -- best-effort,
+                                     # see rag_engine/ingestion.py's _try_unstructured()
   "weasyprint>=62.0",               # HTML/CSS -> PDF authoring for customer report generation; verified against 70.0
   "python-docx>=1.1.0",
   "pillow>=10.4.0",                 # Image processing
@@ -85,8 +81,10 @@ dependencies = [
 
   # ─── Task Scheduling (Celery) ─────────────────────────────────
   "celery[redis]>=5.4.0",
-  "celery-redbeat>=2.2.0",          # Redis-based Beat Scheduler
-  "flower>=2.0.1",                  # Celery monitoring UI
+  "celery-redbeat>=2.2.0",          # Redis-based Beat Scheduler; see celery_app/app.py's
+                                     # try/import fallback to the stock scheduler
+  # NOT flower: it runs as its own standalone container (docker-compose.yml's
+  # mher/flower image), never imported by this backend's own Python code.
 
   # ─── Observability & Monitoring ───────────────────────────────
   "opentelemetry-api>=1.27.0",
@@ -127,7 +125,6 @@ dependencies = [
   "Levenshtein>=0.26.0",            # Fuzzy text matching
   "arabic-reshaper>=3.0.0",         # Arabic text normalization
   "python-bidi>=0.6.0",             # BiDi text handling
-  "camel-tools>=1.5.2",             # Arabic NLP (CAMeL)
   "geopy>=2.4.0",                   # Distance calculation
   "pendulum>=3.0.0",                # Advanced datetime with timezone
   "ulid-py>=1.1.0",                 # ULID for event IDs

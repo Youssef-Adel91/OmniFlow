@@ -119,6 +119,18 @@ class TenantOnboardingUpdate(BaseModel):
         default=None, max_length=4000,
         description="Free-form policies/how-to-answer instructions for the AI (-> CompanyProfile.policies_text).",
     )
+    ai_instructions: Optional[str] = Field(
+        default=None, max_length=4000,
+        description=(
+            "How the AI should BEHAVE with customers: tone, how to handle price/"
+            "objection pushback, how to work toward closing a sale, sector-specific "
+            "sales guidance. Distinct from detailed_instructions (company facts/"
+            "policies -> CompanyProfile.policies_text, capped inside the 2500-char "
+            "knowledge block): this writes to Tenant.custom_ai_instructions, a "
+            "separate uncapped column composed together with ai_system_prompt in "
+            "company_context.get_tenant_persona()."
+        ),
+    )
     meta_access_token: Optional[str] = Field(default=None)
     whatsapp_phone_number_id: Optional[str] = Field(default=None, max_length=30)
     whatsapp_waba_id: Optional[str] = Field(default=None, max_length=30)

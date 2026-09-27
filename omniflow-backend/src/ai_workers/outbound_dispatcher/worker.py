@@ -53,8 +53,8 @@ from src.shared.kafka.consumer import BaseKafkaConsumer
 from src.shared.redis_client.client import redis_mgr
 from src.shared.services.conversation_state import load_conversation_state
 from src.shared.db.session import get_tenant_session
-from src.shared.db.models import Tenant, Message, CompanyProfile
-from sqlalchemy import select
+from src.shared.db.models import Tenant, Message, CompanyProfile, Conversation
+from sqlalchemy import func, select, update
 
 logger = structlog.get_logger(__name__)
 settings = get_settings()
@@ -315,15 +315,62 @@ class OutboundDispatcherWorker(BaseKafkaConsumer):
         )
 
         # ── 5b. Re-check takeover immediately before the network call ──────────
-        # Narrows (does not close) the TOCTOU window between the step-2 check
-        # and the actual send: credential resolution + the idempotency round
-        # trip + the DB persist above are all real async gaps a human takeover
-        # can land in. A full fix needs a lock/fencing token on the
-        # conversation; this is a best-effort second look, not a guarantee.
+        # The plain `is_human_active` check below (status != AI_ACTIVE) is
+        # blind to one real scenario: a human takes over, acts, and returns
+        # the conversation to AI (return_to_ai) -- all while this reply was
+        # generating. By now `status` reads AI_ACTIVE again, so that check
+        # alone would wave it through, even though a human already saw/acted
+        # on this conversation with context this reply never had.
+        #
+        # Fix (migration 0017_conv_ai_reply_epoch): msg.ai_reply_epoch is the
+        # live Conversation.ai_reply_epoch value llm_invoker captured right
+        # before calling the LLM. Unlike `status`, assign_agent's atomic
+        # bump to this column is never reset by return_to_ai -- so an atomic
+        # `UPDATE ... WHERE ai_reply_epoch = :captured` correctly fails (0
+        # rows) if a takeover happened at any point since capture, whatever
+        # the current status now reads.
+        #
+        # What this does NOT close: the smaller gap between this exact check
+        # and the actual network call a few lines below. No DB-only
+        # mechanism can make an HTTP request to WhatsApp/Instagram
+        # conditional on a database row in one atomic step, and neither
+        # provider supports recalling an already-sent message -- that sliver
+        # is inherent to building on these providers, not specific to this
+        # implementation.
+        #
+        # Falls back to the plain status check when ai_reply_epoch is None
+        # (messages published before this migration shipped, or any sender
+        # type where a fencing token was never captured) rather than
+        # silently skipping the safety check.
         if msg.sender_type == "ai_bot" and msg.conversation_id:
+            # PDPL processing-restriction is a Customer-level admin flag, not
+            # something bumped by assign_agent's fencing token -- still needs
+            # its own live read regardless of which branch below runs.
             state = await load_conversation_state(msg.tenant_id, msg.conversation_id)
-            if state["is_human_active"] or state["is_processing_restricted"]:
-                log.info("outbound_ai_cancelled_after_takeover_late")
+            takeover_detected = state["is_processing_restricted"]
+
+            if not takeover_detected and msg.ai_reply_epoch is not None:
+                async with get_tenant_session(msg.tenant_id) as fence_session:
+                    claim = await fence_session.execute(
+                        update(Conversation)
+                        .where(
+                            Conversation.conversation_id == msg.conversation_id,
+                            Conversation.ai_reply_epoch == msg.ai_reply_epoch,
+                        )
+                        .values(updated_at=func.now())
+                    )
+                takeover_detected = claim.rowcount == 0
+                if takeover_detected:
+                    log.info(
+                        "outbound_ai_cancelled_after_takeover_late_fenced",
+                        captured_epoch=msg.ai_reply_epoch,
+                    )
+            elif not takeover_detected:
+                takeover_detected = state["is_human_active"]
+                if takeover_detected:
+                    log.info("outbound_ai_cancelled_after_takeover_late_unfenced")
+
+            if takeover_detected:
                 if persisted_msg_id:
                     await update_message_delivery_status(
                         tenant_id=msg.tenant_id,

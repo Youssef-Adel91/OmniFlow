@@ -105,10 +105,13 @@ export default function SettingsPage() {
   const [saveSuccess, setSaveSuccess] = useState(false);
   const [businessName, setBusinessName]           = useState("");
   const [phoneNumberId, setPhoneNumberId]         = useState("");
-  const [maxAiConversations, setMaxAiConversations] = useState("");
 
   // ── tab 3 — AI personality ────────────────────────────────────────────────
   const [aiPrompt, setAiPrompt]               = useState("");
+  // Distinct from aiPrompt (base identity/tone): tone/objection-handling/
+  // closing-sale guidance, stored in its own Tenant.custom_ai_instructions
+  // column (see IMPLEMENTATION_STATUS.md) and composed together server-side.
+  const [customInstructions, setCustomInstructions] = useState("");
   const [aiSaving, setAiSaving]               = useState(false);
   const [aiSaveError, setAiSaveError]         = useState<string | null>(null);
   const [aiSaveSuccess, setAiSaveSuccess]     = useState(false);
@@ -126,10 +129,8 @@ export default function SettingsPage() {
     setSettings(s);
     setBusinessName(s.business_name ?? "");
     setPhoneNumberId(s.whatsapp_phone_number_id ?? "");
-    setMaxAiConversations(
-      s.max_ai_conversations != null ? String(s.max_ai_conversations) : "",
-    );
     setAiPrompt(s.ai_system_prompt ?? "");
+    setCustomInstructions(s.custom_ai_instructions ?? "");
     if (s.logo_url) setLogoPreview(s.logo_url);
     // Keep the sidebar tenant badge in sync
     updateTenant({
@@ -181,19 +182,9 @@ export default function SettingsPage() {
     setSaveError(null);
     setSaveSuccess(false);
 
-    const parsedMax =
-      maxAiConversations.trim() === "" ? null : Number(maxAiConversations);
-
-    if (parsedMax != null && (!Number.isFinite(parsedMax) || parsedMax < 0)) {
-      setSaveError("الحد الأقصى للمحادثات يجب أن يكون رقماً صحيحاً موجباً.");
-      setSaving(false);
-      return;
-    }
-
     try {
       const updated = await updateSettings({
         business_name: businessName.trim(),
-        max_ai_conversations: parsedMax,
       });
       applySettings(updated);
       setSaveSuccess(true);
@@ -216,7 +207,7 @@ export default function SettingsPage() {
     setAiSaveError(null);
     setAiSaveSuccess(false);
     try {
-      const updated = await updateAiPersonality(aiPrompt.trim());
+      const updated = await updateAiPersonality(aiPrompt.trim(), customInstructions.trim());
       applySettings(updated);
       setAiSaveSuccess(true);
     } catch (err: any) {
@@ -504,20 +495,10 @@ export default function SettingsPage() {
                     </div>
                   </div>
 
-                  <div>
-                    <label className="block text-sm font-medium text-gray-300 mb-2">
-                      الحد الأقصى لمحادثات الذكاء الاصطناعي (شهرياً)
-                    </label>
-                    <input
-                      type="number"
-                      min={0}
-                      value={maxAiConversations}
-                      onChange={(e) => setMaxAiConversations(e.target.value)}
-                      placeholder="بدون حد"
-                      className={inputClass}
-                      dir="ltr"
-                    />
-                  </div>
+                  <p className="text-xs text-gray-500">
+                    حدود الاستخدام الشهري للمحادثات ستكون جزءاً من خطة الاشتراك القادمة —
+                    غير مفعّلة حالياً.
+                  </p>
                 </div>
               )}
 
@@ -600,6 +581,41 @@ export default function SettingsPage() {
                       <li>حدد السلوك عند عدم معرفة الإجابة</li>
                       <li>ضع قيوداً على المواضيع خارج نطاق العمل</li>
                     </ul>
+                  </div>
+
+                  {/* Distinct from the identity/tone field above: specific
+                      behavior guidance, stored in its own column and
+                      composed together server-side (get_tenant_persona). */}
+                  <div className="pt-2">
+                    <div className="flex items-center justify-between mb-2">
+                      <label className="block text-sm font-medium text-gray-300">
+                        تعليمات خاصة لسلوك المساعد مع العملاء{" "}
+                        <span className="text-gray-500 font-normal">(اختياري)</span>
+                      </label>
+                      <span className="text-xs text-gray-500">
+                        {customInstructions.length.toLocaleString("ar")} / {(4000).toLocaleString("ar")}
+                      </span>
+                    </div>
+                    <textarea
+                      id="custom-ai-instructions"
+                      rows={8}
+                      value={customInstructions}
+                      onChange={(e) => setCustomInstructions(e.target.value)}
+                      placeholder={
+                        "مثال: إذا اعترض العميل على السعر، اذكر مزايا الجودة والضمان قبل أي خصم. اسأل دائماً إذا كان يريد إتمام الطلب الآن قبل إنهاء المحادثة. لا تناقش أسعار المنافسين."
+                      }
+                      className={textareaClass}
+                      dir="rtl"
+                      maxLength={4000}
+                    />
+                    <div className="bg-white/5 border border-white/10 rounded-xl p-4 mt-3 text-sm text-gray-400 space-y-1">
+                      <p className="text-gray-300 font-medium mb-2">💡 أمثلة على ما يمكن كتابته هنا:</p>
+                      <ul className="list-disc list-inside space-y-1 text-xs">
+                        <li>كيفية التعامل مع تردد العميل أو اعتراضه على السعر</li>
+                        <li>كيف يوجّه المساعد المحادثة نحو إتمام عملية الشراء</li>
+                        <li>أي أسلوب بيع خاص بمجالك (مثال: عرض التقسيط، التركيز على الضمان)</li>
+                      </ul>
+                    </div>
                   </div>
                 </div>
               )}

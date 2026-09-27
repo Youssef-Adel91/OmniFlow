@@ -144,6 +144,7 @@ async def update_tenant_onboarding(
         wrote_business_profile = any((
             payload.business_name, payload.business_category,
             payload.about_text, payload.products, payload.detailed_instructions,
+            payload.ai_instructions,
         ))
         if wrote_business_profile:
             if payload.business_name:
@@ -155,6 +156,17 @@ async def update_tenant_onboarding(
                 tenant.ai_system_prompt = _generic_persona(
                     tenant.business_name, payload.business_category,
                 )
+
+            # Distinct from the base persona above and stored in its own
+            # column (Tenant.custom_ai_instructions, composed together with
+            # ai_system_prompt in company_context.get_tenant_persona()) --
+            # this is the "how should the AI behave with a customer" lever
+            # (tone, objection handling, closing a sale, sector-specific
+            # guidance). A real column, unlike the base persona's text, so a
+            # plain overwrite on every submission is trivially correct: no
+            # marker/text-surgery needed to update it in place.
+            if payload.ai_instructions:
+                tenant.custom_ai_instructions = payload.ai_instructions.strip()
 
         # Capture the value INSIDE the session before commit closes the transaction
         _onboarding_val = str(

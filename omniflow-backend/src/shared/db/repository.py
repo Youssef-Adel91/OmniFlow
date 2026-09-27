@@ -601,6 +601,17 @@ class ConversationRepository(
         arbiter: only one concurrent UPDATE can match on an unassigned row,
         and re-taking over your own already-assigned conversation is still a
         harmless no-op (idempotent double-click).
+
+        Also atomically bumps `ai_reply_epoch` — a fencing token an
+        in-flight AI reply captures before calling the LLM, unlike `status`
+        never reset by `return_to_ai`. This specifically closes the case
+        where a human takes over, acts, and hands the conversation back to
+        AI before a stale in-flight reply reaches its pre-send check: a
+        plain `status` check would read AI_ACTIVE again and miss it, but
+        the epoch is permanently different from what that reply captured.
+        See migration 0017_conv_ai_reply_epoch for the full rationale
+        (including what this does NOT close — the smaller gap between the
+        pre-send check and the actual outbound network call).
         """
         result = await self.session.execute(
             update(Conversation)
@@ -609,7 +620,11 @@ class ConversationRepository(
                 (Conversation.assigned_agent_id.is_(None))
                 | (Conversation.assigned_agent_id == agent_id),
             )
-            .values(assigned_agent_id=agent_id, status=ConversationStatus.HUMAN_ACTIVE)
+            .values(
+                assigned_agent_id=agent_id,
+                status=ConversationStatus.HUMAN_ACTIVE,
+                ai_reply_epoch=Conversation.ai_reply_epoch + 1,
+            )
         )
         if result.rowcount == 0:
             # Either the conversation doesn't exist, or it's genuinely owned

@@ -34,6 +34,16 @@ class OutboundMessage(BaseModel):
     # outbound_dispatcher must post to POST /{comment_id}/comments instead of
     # the DM messages endpoint. See CanonicalInboundEvent.reply_target_type.
 
+    ai_reply_epoch: int | None = None
+    # Fencing token: the live Conversation.ai_reply_epoch value read right
+    # before this reply's LLM call started (None for non-ai_bot senders, or
+    # if conversation_id was unknown at that point). outbound_dispatcher
+    # atomically re-checks this still matches immediately before dispatch,
+    # catching a takeover that started AND ended (agent returned control to
+    # AI) since capture -- a case the plain `status` check is blind to. See
+    # repository.assign_agent and migration 0017_conv_ai_reply_epoch for
+    # what this does and does not close.
+
     # Response content
     text: str
     message_type: str = "text"           # "text" | "audio"

@@ -215,11 +215,19 @@ async def get_company_context(tenant_id: str | uuid.UUID | None) -> str | None:
     return block
 
 
+_CUSTOM_INSTRUCTIONS_HEADING = "### تعليمات خاصة بسلوك المساعد مع العملاء:"
+
+
 async def get_tenant_persona(tenant_id: str | uuid.UUID | None) -> str | None:
     """
-    Load (and cache) `Tenant.ai_system_prompt` — the per-tenant persona set at
-    onboarding or via Settings. Returns None if unset or on any error, so
-    callers can fall back to a generic default; never raises.
+    Load (and cache) the tenant's full behavior prompt: `Tenant.ai_system_prompt`
+    (base identity/tone, set at onboarding or via Settings) combined with
+    `Tenant.custom_ai_instructions` (specific behavior guidance -- objection
+    handling, closing a sale, sector-specific rules -- also settable at
+    onboarding or via Settings, kept in its own column rather than merged
+    into ai_system_prompt's text so each stays independently editable and
+    clearable). Returns None if both are unset, or on any error, so callers
+    can fall back to a generic default; never raises.
 
     Same cache/TTL/invalidation contract as `get_company_context` (both are
     cleared together by `invalidate_company_context`), kept as a separate
@@ -243,9 +251,16 @@ async def get_tenant_persona(tenant_id: str | uuid.UUID | None) -> str | None:
 
         tenant_uuid = uuid.UUID(key)
         async with get_tenant_session(tenant_uuid) as session:
-            persona = await session.scalar(
-                select(Tenant.ai_system_prompt).where(Tenant.tenant_id == tenant_uuid)
-            )
+            row = (await session.execute(
+                select(Tenant.ai_system_prompt, Tenant.custom_ai_instructions)
+                .where(Tenant.tenant_id == tenant_uuid)
+            )).one_or_none()
+
+        base_prompt, custom_instructions = row if row else (None, None)
+        if base_prompt and custom_instructions:
+            persona = f"{base_prompt}\n\n{_CUSTOM_INSTRUCTIONS_HEADING}\n{custom_instructions}"
+        else:
+            persona = base_prompt or custom_instructions
     except Exception as exc:  # noqa: BLE001 — degradation, never a hard failure
         logger.warning("tenant_persona_load_failed", tenant_id=key, error=str(exc)[:300])
         _PERSONA_CACHE[key] = (now + 30, None)

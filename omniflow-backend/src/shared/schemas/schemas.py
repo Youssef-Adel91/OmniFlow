@@ -126,8 +126,9 @@ class TenantOnboardingUpdate(BaseModel):
             "objection pushback, how to work toward closing a sale, sector-specific "
             "sales guidance. Distinct from detailed_instructions (company facts/"
             "policies -> CompanyProfile.policies_text, capped inside the 2500-char "
-            "knowledge block): this is merged into Tenant.ai_system_prompt itself, "
-            "the uncapped field that actually drives the model's behavior."
+            "knowledge block): this writes to Tenant.custom_ai_instructions, a "
+            "separate uncapped column composed together with ai_system_prompt in "
+            "company_context.get_tenant_persona()."
         ),
     )
     meta_access_token: Optional[str] = Field(default=None)

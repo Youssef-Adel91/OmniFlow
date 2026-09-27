@@ -107,10 +107,10 @@ export default function OnboardingPage() {
     detailedInstructions: "",
     // Distinct from detailedInstructions: that field feeds the AI's
     // company-FACTS block (policies/FAQs, capped inside a shared 2500-char
-    // knowledge block). This feeds Tenant.ai_system_prompt directly — the
-    // uncapped field that actually controls how the AI talks to a customer
-    // (tone, objections, closing a sale) — see tenants.py's
-    // _upsert_custom_instructions.
+    // knowledge block). This feeds Tenant.custom_ai_instructions — a
+    // separate, uncapped column composed together with the base persona
+    // (ai_system_prompt) in company_context.get_tenant_persona() — see
+    // tenants.py's update_tenant_onboarding.
     aiInstructions: "",
   });
   // Backend hard limits (schemas.py TenantOnboardingUpdate) — mirrored here

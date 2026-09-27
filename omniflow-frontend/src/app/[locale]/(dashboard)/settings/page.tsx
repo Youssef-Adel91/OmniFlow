@@ -105,7 +105,6 @@ export default function SettingsPage() {
   const [saveSuccess, setSaveSuccess] = useState(false);
   const [businessName, setBusinessName]           = useState("");
   const [phoneNumberId, setPhoneNumberId]         = useState("");
-  const [maxAiConversations, setMaxAiConversations] = useState("");
 
   // ── tab 3 — AI personality ────────────────────────────────────────────────
   const [aiPrompt, setAiPrompt]               = useState("");
@@ -126,9 +125,6 @@ export default function SettingsPage() {
     setSettings(s);
     setBusinessName(s.business_name ?? "");
     setPhoneNumberId(s.whatsapp_phone_number_id ?? "");
-    setMaxAiConversations(
-      s.max_ai_conversations != null ? String(s.max_ai_conversations) : "",
-    );
     setAiPrompt(s.ai_system_prompt ?? "");
     if (s.logo_url) setLogoPreview(s.logo_url);
     // Keep the sidebar tenant badge in sync
@@ -181,19 +177,9 @@ export default function SettingsPage() {
     setSaveError(null);
     setSaveSuccess(false);
 
-    const parsedMax =
-      maxAiConversations.trim() === "" ? null : Number(maxAiConversations);
-
-    if (parsedMax != null && (!Number.isFinite(parsedMax) || parsedMax < 0)) {
-      setSaveError("الحد الأقصى للمحادثات يجب أن يكون رقماً صحيحاً موجباً.");
-      setSaving(false);
-      return;
-    }
-
     try {
       const updated = await updateSettings({
         business_name: businessName.trim(),
-        max_ai_conversations: parsedMax,
       });
       applySettings(updated);
       setSaveSuccess(true);
@@ -504,20 +490,10 @@ export default function SettingsPage() {
                     </div>
                   </div>
 
-                  <div>
-                    <label className="block text-sm font-medium text-gray-300 mb-2">
-                      الحد الأقصى لمحادثات الذكاء الاصطناعي (شهرياً)
-                    </label>
-                    <input
-                      type="number"
-                      min={0}
-                      value={maxAiConversations}
-                      onChange={(e) => setMaxAiConversations(e.target.value)}
-                      placeholder="بدون حد"
-                      className={inputClass}
-                      dir="ltr"
-                    />
-                  </div>
+                  <p className="text-xs text-gray-500">
+                    حدود الاستخدام الشهري للمحادثات ستكون جزءاً من خطة الاشتراك القادمة —
+                    غير مفعّلة حالياً.
+                  </p>
                 </div>
               )}
 

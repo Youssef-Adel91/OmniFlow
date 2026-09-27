@@ -40,7 +40,7 @@ import {
 export const metadata: Metadata = {
   title: "OmniFlow AI — مساعد المبيعات العقاري الذكي",
   description:
-    "أغلق صفقاتك العقارية 24/7 مع أول مساعد مبيعات ذكي يرد بالصوت والنص عبر واتساب. الخطة المناسبة لكل حجم وكالة.",
+    "أغلق صفقاتك العقارية 24/7 مع أول مساعد مبيعات ذكي يرد فورياً عبر واتساب. الخطة المناسبة لكل حجم وكالة.",
   openGraph: {
     title: "OmniFlow AI — مساعد المبيعات العقاري الذكي",
     description: "ربط واتساب، فلترة العملاء، وإعادة الاستهداف — كل ذلك بالذكاء الاصطناعي.",
@@ -56,7 +56,7 @@ const STEPS = [
     step: "01",
     icon: MessageSquare,
     title: "الربط الشامل (Omnichannel)",
-    desc: "اربط حسابات Meta Business (واتساب، إنستقرام)، وتيك توك، وإكس بنقرة واحدة. نجمع كل عملائك في مسار بيعي واحد مدعوم بالذكاء الاصطناعي.",
+    desc: "اربط حسابات Meta Business (واتساب وإنستقرام) بنقرة واحدة. نجمع كل عملائك في مسار بيعي واحد مدعوم بالذكاء الاصطناعي.",
     badge: "Omnichannel Sync",
     badgeColor: "text-blue-400 bg-blue-400/10 border-blue-400/30",
     glow: "group-hover:shadow-blue-500/20",
@@ -104,7 +104,7 @@ const PRICING = [
     badge: null,
     features: [
       "شخصية مساعد ثابتة (أحمد الصائغ)",
-      "ردود نصية وصوتية عبر واتساب",
+      "ردود نصية ذكية عبر واتساب",
       "فهرسة حتى ٥٠٠ عقار",
       "VCard Gatekeeper — جمع البيانات",
       "لوحة تحكم أساسية",
@@ -357,15 +357,15 @@ export default function LandingPage() {
                 <span className="text-white">مع أول مساعد مبيعات ذكي</span>
                 <br />
                 <span className="text-white/80 text-2xl sm:text-3xl lg:text-4xl font-bold">
-                  يرد بالصوت والنص.
+                  يرد على عملائك فوراً.
                 </span>
               </h1>
 
               {/* Sub-headline */}
               <p className="fade-up-delay-2 text-white/60 text-base sm:text-lg leading-relaxed mb-10 max-w-xl">
                 أتمتة كاملة عبر{" "}
-                <span className="text-white font-semibold">جميع المنصات (واتساب، إنستقرام، تيك توك، إكس)</span> — مساعدك الذكي يوحد كل محادثاتك في صندوق وارد ذكي واحد ويرد فورياً بـ
-                <span className="text-[#C9A84C] font-semibold"> رسائل صوتية ونصية</span>،
+                <span className="text-white font-semibold">واتساب وإنستقرام</span> — مساعدك الذكي يوحد كل محادثاتك في صندوق وارد ذكي واحد ويرد فورياً بـ
+                <span className="text-[#C9A84C] font-semibold"> ردود نصية ذكية</span>،
                 يفلتر الجادين، ويرسل العروض المخصصة.{" "}
                 <span className="text-white font-semibold">صفر عملاء ضائعين.</span>
               </p>
@@ -374,7 +374,7 @@ export default function LandingPage() {
               <div className="fade-up-delay-2 flex flex-wrap gap-2.5 mb-10">
                 {[
                   { icon: MessageSquare, text: "واتساب API" },
-                  { icon: Mic, text: "ردود صوتية" },
+                  { icon: Zap, text: "رد فوري" },
                   { icon: ShieldCheck, text: "فلترة العملاء" },
                   { icon: Megaphone, text: "VIP Broadcast" },
                 ].map(({ icon: Icon, text }) => (
@@ -479,17 +479,10 @@ export default function LandingPage() {
                         </div>
                       </div>
 
-                      {/* AI voice note */}
+                      {/* AI follow-up */}
                       <div className="flex justify-start">
-                        <div className="bg-[#1e2a3a] text-white/90 text-xs rounded-xl rounded-tr-sm px-3 py-2 max-w-[85%] shadow border border-[#C9A84C]/10">
-                          <div className="flex items-center gap-2 text-[#C9A84C]">
-                            <Mic className="w-3.5 h-3.5 flex-shrink-0" />
-                            <div className="flex-1 h-1 bg-white/10 rounded-full overflow-hidden">
-                              <div className="h-full w-3/5 gold-shimmer rounded-full" />
-                            </div>
-                            <span className="text-white/50 text-[10px]">0:12</span>
-                          </div>
-                          <p className="text-white/50 text-[10px] mt-1">رسالة صوتية — شرح الشقق المتاحة</p>
+                        <div className="bg-[#1e2a3a] text-white/90 text-xs rounded-xl rounded-tr-sm px-3 py-2 max-w-[85%] leading-relaxed shadow border border-[#C9A84C]/10">
+                          تمام محمد 🙌 جاري البحث في قاعدة العقارات الآن...
                         </div>
                       </div>
 

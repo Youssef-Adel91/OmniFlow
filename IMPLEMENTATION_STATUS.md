@@ -2,6 +2,41 @@
 
 This is an engineering handoff, not a production-readiness declaration. The SRS remains the product specification. Preserve the existing architecture, naming, comments, and writing style when extending this work.
 
+## Launch-readiness scorecard — LAUNCH_READINESS_PROMPT.md items 1–24, refreshed against actual code (2026-09-27)
+
+This is item 22 (a refreshed SRS-vs-code review with an explicit in/deferred call per item) — done as a scannable table, not another narrative entry, since the answer to "what's actually left" had become genuinely hard to find across 600+ lines of chronological history below. Every "🟢 Done" line below has a full verification narrative further down this document (search for the item number or the quoted section title); this table doesn't repeat that evidence, it points at it. Numbering matches `LAUNCH_READINESS_PROMPT.md` exactly.
+
+| # | Item | Status | One-line reason |
+|---|---|---|---|
+| 1 | Secret rotation + git-history purge | 🟢 code/history side / 🟡 provider side | Git history independently re-verified clean twice (full, unshallowed history) — nothing to purge. Provider-side key rotation (Google AI Studio, Meta) is your action; ask if unconfirmed. |
+| 2 | Legacy JWT / DEMO_CREDENTIALS / TestBotSimulator | 🟢 Done | `/login`,`/register`,`/refresh` return 410 Gone and mint nothing; `DEMO_CREDENTIALS` doesn't exist in the frontend; TestBotSimulator fully removed. |
+| 3 | Payments (Moyasar/Tap) | 🔴 Not started | Needs real sandbox/production API keys from you — nothing to build without them. |
+| 4 | Real PDF reports | 🟢 Done | WeasyPrint, real Arabic text-layer extraction verified (`pdftotext`/`pdfminer.six`, zero `U+FFFD`). Trigger (item 3) still missing. |
+| 5 | WhatsApp real E2E + TikTok/X/Snapchat scope | 🟢 Done | WhatsApp verified real end-to-end on a real device/number; currently blocked only on a fresh Meta access token (external, not code). TikTok/X/Snapchat explicitly marked out of scope for v1 in code *and* fixed on the public marketing page (was over-promising them). |
+| 6 | Kafka pending-publisher DLQ under a real crash | 🟢 Done | Real `proc.kill()` mid-processing, real DLQ, real head-of-line-blocking check — all passed, twice. |
+| 7 | VCard real delivery + reminders | 🟢 Done | Real `.vcf` (phone/org/note) sent via real `WhatsAppClient`, real `200`/wamid from Meta, to a real phone. |
+| 8 | Campaigns/broadcasts | 🟢 Done | Real scheduling, delivery worker, `broadcast_deliveries` table, Meta template-approval pre-send gate. VIP tiering decided (single flag, no multi-tier) and confirmed by you. |
+| 9 | RAG real embeddings + tenant isolation | 🟢 Done | Real OpenAI-or-local-fastembed embeddings (no mock vectors), tenant isolation proven empirically on real Qdrant. Instagram-path *live* test still needs Instagram credentials. |
+| 10 | Real-estate recommendations (inbox panel) | 🟢 Done | Real recommendation-engine data wired into the panel, verified against real listings. |
+| 11 | Quick-actions (notes/appointments/reports link) | 🟢 Done | Implemented; appointments' minimal scope (vs. SRS's full calendar-sync subsystem) explicitly confirmed acceptable by you. |
+| 12 | Pagination + delivery-status UI/SSE | 🟢 Done | Cursor pagination and a real `DeliveryStatusIcon` + `message_status_update` SSE event, verified against 105 real Postgres messages. |
+| 13 | Concurrency audit | 🟢 Done | Conversation counters, takeover/agent-assignment races, SSE-before-commit ordering, user provisioning — all fixed with atomic SQL. AI-reply-after-takeover fencing token added and proven tonight (closes the takeover-then-return-to-AI hole specifically; the network-call gap is inherent to WhatsApp/Instagram having no message-recall). |
+| 14 | Voice/image explicit decision | 🟢 Done | Explicitly disabled for v1 (a real decision, not a silent gap), flagged for your sign-off. |
+| 15 | REGA license/ad-number verification | 🔴 Blocked | No real REGA API docs, sandbox, or partner agreement found anywhere — needs you to confirm directly with REGA. |
+| 16 | Public storage addressing + signed URLs | 🟢 code / 🔴 domain | Signed-URL coverage audited, correct everywhere (reports/knowledge presigned, logos intentionally not). Real domain for public links is genuinely blocked (item 21). |
+| 17 | Observability (Sentry/OTel) | 🟢 OTel / 🔴 Sentry | OpenTelemetry fully wired and proven against a real Jaeger container. Sentry needs a real DSN from a real account — zero engineering possible without it. |
+| 18 | Backup restore drills (Postgres/Qdrant/MinIO) | 🟢 Done / 🔴 off-host target | All three systems' restore drills proven for real (data actually deleted, then recovered and verified byte-for-byte / point-count-for-point-count). Off-host backup *storage* needs a real external target (S3 or similar) from you. |
+| 19 | Dependencies (lock/scan/shrink) | 🟢 Done | `requirements-lock.txt` in place; bandit + pip-audit run in CI on every push; image shrunk 6.89 GB → 5.62 GB via a multi-stage build; `pyproject.toml` dependency drift audited and cleaned up tonight. |
+| 20 | CI/CD pipeline | 🟢 Done | Real CI (backend + frontend) runs on every push/PR via a self-hosted runner — see the CI-saga writeup below for the full story of getting there. |
+| 21 | Production domain/TLS/provider keys | 🔴 Blocked | Needs a real domain, TLS cert, and production credentials from you. Blocks the domain-dependent parts of 16, 18, and 23. |
+| 22 | Refreshed SRS-vs-code review + sign-off | 🟢 This table | The individual scope decisions it covers (voice/image, VIP tiering, appointments scope, channel scope) were each already made and documented per-item; this table is the consolidated view for your sign-off. |
+| 23 | Staging acceptance/load test + rollback rehearsal | 🔴 Blocked | Transitively blocked on the domain/hosting from item 21 — nothing to stage without a target environment. |
+| 24 | Privacy policy, ToS, support channel | 🔴 Blocked | Needs real legal/business facts from you (entity name, address, jurisdiction, support contact) — deliberately not fabricated; Saudi PDPL makes a guessed placeholder riskier to ship than a flagged gap. |
+
+**Reading this table**: 🟢 = done and verified with real evidence (not just written), even if a *further* live test is separately blocked on credentials — that's called out inline. 🔴 = genuinely cannot proceed without something only you can provide. 🟡 = split, both halves called out. Nothing in this table was marked 🟢 without a corresponding verification narrative elsewhere in this document — if you spot one that looks unjustified, say so and it gets corrected, not defended.
+
+**What this table itself corrects**: five "Next steps and known gaps" entries below (PDF, real embeddings, VCard, SSE/pagination, and Qdrant/MinIO restore) previously read as still-open because that summary list wasn't kept in sync with the narrative sections proving they were done — each was individually fixed in place tonight rather than left to contradict this table.
+
 ## Working tree
 
 All work is uncommitted. Before this work, the user already had changes in `omniflow-backend/src/shared/core/config.py` (OpenAI-compatible provider settings) and `src/ai_engine/llm_orchestrator.py` (whitespace). Preserve those changes. No production deployment or real customer messages were performed.

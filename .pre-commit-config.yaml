@@ -3,3 +3,11 @@ repos:
     rev: v8.21.2
     hooks:
       - id: gitleaks
+  # Second, independent scanner (pure Python, no Go binary) -- CI enforces
+  # this one (see ci.yml's "Secret scan" step + scripts/ci_check_detect_secrets.py);
+  # this local hook just lets a contributor catch the same failure before pushing.
+  - repo: https://github.com/Yelp/detect-secrets
+    rev: v1.5.0
+    hooks:
+      - id: detect-secrets
+        args: ["--baseline", ".secrets.baseline"]

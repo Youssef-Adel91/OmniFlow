@@ -150,6 +150,7 @@ dev = [
   "mypy>=1.13.0",
   "bandit>=1.8.0",                  # Security linting
   "safety>=3.2.0",                  # Dependency vulnerability scan
+  "detect-secrets>=1.5.0",          # Repo-wide secret scan, CI-enforced against .secrets.baseline
 
   # ─── Dev Tools ────────────────────────────────────────────────
   "ipython>=8.28.0",

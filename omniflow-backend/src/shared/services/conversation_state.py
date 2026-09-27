@@ -40,4 +40,5 @@ async def load_conversation_state(
             "is_processing_restricted": customer.is_processing_restricted,
             "vcard_state": customer.vcard_state,
             "is_vip": customer.is_vip,
+            "ai_reply_epoch": conv.ai_reply_epoch,
         }

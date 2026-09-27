@@ -32,6 +32,7 @@ from sqlalchemy import (
     Boolean,
     ForeignKey,
     Index,
+    Integer,
     Numeric,
     String,
     Text,
@@ -557,6 +558,27 @@ class Conversation(Base, TimestampMixin, TenantScopedMixin):
         nullable=False,
         default=ConversationStatus.AI_ACTIVE,
         index=True,
+    )
+    ai_reply_epoch: Mapped[int] = mapped_column(
+        Integer,
+        nullable=False,
+        default=0,
+        server_default="0",
+        comment=(
+            "Fencing token, bumped atomically every time a human takes over "
+            "this conversation (repository.assign_agent) -- and never reset "
+            "by return_to_ai, unlike `status`. An AI-generated reply "
+            "captures this value before starting its LLM call; "
+            "outbound_dispatcher atomically re-checks it right before "
+            "dispatch. This specifically catches a takeover that started "
+            "AND ENDED (agent returned control to AI) within that window --"
+            " `status` alone is back to AI_ACTIVE by then and blind to it, "
+            "but the epoch still shows a human read/replied to the customer "
+            "in between. Does NOT close the much smaller, structurally "
+            "irreducible gap between this check and the actual network "
+            "call itself (no DB-only mechanism can make an HTTP request "
+            "conditional on a DB row in one atomic step)."
+        ),
     )
     last_message_at: Mapped[Optional[datetime]] = mapped_column(
         nullable=True, index=True

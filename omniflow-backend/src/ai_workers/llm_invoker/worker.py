@@ -237,6 +237,11 @@ class LLMInvokerWorker(BaseKafkaConsumer):
             state = await load_conversation_state(tenant_id, decision.conversation_id)
             if state["is_human_active"] or state["is_processing_restricted"]:
                 return
+            # Fencing token for outbound_dispatcher's pre-send check (see
+            # migration 0017_conv_ai_reply_epoch): a live read, captured now
+            # so a later takeover-then-return-to-AI cycle still gets caught
+            # even after `status` itself has reverted to AI_ACTIVE.
+            decision.ai_reply_epoch = state["ai_reply_epoch"]
 
         log = logger.bind(
             event_id=str(event.event_id),
@@ -503,6 +508,7 @@ class LLMInvokerWorker(BaseKafkaConsumer):
             channel=str(event.channel),
             platform_conversation_id=event.platform_conversation_id,
             reply_target_type=event.reply_target_type,
+            ai_reply_epoch=decision.ai_reply_epoch,
             text=text,
             message_type=final_message_type,
             media_url=final_media_url,

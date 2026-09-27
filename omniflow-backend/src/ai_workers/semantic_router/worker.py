@@ -87,6 +87,14 @@ class RoutingDecision(BaseModel):
     # Session state snapshot (to avoid repeated Redis reads downstream)
     session_state: dict[str, Any] | None = None
 
+    # Fencing token (see Conversation.ai_reply_epoch / repository.assign_agent).
+    # Never set by this router -- semantic_router doesn't call the LLM, so
+    # there's nothing to fence yet. llm_invoker sets this in-memory (on its
+    # own deserialized copy, right before starting the LLM call) with a
+    # fresh live read, then reads it back off `decision` when publishing the
+    # OutboundMessage. Deliberately not part of what this worker publishes.
+    ai_reply_epoch: int | None = None
+
     # Timing
     router_latency_ms: int = 0
     routed_at: datetime = Field(default_factory=lambda: datetime.now(tz=timezone.utc))

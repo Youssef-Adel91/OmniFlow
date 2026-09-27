@@ -103,6 +103,21 @@ jobs:
           & "${{ env.PYTHON_EXE }}" -m bandit -r src -q -f json -o bandit-report.json
           & "${{ env.PYTHON_EXE }}" scripts/ci_check_bandit_high.py
 
+      # item 1: "add a pre-commit secret scanner (gitleaks or detect-secrets)
+      # so this can't happen again." Runs against `.secrets.baseline` at the
+      # repo root (not just omniflow-backend/), since a leaked secret could
+      # land in frontend code, docs, or scripts just as easily -- hence the
+      # working-directory override below, unlike every other step in this
+      # job. Every finding currently in the baseline was individually
+      # reviewed and is a confirmed false positive (dev-only placeholders,
+      # test fixtures, alembic revision-id hashes, vendored third-party
+      # skill-doc examples) -- see scripts/ci_check_detect_secrets.py.
+      - name: Secret scan (detect-secrets)
+        working-directory: .
+        run: |
+          & "${{ env.PYTHON_EXE }}" -m pip install --no-cache-dir detect-secrets
+          & "${{ env.PYTHON_EXE }}" omniflow-backend/scripts/ci_check_detect_secrets.py
+
       - name: Dependency vulnerability scan (pip-audit)
         run: |
           & "${{ env.PYTHON_EXE }}" -m pip install --no-cache-dir pip-audit

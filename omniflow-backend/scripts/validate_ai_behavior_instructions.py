@@ -19,18 +19,29 @@ already wired into the real pipeline (see validate_tenant_persona_used.py's
 fix) but nothing in onboarding ever wrote to it beyond a one-time generic
 identity string.
 
+Self-review note: the first version of this feature merged ai_instructions
+into Tenant.ai_system_prompt itself via a marker-string search/replace. On
+review that was judged a shortcut -- fragile (an admin manually deleting the
+marker heading in Settings would silently break the next onboarding update)
+and conceptually muddled (identity/tone and specific behavior guidance are
+different concerns). Redone with a real, distinct column,
+Tenant.custom_ai_instructions (migration 0016), composed together with
+ai_system_prompt in company_context.get_tenant_persona() -- exactly how every
+other CompanyProfile concept already gets its own field instead of being
+smuggled into an existing one.
+
 This script proves, against real Postgres and through the real production
 entry points (not a reimplementation):
   1. The real `update_tenant_onboarding()` endpoint, given `ai_instructions`,
-     writes it into `Tenant.ai_system_prompt` -- NOT into
-     `CompanyProfile.policies_text` (that stays exclusively fed by
-     `detailed_instructions`, proving the two levers don't bleed into each
-     other, which was exactly the failure class the persona-regression audit
-     flagged as a risk for every field like this).
+     writes it into `Tenant.custom_ai_instructions` -- a column distinct
+     from both `Tenant.ai_system_prompt` (base persona) and
+     `CompanyProfile.policies_text` (facts, fed exclusively by
+     `detailed_instructions`) -- proving the three levers don't bleed into
+     each other, which was exactly the failure class the persona-regression
+     audit flagged as a risk for every field like this.
   2. Resubmitting onboarding with DIFFERENT ai_instructions updates the
-     stored value in place -- it does not duplicate/accumulate across
-     repeated saves (a real risk given ai_system_prompt is plain text with
-     no separate column to diff against).
+     stored value in place -- trivially correct now that it is a real
+     column overwrite, not text-surgery on a shared field.
   3. The real `LLMInvokerWorker.process_message()` consumer entry point,
      given a real customer message that raises a price objection, builds a
      `system_prompt` (via the real `compose_system_prompt`/
@@ -151,28 +162,30 @@ async def main() -> None:
             tenant = await session.get(Tenant, tenant_id)
             profile = await session.get(CompanyProfile, tenant_id)
 
-            assert OBJECTION_INSTRUCTIONS_V1 in tenant.ai_system_prompt, (
-                "ai_instructions did not reach Tenant.ai_system_prompt"
+            assert OBJECTION_INSTRUCTIONS_V1 in (tenant.custom_ai_instructions or ""), (
+                "ai_instructions did not reach Tenant.custom_ai_instructions"
             )
-            print("PASS: ai_instructions reached Tenant.ai_system_prompt verbatim")
+            print("PASS: ai_instructions reached Tenant.custom_ai_instructions verbatim")
 
             assert OBJECTION_INSTRUCTIONS_V1 not in (profile.policies_text or ""), (
                 "REGRESSION-CLASS BUG: behavior instructions leaked into the "
                 "facts block (CompanyProfile.policies_text) -- would compete "
                 "for the 2500-char knowledge-block cap with real FAQs/services"
             )
-            print("PASS: behavior instructions did NOT leak into the facts block")
+            assert OBJECTION_INSTRUCTIONS_V1 not in (tenant.ai_system_prompt or ""), (
+                "REGRESSION-CLASS BUG: behavior instructions leaked into the base "
+                "persona column instead of staying in their own column"
+            )
+            print("PASS: behavior instructions did NOT leak into the facts block or the base persona")
 
             assert FACTS_TEXT in (profile.policies_text or ""), (
                 "detailed_instructions did not reach CompanyProfile.policies_text"
             )
-            assert FACTS_TEXT not in tenant.ai_system_prompt, (
-                "REGRESSION-CLASS BUG: facts leaked into the uncapped behavior "
-                "prompt -- the two fields must stay on separate tracks"
+            assert FACTS_TEXT not in (tenant.custom_ai_instructions or ""), (
+                "REGRESSION-CLASS BUG: facts leaked into the behavior instructions "
+                "column -- the two fields must stay on separate tracks"
             )
-            print("PASS: detailed_instructions reached the facts block only, not the behavior prompt")
-
-            first_write_prompt = tenant.ai_system_prompt
+            print("PASS: detailed_instructions reached the facts block only, not the behavior column")
 
         print("\n=== 2. Resubmitting with DIFFERENT ai_instructions must UPDATE, not duplicate ===")
         async with get_system_session() as session:
@@ -187,19 +200,18 @@ async def main() -> None:
 
         async with get_tenant_session(tenant_id) as session:
             tenant = await session.get(Tenant, tenant_id)
-            assert OBJECTION_INSTRUCTIONS_V2 in tenant.ai_system_prompt, (
-                "second submission's ai_instructions never took effect"
+            assert tenant.custom_ai_instructions == OBJECTION_INSTRUCTIONS_V2, (
+                f"second submission's ai_instructions never took effect, or the column "
+                f"holds more than just the latest value: {tenant.custom_ai_instructions!r}"
             )
-            assert OBJECTION_INSTRUCTIONS_V1 not in tenant.ai_system_prompt, (
+            assert OBJECTION_INSTRUCTIONS_V1 not in tenant.custom_ai_instructions, (
                 "REGRESSION: the old instructions are still present -- resubmitting "
                 "onboarding accumulates duplicate/contradictory behavior instructions "
                 "instead of replacing them (e.g. both 'never discount' and "
                 "'offer 10% discount' would be live at once)"
             )
-            assert len(tenant.ai_system_prompt) < len(first_write_prompt) + len(OBJECTION_INSTRUCTIONS_V2), (
-                "prompt grew roughly by a full extra copy -- looks like accumulation, not replacement"
-            )
-            print("PASS: resubmission replaced the instructions in place, no duplication")
+            print("PASS: resubmission replaced the instructions in place, no duplication "
+                  "(exact-equality check, not just a substring match)")
 
         print("\n=== 3. Real LLMInvokerWorker pipeline: does the objection instruction "
               "reach the exact prompt sent to the model for a real objection message? ===")

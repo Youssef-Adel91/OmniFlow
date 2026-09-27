@@ -28,6 +28,8 @@ export interface TenantSettings {
   whatsapp_waba_id?:         string | null;
   logo_url?:                 string | null;
   ai_system_prompt?:         string | null;
+  /** Tone/objection-handling/closing-sale guidance, distinct from ai_system_prompt. */
+  custom_ai_instructions?:   string | null;
 }
 
 /**
@@ -60,6 +62,7 @@ function normalizeSettings(raw: any): TenantSettings {
     whatsapp_waba_id:         raw?.whatsapp_waba_id ?? null,
     logo_url:                 raw?.logo_url ?? null,
     ai_system_prompt:         raw?.ai_system_prompt ?? null,
+    custom_ai_instructions:  raw?.custom_ai_instructions ?? null,
   };
 }
 
@@ -84,14 +87,18 @@ export async function updateSettings(
 }
 
 /**
- * Update the tenant's AI Personality (system prompt).
- * Requires admin role.
+ * Update the tenant's AI Personality (system prompt) and, optionally, the
+ * distinct custom AI behavior instructions (tone/objection-handling/closing
+ * guidance). Pass `customInstructions` as `undefined` to leave it untouched,
+ * or `""` to explicitly clear it. Requires admin role.
  */
 export async function updateAiPersonality(
   systemPrompt: string,
+  customInstructions?: string,
 ): Promise<TenantSettings> {
   const { data } = await apiClient.patch<any>("/settings/ai-personality", {
     system_prompt: systemPrompt,
+    ...(customInstructions !== undefined ? { custom_instructions: customInstructions } : {}),
   });
   return normalizeSettings(data);
 }

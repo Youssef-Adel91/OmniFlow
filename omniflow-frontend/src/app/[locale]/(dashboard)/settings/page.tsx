@@ -108,6 +108,10 @@ export default function SettingsPage() {
 
   // ── tab 3 — AI personality ────────────────────────────────────────────────
   const [aiPrompt, setAiPrompt]               = useState("");
+  // Distinct from aiPrompt (base identity/tone): tone/objection-handling/
+  // closing-sale guidance, stored in its own Tenant.custom_ai_instructions
+  // column (see IMPLEMENTATION_STATUS.md) and composed together server-side.
+  const [customInstructions, setCustomInstructions] = useState("");
   const [aiSaving, setAiSaving]               = useState(false);
   const [aiSaveError, setAiSaveError]         = useState<string | null>(null);
   const [aiSaveSuccess, setAiSaveSuccess]     = useState(false);
@@ -126,6 +130,7 @@ export default function SettingsPage() {
     setBusinessName(s.business_name ?? "");
     setPhoneNumberId(s.whatsapp_phone_number_id ?? "");
     setAiPrompt(s.ai_system_prompt ?? "");
+    setCustomInstructions(s.custom_ai_instructions ?? "");
     if (s.logo_url) setLogoPreview(s.logo_url);
     // Keep the sidebar tenant badge in sync
     updateTenant({
@@ -202,7 +207,7 @@ export default function SettingsPage() {
     setAiSaveError(null);
     setAiSaveSuccess(false);
     try {
-      const updated = await updateAiPersonality(aiPrompt.trim());
+      const updated = await updateAiPersonality(aiPrompt.trim(), customInstructions.trim());
       applySettings(updated);
       setAiSaveSuccess(true);
     } catch (err: any) {
@@ -557,7 +562,7 @@ export default function SettingsPage() {
                     rows={12}
                     value={aiPrompt}
                     onChange={(e) => setAiPrompt(e.target.value)}
-                    placeholder="مثال: أنت مساعد مبيعات محترف يعمل لدى {اسم الشركة}. تتحدث بأسلوب ودي ومهني باللغة العربية. إذا اعترض العميل على السعر، اذكر مزايا الجودة والضمان قبل أي خصم. اسأل دائماً إذا كان يريد إتمام الطلب الآن..."
+                    placeholder="مثال: أنت مساعد عقاري محترف يعمل لدى {اسم الشركة}. تتحدث بأسلوب ودي ومهني باللغة العربية..."
                     className={textareaClass}
                     dir="rtl"
                     maxLength={8000}
@@ -575,10 +580,42 @@ export default function SettingsPage() {
                       <li>اذكر اللهجة المفضلة (فصحى / عامية سعودية)</li>
                       <li>حدد السلوك عند عدم معرفة الإجابة</li>
                       <li>ضع قيوداً على المواضيع خارج نطاق العمل</li>
-                      <li>وضّح كيفية التعامل مع تردد العميل أو اعتراضه على السعر</li>
-                      <li>حدد كيف يوجّه المساعد المحادثة نحو إتمام عملية الشراء</li>
-                      <li>أضف أي أسلوب بيع خاص بمجالك (مثال: عرض التقسيط، التركيز على الضمان، إلخ)</li>
                     </ul>
+                  </div>
+
+                  {/* Distinct from the identity/tone field above: specific
+                      behavior guidance, stored in its own column and
+                      composed together server-side (get_tenant_persona). */}
+                  <div className="pt-2">
+                    <div className="flex items-center justify-between mb-2">
+                      <label className="block text-sm font-medium text-gray-300">
+                        تعليمات خاصة لسلوك المساعد مع العملاء{" "}
+                        <span className="text-gray-500 font-normal">(اختياري)</span>
+                      </label>
+                      <span className="text-xs text-gray-500">
+                        {customInstructions.length.toLocaleString("ar")} / {(4000).toLocaleString("ar")}
+                      </span>
+                    </div>
+                    <textarea
+                      id="custom-ai-instructions"
+                      rows={8}
+                      value={customInstructions}
+                      onChange={(e) => setCustomInstructions(e.target.value)}
+                      placeholder={
+                        "مثال: إذا اعترض العميل على السعر، اذكر مزايا الجودة والضمان قبل أي خصم. اسأل دائماً إذا كان يريد إتمام الطلب الآن قبل إنهاء المحادثة. لا تناقش أسعار المنافسين."
+                      }
+                      className={textareaClass}
+                      dir="rtl"
+                      maxLength={4000}
+                    />
+                    <div className="bg-white/5 border border-white/10 rounded-xl p-4 mt-3 text-sm text-gray-400 space-y-1">
+                      <p className="text-gray-300 font-medium mb-2">💡 أمثلة على ما يمكن كتابته هنا:</p>
+                      <ul className="list-disc list-inside space-y-1 text-xs">
+                        <li>كيفية التعامل مع تردد العميل أو اعتراضه على السعر</li>
+                        <li>كيف يوجّه المساعد المحادثة نحو إتمام عملية الشراء</li>
+                        <li>أي أسلوب بيع خاص بمجالك (مثال: عرض التقسيط، التركيز على الضمان)</li>
+                      </ul>
+                    </div>
                   </div>
                 </div>
               )}

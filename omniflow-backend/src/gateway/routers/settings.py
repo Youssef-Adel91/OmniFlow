@@ -78,6 +78,14 @@ class TenantSettings(BaseModel):
         default=None,
         description="Custom AI personality / system prompt for this tenant.",
     )
+    custom_ai_instructions: Optional[str] = Field(
+        default=None,
+        description=(
+            "How the AI should behave with customers: tone, objection "
+            "handling, closing a sale, sector-specific guidance. Composed "
+            "together with ai_system_prompt in get_tenant_persona()."
+        ),
+    )
     logo_url: Optional[str] = Field(
         default=None,
         description="Public S3/MinIO URL of the company logo.",
@@ -131,6 +139,16 @@ class AiPersonalityPatch(BaseModel):
         max_length=8000,
         description="The new system-prompt text that defines the AI's personality.",
     )
+    custom_instructions: Optional[str] = Field(
+        default=None,
+        max_length=4000,
+        description=(
+            "How the AI should behave with customers: tone, objection "
+            "handling, closing a sale, sector-specific guidance. Distinct "
+            "from system_prompt (base identity/persona); pass null/omit to "
+            "leave unchanged, or an empty string to clear it."
+        ),
+    )
 
 
 class LogoUploadResponse(BaseModel):
@@ -150,6 +168,7 @@ def _to_settings(tenant: Tenant) -> TenantSettings:
         max_ai_conversations=tenant.max_ai_conversations,
         meta_access_token=_mask_secret(tenant.meta_access_token),
         ai_system_prompt=tenant.ai_system_prompt,
+        custom_ai_instructions=tenant.custom_ai_instructions,
         logo_url=tenant.logo_url,
         whatsapp_display_phone_number=tenant.whatsapp_display_phone_number,
     )
@@ -260,11 +279,13 @@ async def update_settings_endpoint(
     "/ai-personality",
     response_model=TenantSettings,
     status_code=status.HTTP_200_OK,
-    summary="Update AI Personality (system prompt)",
+    summary="Update AI Personality (system prompt + custom behavior instructions)",
     description=(
-        "Replaces the tenant's custom AI system prompt. This overrides the "
-        "global default and is injected as the first system message in every "
-        "LLM call for this tenant. Requires the `admin` role."
+        "Replaces the tenant's custom AI system prompt (base identity/tone), "
+        "and optionally the separate custom_ai_instructions field (tone, "
+        "objection handling, closing a sale, sector-specific guidance). Both "
+        "are composed together and injected as the first system message in "
+        "every LLM call for this tenant. Requires the `admin` role."
     ),
 )
 async def update_ai_personality_endpoint(
@@ -276,6 +297,10 @@ async def update_ai_personality_endpoint(
 
     tenant = await _load_tenant(session, user.tenant_id)
     tenant.ai_system_prompt = body.system_prompt.strip()
+    if body.custom_instructions is not None:
+        # Empty string is a deliberate clear; None (the field's default)
+        # means "leave whatever is already there untouched".
+        tenant.custom_ai_instructions = body.custom_instructions.strip() or None
 
     await session.flush()
     await session.refresh(tenant)
@@ -284,6 +309,7 @@ async def update_ai_personality_endpoint(
         "ai_personality_updated",
         tenant_id=str(user.tenant_id),
         prompt_length=len(body.system_prompt),
+        custom_instructions_updated=body.custom_instructions is not None,
     )
     return _to_settings(tenant)
 

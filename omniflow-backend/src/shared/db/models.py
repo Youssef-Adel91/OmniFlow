@@ -157,6 +157,16 @@ class Tenant(Base, TimestampMixin):
         nullable=True,
         comment="Custom AI personality / system prompt override for this tenant",
     )
+    custom_ai_instructions: Mapped[Optional[str]] = mapped_column(
+        Text,
+        nullable=True,
+        comment=(
+            "How the AI should behave with customers: tone, objection handling, "
+            "closing a sale, sector-specific guidance. Distinct from "
+            "ai_system_prompt (base identity/persona) -- composed together in "
+            "company_context.get_tenant_persona()."
+        ),
+    )
     logo_url: Mapped[Optional[str]] = mapped_column(
         String(1000),
         nullable=True,

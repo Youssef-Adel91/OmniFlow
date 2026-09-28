@@ -99,6 +99,7 @@ dependencies = [
   "opentelemetry-exporter-otlp-proto-grpc>=1.27.0",  # matches the :4317 gRPC OTLP endpoint used locally
   "prometheus-client>=0.21.0",
   "prometheus-fastapi-instrumentator>=7.0.0",
+  "sentry-sdk>=2.18.0",              # shared/observability/tracing.py's setup_sentry() -- no-ops without a DSN
   "structlog>=24.4.0",              # Structured JSON logging
 
   # ─── Payment Integrations ─────────────────────────────────────

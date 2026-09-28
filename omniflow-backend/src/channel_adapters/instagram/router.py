@@ -17,11 +17,17 @@ If Meta does not receive 200 within the timeout, it will:
   2. Eventually disable the webhook if failures persist
 
 Implementation strategy:
-  1. Verify hub token on GET (simple compare — no HMAC needed for this adapter)
-  2. Check object == "page" on POST
-  3. Route each entry to _process_messaging_event() or _process_feed_change()
-  4. Normalize to CanonicalInboundEvent → publish to Kafka
-  5. Return 200 OK immediately (BackgroundTasks handle processing after response)
+  1. Verify hub token on GET (simple compare)
+  2. Verify X-Hub-Signature-256 on POST (HMAC-SHA256 over the raw body,
+     using the same META_WEBHOOK_HMAC_SECRET as the WhatsApp adapter —
+     Meta signs every webhook delivery for an App the same way regardless
+     of product). A real gap found and fixed 2026-09-28: this endpoint had
+     no signature check at all, unlike WhatsApp's, so anyone who found the
+     URL could POST fake events and have them processed as real ones.
+  3. Check object == "page" on POST
+  4. Route each entry to _process_messaging_event() or _process_feed_change()
+  5. Normalize to CanonicalInboundEvent → publish to Kafka
+  6. Return 200 OK immediately (BackgroundTasks handle processing after response)
 
 Pydantic models:
   - MetaMessagingEntry   — entry.messaging[] for DMs
@@ -37,7 +43,7 @@ from datetime import datetime, timezone
 from typing import Any
 
 import structlog
-from fastapi import APIRouter, BackgroundTasks, Query, Request, Response, status
+from fastapi import APIRouter, BackgroundTasks, Header, HTTPException, Query, Request, Response, status
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field, ValidationError
 
@@ -50,6 +56,7 @@ from src.shared.db.persistence import persist_inbound_message
 from src.shared.db.session import get_system_session
 from src.shared.events.canonical import CanonicalInboundEvent
 from src.shared.kafka.producer import kafka_producer
+from src.shared.security import verify_hmac_signature
 
 logger = structlog.get_logger(__name__)
 settings = get_settings()
@@ -214,12 +221,14 @@ async def verify_webhook(
 async def receive_meta_event(
     request: Request,
     background_tasks: BackgroundTasks,
+    x_hub_signature_256: str | None = Header(default=None, alias="X-Hub-Signature-256"),
 ) -> JSONResponse:
     """
     Core ingestion handler for all Meta page events.
 
     Flow:
-        1. Read raw bytes → log → parse JSON → validate with Pydantic.
+        1. Read raw bytes, verify X-Hub-Signature-256, then log → parse JSON
+           → validate with Pydantic.
         2. Validate top-level object == "page".
         3. For each entry, dispatch:
            a. messaging[] events → Messenger / Instagram DMs
@@ -228,20 +237,44 @@ async def receive_meta_event(
         5. Return {"status": "ok"} immediately — ALWAYS, even on errors.
 
     Error handling:
+        - Invalid signature: HTTP 403 immediately, before any parsing or
+          logging of the payload — this is the one case that does NOT
+          return 200, since an unsigned request isn't confirmed to be from
+          Meta at all (see module docstring: this check didn't exist before
+          2026-09-28, unlike the WhatsApp adapter's equivalent).
         - Invalid JSON: log raw bytes + return 200 (avoid Meta retries).
         - Pydantic validation error: log + return 200.
         - Wrong object type: log + return 200.
         - Per-entry processing errors: caught in background tasks, never raised here.
     """
-    # ── Step 1: Read & log raw body BEFORE any parsing ────────────────────────
+    # ── Step 1: Read raw body and verify the Meta signature BEFORE anything
+    # else — no logging, parsing, or processing of a payload we haven't
+    # confirmed came from Meta.
+    raw_body: bytes = await request.body()
+    if not verify_hmac_signature(raw_body, x_hub_signature_256 or "", settings.meta_webhook_hmac_secret):
+        logger.warning(
+            "meta_webhook_rejected_bad_signature",
+            remote=request.client.host if request.client else "unknown",
+        )
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail={
+                "code": "INVALID_SIGNATURE",
+                "message": (
+                    "Webhook signature verification failed. "
+                    "Ensure X-Hub-Signature-256 matches the payload HMAC."
+                ),
+            },
+        )
+
+    # ── Step 2: Log raw body BEFORE parsing ────────────────────────────────────
     # This is the most important debug step: we see exactly what Meta sent
     # even if Pydantic or JSON parsing fails.
     try:
-        raw_body: bytes = await request.body()
         raw_text: str = raw_body.decode("utf-8", errors="replace")
         print(f"=== INCOMING WEBHOOK ===\n{raw_text}")
     except Exception as read_exc:
-        print(f"[META WEBHOOK] [ERROR] Failed to read request body: {read_exc}")
+        print(f"[META WEBHOOK] [ERROR] Failed to decode request body: {read_exc}")
         logger.error("meta_webhook_body_read_error", error=str(read_exc))
         return JSONResponse(status_code=200, content={"status": "ok"})
 
@@ -252,7 +285,7 @@ async def receive_meta_event(
         body_preview=raw_text[:500],
     )
 
-    # ── Step 2: Parse JSON ────────────────────────────────────────────────────
+    # ── Step 3: Parse JSON ────────────────────────────────────────────────────
     try:
         body_dict: dict[str, Any] = json.loads(raw_body)
     except json.JSONDecodeError as json_exc:
@@ -264,7 +297,7 @@ async def receive_meta_event(
         )
         return JSONResponse(status_code=200, content={"status": "ok"})
 
-    # ── Step 3: Validate with Pydantic ────────────────────────────────────────
+    # ── Step 4: Validate with Pydantic ────────────────────────────────────────
     try:
         payload = MetaWebhookPayload.model_validate(body_dict)
     except ValidationError as val_exc:
@@ -276,7 +309,7 @@ async def receive_meta_event(
         )
         return JSONResponse(status_code=200, content={"status": "ok"})
 
-    # ── Step 4: Validate top-level object type ────────────────────────────────
+    # ── Step 5: Validate top-level object type ────────────────────────────────
     print(f"[META WEBHOOK] [SUCCESS] object={payload.object!r}, entries={len(payload.entry)}")
     
     if payload.object != "page":
@@ -286,7 +319,7 @@ async def receive_meta_event(
         )
         return JSONResponse(status_code=200, content={"status": "ok"})
 
-    # ── Step 5: Dispatch each entry ───────────────────────────────────────────
+    # ── Step 6: Dispatch each entry ───────────────────────────────────────────
     for entry in payload.entry:
         print(f"[META WEBHOOK]   entry.id={entry.id!r}  messaging={len(entry.messaging)}  changes={len(entry.changes)}")
 

@@ -706,6 +706,26 @@ Prompted by the client running Sentry's own agent-plugin installer and handing o
 
 **What's still open — the part only the client can finish**: a real Sentry project + DSN. The org slug/run-code pair that started this is for Sentry's *interactive* onboarding (auto-provisioning a project via MCP), which this session can't complete without that connector. The simpler, code-independent path: create a project in the Sentry web UI under org `youssef-7l`, copy its DSN from Project Settings → Client Keys (DSN), and drop it into `SENTRY_DSN` in the real deployment's `.env` — `setup_sentry()` picks it up with no further code changes needed. Item 17 in the scorecard updated accordingly.
 
+### Instagram/Messenger webhook had no signature verification — found and fixed — 2026-09-28
+
+The client asked me to audit every place `META_WEBHOOK_HMAC_SECRET` (or any variable holding the same value) is used in the code, to confirm a secret rotation actually took effect everywhere, not just in one place. The direct answer, and what the audit turned up:
+
+**Where `META_WEBHOOK_HMAC_SECRET` is actually consumed — exactly one place**: `channel_adapters/whatsapp/security.py`, loaded once from `settings.meta_webhook_hmac_secret` at module import time, used only to verify the WhatsApp webhook's `X-Hub-Signature-256` header. No hardcoded copies of the value exist anywhere in source (consistent with the earlier full-repo `detect-secrets` sweep and the earlier full-git-history sweep, both zero matches) — it's sourced from `Settings` in the one place that uses it, so rotating it in `.env`/the real deployment's environment is sufficient on its own for that one consumer. A previous session already found and fixed a *different* bug in this area (a duplicate `META_WEBHOOK_HMAC_SECRET=` line in `.env`, second silently shadowing the first) — re-confirmed during this audit that only one line exists now, that bug hasn't regressed.
+
+**A separate, confusingly-similar field exists and is dead**: `Settings.meta_app_secret` (`META_APP_SECRET` in `.env`) is declared but never read anywhere in `src/` — currently `mock` in both `.env` and `.env.example`. Not a live risk (nothing consumes it, so a stale value there doesn't matter), but worth knowing it is *not* what protects anything, in case it gets wired up later without realizing it's currently a placeholder.
+
+**The real finding — a genuine security gap, unrelated to rotation, fixed regardless**: the Instagram/Messenger webhook (`channel_adapters/instagram/router.py`, `POST /api/v1/webhooks/meta`) had **no signature verification of any kind**. Its own docstring said so explicitly ("no HMAC needed for this adapter") — which is incorrect: Meta signs every webhook delivery for an App with the same App Secret regardless of which product (WhatsApp, Instagram, Messenger) triggered it, exactly like the WhatsApp adapter's own docstring states. This meant anyone who found the webhook URL could POST a fabricated payload — a fake inbound DM, a fake page comment — and have it processed as a genuine Meta event (persisted, published to Kafka, and answered by the AI), completely independent of whether the HMAC secret was ever rotated, because nothing was checking it on this endpoint at all.
+
+**Fixed**: added the same `X-Hub-Signature-256` check the WhatsApp adapter already had, reusing the existing generic `shared/security/hmac_verify.verify_hmac_signature()` utility (not a copy-pasted reimplementation) against the same `settings.meta_webhook_hmac_secret`. Rejects with HTTP 403 before any logging or parsing of the payload — an unsigned request isn't confirmed to be from Meta, so it gets no different treatment than a malicious one.
+
+**Verified against the real app, not a reimplementation** — new [`scripts/validate_instagram_webhook_signature.py`](omniflow-backend/scripts/validate_instagram_webhook_signature.py), booting the real `create_app()` through a real ASGI transport and hitting the real `/api/v1/webhooks/meta` route:
+1. No signature header → 403 `INVALID_SIGNATURE`.
+2. Well-formed but wrong signature → 403.
+3. A signature that's genuinely valid *for a different payload* (tampered body, same header) → 403 — proves the check verifies the actual bytes received, not just "a signature was present."
+4. A correctly computed HMAC-SHA256 signature over the real payload → 200, reaches normal processing.
+
+All four pass. Full backend suite (37 tests) still passes unchanged. This has zero test coverage before this fix (no existing test or validator touched the Instagram router at all), which is likely why it went unnoticed.
+
 ## Next steps and known gaps
 
 1. Real database inbox/report integration and synthetic Kafka/Redis transport checks pass. Next validate the authenticated browser journey and the combined worker flow; the inbox validator still mocks transport/channel boundaries.

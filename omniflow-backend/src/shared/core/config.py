@@ -334,6 +334,13 @@ class Settings(BaseSettings):
     otel_exporter_otlp_endpoint: str = "http://localhost:4317"
     prometheus_enabled: bool = True
     sentry_dsn: str = ""
+    # .env's SENTRY_ENVIRONMENT=${APP_ENV} is resolved by python-dotenv's own
+    # ${VAR} interpolation (verified) -- empty here is just a safety default
+    # for a .env-less environment (e.g. the test suite, which sets
+    # env_file=None); setup_sentry() falls back to settings.app_env either way.
+    sentry_environment: str = ""
+    sentry_traces_sample_rate: float = 0.1
+    sentry_profiles_sample_rate: float = 0.1
 
     # ── Feature Flags ─────────────────────────────────────────────────────────
     # Item 14 (launch readiness): no Whisper/Vision worker was ever built

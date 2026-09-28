@@ -48,7 +48,7 @@ from sqlalchemy.exc import IntegrityError, OperationalError, SQLAlchemyError
 from src.shared.core.config import get_settings
 from src.shared.db.repository import ConversationConflictError
 from src.shared.kafka.producer import kafka_producer
-from src.shared.observability.tracing import setup_opentelemetry
+from src.shared.observability.tracing import setup_opentelemetry, setup_sentry
 from src.shared.redis_client.client import redis_mgr
 from src.gateway.routers import health as health_router
 from src.gateway.routers import conversations as conversations_router
@@ -119,8 +119,9 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
             tip="Start Redis via 'docker compose up -d redis' for full functionality.",
         )
 
-    # ── Item 17: OpenTelemetry tracing ──────────────────────────────────────────
+    # ── Item 17: OpenTelemetry tracing + Sentry error tracking ──────────────────
     setup_opentelemetry(settings, app)
+    setup_sentry(settings)
 
     if settings.is_production:
         checks = await health_router.dependency_status()

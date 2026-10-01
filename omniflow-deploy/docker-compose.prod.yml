@@ -185,8 +185,9 @@ services:
   # Tag 2025.4.22 is the last one that still ships the web console; newer tags
   # (2025.7.x) start no console on :9001. TRADE-OFF: the bitnamilegacy repo is
   # frozen -- it will never receive security updates -- so before real
-  # production traffic decide on a maintained S3 backend (AWS S3 works as-is:
-  # leave MINIO_ENDPOINT blank).
+  # production traffic decide on a maintained S3 backend -- tracked as an open
+  # item in IMPLEMENTATION_STATUS.md (the app targets real AWS S3 when both
+  # MINIO_ENDPOINT and S3_ENDPOINT_URL are blank; not yet tested against real S3).
   minio:
     image: bitnamilegacy/minio:2025.4.22-debian-12-r1
     container_name: prod-minio

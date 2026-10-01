@@ -13,12 +13,20 @@ import {
   X,
   Zap,
   Building2,
+  Link2,
+  ChevronDown,
+  AlertCircle,
 } from "lucide-react";
 // Auth is fully handled by Clerk: `apiClient` attaches the Clerk bearer token
 // automatically, and `clerkMiddleware` protects this route. There is no local
 // token/cookie to write here anymore (the old `_writeAuthCookie` helper and the
 // legacy tenantStore auth thunks were removed in the Sprint 14 unification).
 import { apiClient } from "@/lib/api/client";
+import {
+  startFacebookConnect,
+  selectFacebookPage,
+  type FacebookPageOption,
+} from "@/lib/api/facebookOauth";
 
 // ── Simple in-page Toast ─────────────────────────────────────────────────────
 type ToastType = "success" | "error";
@@ -125,6 +133,21 @@ export default function OnboardingPage() {
   const [isUploadingFiles, setIsUploadingFiles] = useState(false);
   const businessNameValid = businessProfile.businessName.trim().length >= 2;
 
+  // "Connect with Facebook" (Messenger + Instagram) -- replaces a manual
+  // form for this part of onboarding. See lib/api/facebookOauth.ts.
+  const [isConnectingFacebook, setIsConnectingFacebook] = useState(false);
+  const [facebookConnected, setFacebookConnected] = useState<
+    { pageName: string; instagramUsername: string | null } | null
+  >(null);
+  const [facebookPagePicker, setFacebookPagePicker] = useState<
+    { connectionId: string; pages: FacebookPageOption[] } | null
+  >(null);
+  const [isSelectingPage, setIsSelectingPage] = useState(false);
+  // WhatsApp still has no OAuth equivalent yet (Embedded Signup is a later
+  // phase) -- the manual Developer Mode form below stays as the only way to
+  // connect it, just demoted behind this toggle instead of always-visible.
+  const [showManualWhatsappForm, setShowManualWhatsappForm] = useState(false);
+
   // Returns an Arabic label naming the first field over its backend limit,
   // or null if everything fits — used to block submission with one clear
   // toast instead of the raw Pydantic 422 the API would otherwise return.
@@ -198,6 +221,50 @@ export default function OnboardingPage() {
 
   const removeToast = (id: number) => {
     setToasts((prev) => prev.filter((t) => t.id !== id));
+  };
+
+  // ── Connect with Facebook (Messenger + Instagram) ──────────────────────────
+  const handleConnectFacebook = async () => {
+    setIsConnectingFacebook(true);
+    try {
+      const result = await startFacebookConnect();
+      if (result.status === "success") {
+        setFacebookConnected({
+          pageName: result.page_name,
+          instagramUsername: result.instagram_username,
+        });
+        addToast("success", `تم ربط صفحة "${result.page_name}" بنجاح 🎉`);
+      } else if (result.status === "needs_selection") {
+        setFacebookPagePicker({ connectionId: result.connection_id, pages: result.pages });
+      } else if (result.status === "error") {
+        addToast("error", result.message);
+      }
+      // "cancelled" (user closed the popup) — no toast, they clearly meant to stop.
+    } catch (err: any) {
+      const detail = err.response?.data?.detail || "تعذّر بدء عملية الربط بفيسبوك. حاول مرة أخرى.";
+      addToast("error", typeof detail === "string" ? detail : JSON.stringify(detail));
+    } finally {
+      setIsConnectingFacebook(false);
+    }
+  };
+
+  const handleSelectFacebookPage = async (pageId: string) => {
+    if (!facebookPagePicker) return;
+    setIsSelectingPage(true);
+    try {
+      const page = await selectFacebookPage(facebookPagePicker.connectionId, pageId);
+      setFacebookConnected({
+        pageName: page.page_name,
+        instagramUsername: page.instagram_username,
+      });
+      setFacebookPagePicker(null);
+      addToast("success", `تم ربط صفحة "${page.page_name}" بنجاح 🎉`);
+    } catch (err: any) {
+      const detail = err.response?.data?.detail || "تعذّر إتمام ربط الصفحة. حاول مرة أخرى.";
+      addToast("error", typeof detail === "string" ? detail : JSON.stringify(detail));
+    } finally {
+      setIsSelectingPage(false);
+    }
   };
 
   // ── Self-Service Submit ────────────────────────────────────────────────────
@@ -530,15 +597,107 @@ export default function OnboardingPage() {
           <div className="max-w-md mx-auto w-full relative z-10">
             <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-blue-500/10 border border-blue-500/20 text-blue-400 text-sm mb-6">
               <Settings className="w-4 h-4" />
-              <span>Developer Mode</span>
+              <span>الربط الذاتي</span>
             </div>
 
-            <h2 className="text-4xl font-bold mb-4 text-white">الربط الذاتي</h2>
-            <p className="text-gray-400 text-lg leading-relaxed mb-2">
+            <h2 className="text-4xl font-bold mb-4 text-white">ماسنجر وإنستجرام</h2>
+            <p className="text-gray-400 text-lg leading-relaxed mb-6">
+              اربط حسابك على فيسبوك مرة واحدة — هنكتشف صفحاتك وحساب
+              إنستجرام المرتبط تلقائيًا، من غير ما تدخل أي أكواد يدويًا.
+            </p>
+
+            {facebookConnected ? (
+              <div className="bg-green-900/20 border border-green-500/30 rounded-xl p-5 mb-6">
+                <div className="flex items-center gap-2 text-green-400 font-semibold mb-1">
+                  <CheckCircle2 className="w-5 h-5" />
+                  <span>تم الربط: {facebookConnected.pageName}</span>
+                </div>
+                {facebookConnected.instagramUsername && (
+                  <p className="text-sm text-gray-400 mr-7">
+                    حساب إنستجرام المرتبط: @{facebookConnected.instagramUsername}
+                  </p>
+                )}
+                {!facebookConnected.instagramUsername && (
+                  <p className="text-xs text-gray-500 mr-7 mt-1">
+                    لا يوجد حساب إنستجرام تجاري مرتبط بهذه الصفحة حاليًا — يمكنك
+                    ربطه لاحقًا من إعدادات صفحتك على فيسبوك ثم إعادة الربط هنا.
+                  </p>
+                )}
+              </div>
+            ) : facebookPagePicker ? (
+              <div className="bg-[#111827] border border-white/10 rounded-xl p-5 mb-6">
+                <p className="text-sm text-gray-300 mb-3 flex items-center gap-2">
+                  <AlertCircle className="w-4 h-4 text-[#C9A84C] shrink-0" />
+                  لديك أكثر من صفحة فيسبوك — اختر الصفحة اللي عايز تربطها:
+                </p>
+                <div className="space-y-2">
+                  {facebookPagePicker.pages.map((page) => (
+                    <button
+                      key={page.page_id}
+                      type="button"
+                      disabled={isSelectingPage}
+                      onClick={() => handleSelectFacebookPage(page.page_id)}
+                      className="w-full text-right bg-white/5 hover:bg-[#C9A84C]/10 border border-white/10 hover:border-[#C9A84C]/30 rounded-lg p-3 transition-all disabled:opacity-60 disabled:cursor-not-allowed flex items-center justify-between"
+                    >
+                      <span>
+                        <span className="block font-medium text-white">{page.page_name}</span>
+                        {page.instagram_username && (
+                          <span className="block text-xs text-gray-500">
+                            @{page.instagram_username}
+                          </span>
+                        )}
+                      </span>
+                      {isSelectingPage ? (
+                        <Loader2 className="w-4 h-4 animate-spin text-gray-400" />
+                      ) : (
+                        <ArrowLeft className="w-4 h-4 text-gray-500" />
+                      )}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            ) : (
+              <button
+                type="button"
+                onClick={handleConnectFacebook}
+                disabled={isConnectingFacebook}
+                className="w-full bg-[#1877F2] hover:bg-[#1465D1] text-white py-4 rounded-xl font-bold text-lg transition-all flex items-center justify-center gap-2 mb-6 disabled:opacity-60 disabled:cursor-not-allowed"
+              >
+                {isConnectingFacebook ? (
+                  <Loader2 className="w-5 h-5 animate-spin" />
+                ) : (
+                  <Link2 className="w-5 h-5" />
+                )}
+                <span>اربط بفيسبوك</span>
+              </button>
+            )}
+
+            <div className="border-t border-white/10 my-6" />
+
+            <button
+              type="button"
+              onClick={() => setShowManualWhatsappForm((v) => !v)}
+              className="w-full flex items-center justify-between text-gray-400 hover:text-gray-200 transition-colors mb-2"
+            >
+              <span className="flex items-center gap-2 text-sm font-medium">
+                <Key className="w-4 h-4" />
+                ربط واتساب يدويًا (Developer Mode)
+              </span>
+              <ChevronDown
+                className={`w-4 h-4 transition-transform ${showManualWhatsappForm ? "rotate-180" : ""}`}
+              />
+            </button>
+            <p className="text-xs text-gray-600 mb-4">
+              واتساب لسه محتاج ربط يدوي حاليًا (Embedded Signup زي فيسبوك قريبًا).
+            </p>
+
+            {showManualWhatsappForm && (
+            <>
+            <p className="text-gray-400 text-base leading-relaxed mb-2">
               إذا كان لديك حساب Meta Business Manager موثق وأرقام جاهزة، يمكنك
               إدخال المفاتيح مباشرة للبدء فوراً.
             </p>
-            <p className="text-gray-500 text-sm leading-relaxed mb-8">
+            <p className="text-gray-500 text-sm leading-relaxed mb-6">
               القيم الثلاثة دي كلها بتلاقيها في نفس الصفحة:{" "}
               <a
                 href="https://developers.facebook.com/docs/whatsapp/cloud-api/get-started"
@@ -648,6 +807,8 @@ export default function OnboardingPage() {
                 )}
               </button>
             </form>
+            </>
+            )}
           </div>
         </div>
       </div>

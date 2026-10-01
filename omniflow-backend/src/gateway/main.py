@@ -59,6 +59,7 @@ from src.gateway.routers import broadcasts as broadcasts_router
 from src.gateway.routers import customers as customers_router
 from src.gateway.routers import dashboard as dashboard_router
 from src.gateway.routers import knowledge as knowledge_router
+from src.gateway.routers import facebook_oauth as facebook_oauth_router
 from src.gateway.routers import reports as reports_router
 from src.gateway.routers import settings as settings_router
 from src.gateway.routers import support as support_router
@@ -411,6 +412,7 @@ def _register_routers(app: FastAPI) -> None:
     app.include_router(users_router.router)        # /api/v1/users
     app.include_router(dashboard_router.router)    # /api/v1/dashboard
     app.include_router(knowledge_router.router)    # /api/v1/knowledge
+    app.include_router(facebook_oauth_router.router)  # /api/v1/integrations/facebook
 
 
 # ══════════════════════════════════════════════════════════════════════════════

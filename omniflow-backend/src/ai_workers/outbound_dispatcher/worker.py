@@ -51,6 +51,7 @@ from src.shared.core.enums import Channel
 from src.shared.db.persistence import persist_outbound_message, update_message_delivery_status
 from src.shared.kafka.consumer import BaseKafkaConsumer
 from src.shared.redis_client.client import redis_mgr
+from src.shared.security.crypto import decrypt_secret
 from src.shared.services.conversation_state import load_conversation_state
 from src.shared.db.session import get_tenant_session
 from src.shared.db.models import Tenant, Message, CompanyProfile, Conversation
@@ -157,11 +158,19 @@ async def _resolve_instagram_credentials(tenant_id: uuid.UUID) -> str | None:
     in this P0 pass (one Page token serving every tenant). A tenant with
     nothing configured simply cannot send yet, which is the correct, honest
     failure mode until real per-tenant onboarding for this channel exists.
+
+    The column holds a Fernet-encrypted token when written by the "Connect
+    with Facebook" OAuth flow (gateway/routers/facebook_oauth.py) -- try to
+    decrypt first. A token written by hand through the onboarding PATCH
+    schema's instagram_page_access_token field predates that flow and is
+    still plaintext, so a decrypt failure falls back to using the raw
+    column value as-is rather than treating it as broken.
     """
     async with get_tenant_session(tenant_id) as session:
         tenant = await session.scalar(select(Tenant).where(Tenant.tenant_id == tenant_id))
         if tenant and tenant.instagram_page_access_token:
-            return tenant.instagram_page_access_token
+            decrypted = decrypt_secret(tenant.instagram_page_access_token)
+            return decrypted if decrypted is not None else tenant.instagram_page_access_token
     return None
 
 

@@ -39,6 +39,11 @@ fi
 QDRANT_CONTAINER="${QDRANT_CONTAINER:-omniflow-qdrant}"
 MINIO_CONTAINER="${MINIO_CONTAINER:-omniflow-minio}"
 NETWORK="${NETWORK:-omniflow-net}"
+# `minio/mc` no longer exists on Docker Hub. Bitnami's archived MinIO image bundles
+# `mc` and pulls anonymously (see docker-compose.prod.yml). It runs as uid 1001
+# instead of root, so mc invocations MUST use `--user 0`: as uid 1001, `mc mirror` into a
+# root-owned host dir exits 0 while writing nothing (verified) -- a silent empty backup.
+MC_IMAGE="${MC_IMAGE:-bitnamilegacy/minio:2025.4.22-debian-12-r1}"
 QDRANT_URL="${QDRANT_URL:-http://localhost:6333}"
 QDRANT_API_KEY="${QDRANT_API_KEY:-}"
 MINIO_ROOT_USER="${MINIO_ROOT_USER:-minioadmin}"
@@ -66,7 +71,7 @@ qcurl() { curl -s -H "api-key: ${QDRANT_API_KEY}" "$@"; }
 mc_run() {
     docker run --rm --network "$NETWORK" \
         -e MC_HOST_myminio="http://${MINIO_ROOT_USER}:${MINIO_ROOT_PASSWORD}@minio:9000" \
-        minio/mc "$@"
+        --user 0 --entrypoint mc "$MC_IMAGE" "$@"
 }
 
 # ═════════════════════════════════════════════════════════════════════════════
@@ -144,7 +149,7 @@ run_minio_drill() {
     mc_run mb "myminio/${bucket}" >/dev/null
     docker run --rm --network "$NETWORK" -v "$(_docker_mount_path "$tmp_dir_host"):/data" \
         -e MC_HOST_myminio="http://${MINIO_ROOT_USER}:${MINIO_ROOT_PASSWORD}@minio:9000" \
-        minio/mc cp /data/drill1.txt /data/drill2.txt "myminio/${bucket}/" >/dev/null
+        --user 0 --entrypoint mc "$MC_IMAGE" cp /data/drill1.txt /data/drill2.txt "myminio/${bucket}/" >/dev/null
 
     log "── MinIO: mirroring to backup bucket ──"
     mc_run mb "myminio/${backup_bucket}" >/dev/null
@@ -168,7 +173,7 @@ run_minio_drill() {
     mkdir -p "$restored_dir"
     docker run --rm --network "$NETWORK" -v "$(_docker_mount_path "$tmp_dir_host"):/data" \
         -e MC_HOST_myminio="http://${MINIO_ROOT_USER}:${MINIO_ROOT_PASSWORD}@minio:9000" \
-        minio/mc cp "myminio/${bucket}/drill1.txt" "myminio/${bucket}/drill2.txt" /data/restored/ >/dev/null 2>&1
+        --user 0 --entrypoint mc "$MC_IMAGE" cp "myminio/${bucket}/drill1.txt" "myminio/${bucket}/drill2.txt" /data/restored/ >/dev/null 2>&1
 
     if diff -q "${tmp_dir_host}/drill1.txt" "${restored_dir}/drill1.txt" >/dev/null 2>&1 \
             && diff -q "${tmp_dir_host}/drill2.txt" "${restored_dir}/drill2.txt" >/dev/null 2>&1; then

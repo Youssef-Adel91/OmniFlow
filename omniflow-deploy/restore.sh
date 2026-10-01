@@ -31,6 +31,11 @@ fi
 
 QDRANT_CONTAINER="${QDRANT_CONTAINER:-prod-qdrant}"
 MINIO_CONTAINER="${MINIO_CONTAINER:-prod-minio}"
+# `minio/mc` no longer exists on Docker Hub. Bitnami's archived MinIO image bundles
+# `mc` and pulls anonymously (see docker-compose.prod.yml). It runs as uid 1001
+# instead of root, so mc invocations MUST use `--user 0`: as uid 1001, `mc mirror` into a
+# root-owned host dir exits 0 while writing nothing (verified) -- a silent empty backup.
+MC_IMAGE="${MC_IMAGE:-bitnamilegacy/minio:2025.4.22-debian-12-r1}"
 
 log()  { echo "[$(date '+%Y-%m-%d %H:%M:%S')] $*"; }
 fail() { echo "[$(date '+%Y-%m-%d %H:%M:%S')] ERROR: $*" >&2; exit 1; }
@@ -89,7 +94,7 @@ restore_minio() {
     log "Mirroring myminio/${source} -> myminio/${destination}"
     docker run --rm --network "$net" \
         -e MC_HOST_myminio="http://${MINIO_ROOT_USER:-minio}:${MINIO_ROOT_PASSWORD:-}@minio:9000" \
-        minio/mc mirror --overwrite --quiet "myminio/${source}" "myminio/${destination}" \
+        --user 0 --entrypoint mc "$MC_IMAGE" mirror --overwrite --quiet "myminio/${source}" "myminio/${destination}" \
         || fail "mc mirror restore failed"
 
     log "Restore complete: myminio/${destination}"

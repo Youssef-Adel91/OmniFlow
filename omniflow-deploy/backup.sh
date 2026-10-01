@@ -45,6 +45,11 @@ MINIO_CONTAINER="${MINIO_CONTAINER:-prod-minio}"
 
 MINIO_SOURCE_BUCKET="${MINIO_SOURCE_BUCKET:-omniflow-media}"
 MINIO_BACKUP_BUCKET="${MINIO_BACKUP_BUCKET:-omniflow-backups}"
+# `minio/mc` no longer exists on Docker Hub. Bitnami's archived MinIO image bundles
+# `mc` and pulls anonymously (see docker-compose.prod.yml). It runs as uid 1001
+# instead of root, so mc invocations MUST use `--user 0`: as uid 1001, `mc mirror` into a
+# root-owned host dir exits 0 while writing nothing (verified) -- a silent empty backup.
+MC_IMAGE="${MC_IMAGE:-bitnamilegacy/minio:2025.4.22-debian-12-r1}"
 
 TIMESTAMP="$(date +%Y%m%d_%H%M%S)"
 EXIT_CODE=0
@@ -200,7 +205,7 @@ if container_running "$MINIO_CONTAINER"; then
 
     MC_RUN=(docker run --rm --network "$MINIO_NET"
             -e MC_HOST_myminio="http://${MINIO_ROOT_USER:-minio}:${MINIO_ROOT_PASSWORD:-}@minio:9000"
-            minio/mc)
+            --user 0 --entrypoint mc "$MC_IMAGE")
 
     # 3a. Timestamped in-cluster copies, separated by source bucket.
     for SOURCE_BUCKET in "${SOURCE_BUCKETS[@]}"; do
@@ -223,7 +228,7 @@ if container_running "$MINIO_CONTAINER"; then
         mkdir -p "$LOCAL_DIR"
         if docker run --rm --network "$MINIO_NET" \
                 -e MC_HOST_myminio="http://${MINIO_ROOT_USER:-minio}:${MINIO_ROOT_PASSWORD:-}@minio:9000" \
-                -v "$LOCAL_DIR:/backup" minio/mc \
+                -v "$LOCAL_DIR:/backup" --user 0 --entrypoint mc "$MC_IMAGE" \
                 mirror --overwrite --quiet "myminio/${SOURCE_BUCKET}" /backup; then
             log "✅ MinIO mirrored to host: $LOCAL_DIR"
         else
@@ -269,7 +274,7 @@ prune_path "$BACKUP_ROOT/minio"
 if container_running "$MINIO_CONTAINER"; then
     docker run --rm --network "${MINIO_NET:-omniflow-prod-net}" \
         -e MC_HOST_myminio="http://${MINIO_ROOT_USER:-minio}:${MINIO_ROOT_PASSWORD:-}@minio:9000" \
-        minio/mc rm --recursive --force --older-than "${RETENTION_DAYS}d" \
+        --user 0 --entrypoint mc "$MC_IMAGE" rm --recursive --force --older-than "${RETENTION_DAYS}d" \
         "myminio/${MINIO_BACKUP_BUCKET}" >/dev/null 2>&1 \
         || warn "Could not prune old objects in myminio/${MINIO_BACKUP_BUCKET}."
 fi

@@ -174,36 +174,42 @@ services:
       retries: 5
       start_period: 30s
 
-  # MinIO stopped publishing to Docker Hub (minio/minio was removed there --
-  # confirmed via a real `docker pull`: "repository does not exist") and now
-  # only publishes to quay.io/minio/minio, same release-tag scheme. quay.io
-  # itself is unreachable from this sandbox's network policy, so the exact
-  # tag below could not be re-verified here; confirm it pulls at deploy time.
+  # Object storage. Official MinIO images are not usable as a source here:
+  # `minio/minio` and `minio/mc` no longer exist on Docker Hub (verified with a
+  # real `docker pull`: "repository does not exist"), and `quay.io/minio/*` was
+  # reported as 401 UNAUTHORIZED when pulled anonymously, so the previous
+  # quay.io pin was not usable. `bitnamilegacy/minio` is the archived Bitnami
+  # build of MinIO on Docker Hub: it pulls anonymously, bundles `mc`, and the
+  # pinned tag below was verified end to end (healthcheck, bucket creation,
+  # anonymous-read policy on public/ only, versioning on the vault bucket).
+  # Tag 2025.4.22 is the last one that still ships the web console; newer tags
+  # (2025.7.x) start no console on :9001. TRADE-OFF: the bitnamilegacy repo is
+  # frozen -- it will never receive security updates -- so before real
+  # production traffic decide on a maintained S3 backend -- tracked as an open
+  # item in IMPLEMENTATION_STATUS.md (the app targets real AWS S3 when both
+  # MINIO_ENDPOINT and S3_ENDPOINT_URL are blank; not yet tested against real S3).
   minio:
-    image: quay.io/minio/minio:RELEASE.2024-11-07T00-52-20Z
+    image: bitnamilegacy/minio:2025.4.22-debian-12-r1
     container_name: prod-minio
     restart: always
     logging: *default-logging
     environment:
       MINIO_ROOT_USER: ${MINIO_ROOT_USER}
-      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD}
-    command: server /data
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD}   # Bitnami requires >= 8 chars
     volumes:
-      - minio_prod_data:/data
+      - minio_prod_data:/bitnami/minio/data
     networks:
       - omniflow-prod-net
     healthcheck:
-      test: ["CMD-SHELL", "mc ready local || exit 1"]
+      test: ["CMD-SHELL", "curl -fsS http://localhost:9000/minio/health/live || exit 1"]
       interval: 15s
       timeout: 5s
       retries: 5
       start_period: 20s
 
   minio-init:
-    # Same Docker Hub removal as the minio/minio image above; minio/mc moved
-    # to quay.io/minio/mc too. Left unpinned (`latest`) rather than guessing
-    # a specific release tag that couldn't be verified from this sandbox.
-    image: quay.io/minio/mc:latest
+    # Same image as the server (it bundles `mc`).
+    image: bitnamilegacy/minio:2025.4.22-debian-12-r1
     container_name: prod-minio-init
     restart: "no"
     logging: *default-logging
@@ -225,17 +231,31 @@ services:
     #                     genuinely meant to be hot-linked (logos, avatars,
     #                     WhatsApp-facing media that must be fetchable by Meta).
     # Everything else must be served through a backend-issued pre-signed URL.
+    #
+    # Retries the whole (idempotent) setup: Bitnami's image briefly runs a
+    # temporary server during its own setup, so the healthcheck can pass and
+    # the real server then refuse connections for a moment (measured: 1 of 6
+    # cold starts failed without this).
     entrypoint:
       - /bin/sh
-      - -ec
+      - -c
       - |
-        mc alias set myminio http://minio:9000 "$${MINIO_ROOT_USER}" "$${MINIO_ROOT_PASSWORD}"
-        for bucket in omniflow-media omniflow-backups "$${S3_VAULT_BUCKET}" "$${S3_MEDIA_TEMP_BUCKET}" "$${S3_ASSETS_BUCKET}" "$${S3_KNOWLEDGE_BUCKET}"; do
-          mc mb --ignore-existing "myminio/$$bucket"
-          mc anonymous set none "myminio/$$bucket"
+        init() {
+          mc alias set myminio http://minio:9000 "$${MINIO_ROOT_USER}" "$${MINIO_ROOT_PASSWORD}" || return 1
+          for bucket in omniflow-media omniflow-backups "$${S3_VAULT_BUCKET}" "$${S3_MEDIA_TEMP_BUCKET}" "$${S3_ASSETS_BUCKET}" "$${S3_KNOWLEDGE_BUCKET}"; do
+            mc mb --ignore-existing "myminio/$$bucket" || return 1
+            mc anonymous set none "myminio/$$bucket" || return 1
+          done
+          mc anonymous set download myminio/omniflow-media/public || return 1
+          mc version enable "myminio/$${S3_VAULT_BUCKET}" || return 1
+        }
+        n=0
+        until init; do
+          n=$$((n + 1))
+          if [ "$$n" -ge 20 ]; then echo "minio-init: giving up after $$n attempts" >&2; exit 1; fi
+          echo "minio-init: attempt $$n failed, retrying in 3s" >&2
+          sleep 3
         done
-        mc anonymous set download myminio/omniflow-media/public
-        mc version enable "myminio/$${S3_VAULT_BUCKET}"
     networks:
       - omniflow-prod-net
 

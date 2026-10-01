@@ -149,8 +149,12 @@ services:
       retries: 6
       start_period: 45s
 
+  # Bumped from v1.12.4 to match qdrant-client==1.19.0 (see
+  # requirements-lock.txt) -- the version gap was throwing a real
+  # client/server compatibility UserWarning in live testing. Tag confirmed
+  # to exist on Docker Hub (qdrant/qdrant:v1.19.0) before pinning here.
   qdrant:
-    image: qdrant/qdrant:v1.12.4
+    image: qdrant/qdrant:v1.19.0
     container_name: prod-qdrant
     restart: always
     logging: *default-logging
@@ -170,8 +174,13 @@ services:
       retries: 5
       start_period: 30s
 
+  # MinIO stopped publishing to Docker Hub (minio/minio was removed there --
+  # confirmed via a real `docker pull`: "repository does not exist") and now
+  # only publishes to quay.io/minio/minio, same release-tag scheme. quay.io
+  # itself is unreachable from this sandbox's network policy, so the exact
+  # tag below could not be re-verified here; confirm it pulls at deploy time.
   minio:
-    image: minio/minio:RELEASE.2024-11-07T00-52-20Z
+    image: quay.io/minio/minio:RELEASE.2024-11-07T00-52-20Z
     container_name: prod-minio
     restart: always
     logging: *default-logging
@@ -191,7 +200,10 @@ services:
       start_period: 20s
 
   minio-init:
-    image: minio/mc
+    # Same Docker Hub removal as the minio/minio image above; minio/mc moved
+    # to quay.io/minio/mc too. Left unpinned (`latest`) rather than guessing
+    # a specific release tag that couldn't be verified from this sandbox.
+    image: quay.io/minio/mc:latest
     container_name: prod-minio-init
     restart: "no"
     logging: *default-logging
@@ -344,6 +356,69 @@ services:
         condition: service_healthy
     healthcheck:
       test: ["CMD-SHELL", "grep -q outbound_dispatcher /proc/1/cmdline || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+
+  # Found missing from this file entirely during a real end-to-end test: a
+  # brand-new WhatsApp customer's first message is intercepted by
+  # semantic_router and routed to the vcard.gatekeeper.v1 topic (see
+  # semantic_router/worker.py's VCard gate) -- with no consumer for that
+  # topic deployed, that message would sit unprocessed forever and the
+  # customer would never get a reply, not even the VCard. Same class of gap
+  # as worker-router/-invoker/-dispatcher above; same launch pattern.
+  worker-vcard-gatekeeper:
+    <<: *backend-base
+    container_name: prod-worker-vcard-gatekeeper
+    command: python -m src.ai_workers.vcard_gatekeeper.worker
+    depends_on:
+      redpanda:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "grep -q vcard_gatekeeper /proc/1/cmdline || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+
+  worker-vault:
+    <<: *backend-base
+    container_name: prod-worker-vault
+    command: python -m src.ai_workers.vault_worker.worker
+    depends_on:
+      redpanda:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "grep -q vault_worker /proc/1/cmdline || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+
+  worker-broadcast:
+    <<: *backend-base
+    container_name: prod-worker-broadcast
+    command: python -m src.ai_workers.broadcast_worker.worker
+    depends_on:
+      redpanda:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "grep -q broadcast_worker /proc/1/cmdline || exit 1"]
       interval: 30s
       timeout: 5s
       retries: 3

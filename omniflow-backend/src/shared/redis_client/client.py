@@ -441,6 +441,13 @@ class RedisClientManager:
         except Exception as exc:
             logger.warning("redis_set_raw_error", key=key, error=str(exc))
 
+    async def delete_raw(self, key: str) -> None:
+        """Delete a raw key from the general cache DB (DB 5). Used for one-time-use entries (OAuth state, etc.)."""
+        try:
+            await self._cache.delete(key)
+        except Exception as exc:
+            logger.warning("redis_delete_raw_error", key=key, error=str(exc))
+
     async def set_idempotency_key(self, key: str, ttl: int) -> bool:
         """
         Atomic SET NX (set-if-not-exists) on the idempotency DB (DB 2).

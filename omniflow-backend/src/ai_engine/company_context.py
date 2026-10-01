@@ -50,12 +50,55 @@ _CACHE: dict[str, tuple[float, str | None]] = {}
 # tenant_id (str) → (expires_at_epoch, ai_system_prompt_or_None)
 _PERSONA_CACHE: dict[str, tuple[float, str | None]] = {}
 
+# tenant_id (str) → (expires_at_epoch, business_name_or_None)
+_NAME_CACHE: dict[str, tuple[float, str | None]] = {}
+
 
 def invalidate_company_context(tenant_id: str | uuid.UUID) -> None:
-    """Drop the cached block/persona for a tenant (call after any profile or persona write)."""
+    """Drop the cached block/persona/name for a tenant (call after any profile or persona write)."""
     key = str(tenant_id)
     _CACHE.pop(key, None)
     _PERSONA_CACHE.pop(key, None)
+    _NAME_CACHE.pop(key, None)
+
+
+async def get_tenant_business_name(tenant_id: str | uuid.UUID | None) -> str | None:
+    """
+    Load (and cache) just `Tenant.business_name` -- the cheap lookup L0's
+    deterministic responses need to avoid a hardcoded vertical (see
+    llm_invoker's `_get_l0_response`: those replies used to say "مساعدك
+    العقاري" for every tenant regardless of actual business type, found
+    during a real end-to-end test with a non-real-estate tenant).
+
+    Never raises, same degrade-gracefully contract as `get_company_context`.
+    """
+    if not tenant_id:
+        return None
+
+    key = str(tenant_id)
+    now = time.monotonic()
+
+    cached = _NAME_CACHE.get(key)
+    if cached and cached[0] > now:
+        return cached[1]
+
+    name: str | None = None
+    try:
+        from src.shared.db.models import Tenant  # noqa: PLC0415
+        from src.shared.db.session import get_tenant_session  # noqa: PLC0415
+
+        tenant_uuid = uuid.UUID(key)
+        async with get_tenant_session(tenant_uuid) as session:
+            name = await session.scalar(
+                select(Tenant.business_name).where(Tenant.tenant_id == tenant_uuid)
+            )
+    except Exception as exc:  # noqa: BLE001 — degradation, never a hard failure
+        logger.warning("tenant_business_name_load_failed", tenant_id=key, error=str(exc)[:300])
+        _NAME_CACHE[key] = (now + 30, None)
+        return None
+
+    _NAME_CACHE[key] = (now + _CACHE_TTL_SECONDS, name)
+    return name
 
 
 def _clean(value: Any) -> str:
@@ -286,6 +329,7 @@ __all__ = [
     "compose_system_prompt",
     "format_company_profile",
     "get_company_context",
+    "get_tenant_business_name",
     "get_tenant_persona",
     "invalidate_company_context",
 ]

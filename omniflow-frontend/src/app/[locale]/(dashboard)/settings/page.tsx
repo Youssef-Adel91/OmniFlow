@@ -105,6 +105,13 @@ export default function SettingsPage() {
   const [saveSuccess, setSaveSuccess] = useState(false);
   const [businessName, setBusinessName]           = useState("");
   const [phoneNumberId, setPhoneNumberId]         = useState("");
+  // Item 7: the phone number shown on the VCard sent to new customers --
+  // distinct from whatsapp_phone_number_id (Meta's opaque API identifier,
+  // read-only below). Found missing entirely from the UI during a real
+  // end-to-end test: the backend field/endpoint already existed, but every
+  // new tenant's VCard shipped with no phone number because there was no
+  // way to set this value except a direct API call.
+  const [displayPhoneNumber, setDisplayPhoneNumber] = useState("");
 
   // ── tab 3 — AI personality ────────────────────────────────────────────────
   const [aiPrompt, setAiPrompt]               = useState("");
@@ -129,6 +136,7 @@ export default function SettingsPage() {
     setSettings(s);
     setBusinessName(s.business_name ?? "");
     setPhoneNumberId(s.whatsapp_phone_number_id ?? "");
+    setDisplayPhoneNumber(s.whatsapp_display_phone_number ?? "");
     setAiPrompt(s.ai_system_prompt ?? "");
     setCustomInstructions(s.custom_ai_instructions ?? "");
     if (s.logo_url) setLogoPreview(s.logo_url);
@@ -185,6 +193,9 @@ export default function SettingsPage() {
     try {
       const updated = await updateSettings({
         business_name: businessName.trim(),
+        ...(displayPhoneNumber.trim()
+          ? { whatsapp_display_phone_number: displayPhoneNumber.trim() }
+          : {}),
       });
       applySettings(updated);
       setSaveSuccess(true);
@@ -394,6 +405,26 @@ export default function SettingsPage() {
                     />
                     <p className="text-xs text-gray-500 mt-2">
                       لتغييره استخدم صفحة الربط (Onboarding).
+                    </p>
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium text-gray-300 mb-2">
+                      رقم التواصل الظاهر للعملاء
+                    </label>
+                    <input
+                      type="text"
+                      value={displayPhoneNumber}
+                      onChange={(e) => setDisplayPhoneNumber(e.target.value)}
+                      placeholder="مثال: 0501234567 أو +966501234567"
+                      className={inputClass}
+                      dir="ltr"
+                    />
+                    <p className="text-xs text-gray-500 mt-2">
+                      هذا هو الرقم اللي هيظهر فعليًا في بطاقة التعارف (VCard) اللي بتتبعت
+                      تلقائيًا لأي عميل جديد يراسلك لأول مرة — مختلف عن Phone Number ID (معرّف
+                      تقني من ميتا مش رقم حقيقي). لو سبته فاضي، البطاقة هتتبعت من غير رقم تليفون
+                      فيها خالص.
                     </p>
                   </div>
 

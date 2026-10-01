@@ -213,6 +213,26 @@ class Settings(BaseSettings):
     # Facebook Page ID (numeric string) for tenant resolution
     meta_instagram_page_id: str = ""
 
+    # ── Meta OAuth ("Connect with Facebook") ─────────────────────────────────
+    # Must exactly match a "Valid OAuth Redirect URI" configured in the Meta
+    # App Dashboard under Facebook Login → Settings. Not yet a real domain in
+    # dev -- left as a plain string (not AnyHttpUrl) so a bare localhost value
+    # with a non-standard port doesn't need extra validation ceremony.
+    meta_oauth_redirect_uri: str = Field(
+        default="",
+        description="OAuth callback URL — env: META_OAUTH_REDIRECT_URI. "
+        "Must be registered in the Meta App's Facebook Login settings.",
+    )
+    # Scopes requested by the "Connect with Facebook" flow (Messenger +
+    # Instagram only for now -- WhatsApp Embedded Signup is a later phase).
+    # Most of these only work for the app's own Admins/Developers/Testers
+    # until the app passes Meta App Review for each permission.
+    meta_oauth_scopes: str = (
+        "pages_show_list,pages_messaging,instagram_basic,"
+        "instagram_manage_messages,instagram_manage_comments,"
+        "pages_manage_engagement,pages_manage_metadata"
+    )
+
     # ── LLM Providers ────────────────────────────────────────────────────────
     openai_api_key: str = ""
     openai_api_base: str = "https://api.openai.com/v1"

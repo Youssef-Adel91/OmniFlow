@@ -289,10 +289,19 @@ async def update_message_delivery_status(
     message_id: uuid.UUID,
     delivery_status: str,
     platform_message_id: str | None = None,
+    failure_reason: str | None = None,
 ) -> None:
     """
-    Update the delivery status (and optionally the platform_message_id) 
-    of an existing message.
+    Update the delivery status (and optionally the platform_message_id /
+    failure_reason) of an existing message.
+
+    `failure_reason` was previously accepted only by the sibling
+    `update_message_delivery_status_by_wamid` (real Meta status webhooks) --
+    this, the function outbound_dispatcher actually calls on a real send
+    failure, silently dropped the error text. Found via a real end-to-end
+    test: a message correctly showed delivery_status=FAILED in the DB, but
+    a support agent looking at it in the dashboard had no way to see why,
+    only the backend's own structlog output did.
     """
     from sqlalchemy import select
     from src.shared.db.models import Message
@@ -306,6 +315,8 @@ async def update_message_delivery_status(
             msg.delivery_status = delivery_status
             if platform_message_id:
                 msg.platform_message_id = platform_message_id
+            if failure_reason is not None:
+                msg.failure_reason = failure_reason
             conversation_id = msg.conversation_id
             session.add(msg)
             # The context manager automatically commits

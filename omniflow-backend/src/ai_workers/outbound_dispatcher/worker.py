@@ -376,6 +376,10 @@ class OutboundDispatcherWorker(BaseKafkaConsumer):
                         tenant_id=msg.tenant_id,
                         message_id=persisted_msg_id,
                         delivery_status="FAILED",
+                        failure_reason=(
+                            "Cancelled: a human agent took over this conversation "
+                            "before this AI reply could be sent."
+                        ),
                     )
                 return
 
@@ -507,6 +511,7 @@ class OutboundDispatcherWorker(BaseKafkaConsumer):
                     tenant_id=msg.tenant_id,
                     message_id=persisted_msg_id,
                     delivery_status="FAILED",
+                    failure_reason=str(exc)[:500],
                 )
             log.error(
                 "outbound_auth_failure_no_retry",
@@ -523,6 +528,7 @@ class OutboundDispatcherWorker(BaseKafkaConsumer):
                     tenant_id=msg.tenant_id,
                     message_id=persisted_msg_id,
                     delivery_status="FAILED",
+                    failure_reason=str(exc)[:500],
                 )
             log.warning(
                 "outbound_invalid_recipient",
@@ -541,7 +547,10 @@ class OutboundDispatcherWorker(BaseKafkaConsumer):
             )
             if persisted_msg_id:
                 await update_message_delivery_status(
-                    tenant_id=msg.tenant_id, message_id=persisted_msg_id, delivery_status="FAILED",
+                    tenant_id=msg.tenant_id,
+                    message_id=persisted_msg_id,
+                    delivery_status="FAILED",
+                    failure_reason=f"{type(exc).__name__}: {exc}"[:500],
                 )
             raise  # Triggers retry logic in BaseKafkaConsumer
 
@@ -610,7 +619,10 @@ def run() -> None:
 
     Usage:
         python -m src.ai_workers.outbound_dispatcher.worker
-        python scripts/run_worker.py outbound_dispatcher
+
+    This is the exact command docker-compose.prod.yml's worker-dispatcher
+    service runs (see `command:` there) -- there is no run_worker.py
+    launcher script in this repo.
     """
     asyncio.run(_main())
 

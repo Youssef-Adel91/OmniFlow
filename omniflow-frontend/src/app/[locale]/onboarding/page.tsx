@@ -534,9 +534,21 @@ export default function OnboardingPage() {
             </div>
 
             <h2 className="text-4xl font-bold mb-4 text-white">الربط الذاتي</h2>
-            <p className="text-gray-400 text-lg leading-relaxed mb-8">
+            <p className="text-gray-400 text-lg leading-relaxed mb-2">
               إذا كان لديك حساب Meta Business Manager موثق وأرقام جاهزة، يمكنك
               إدخال المفاتيح مباشرة للبدء فوراً.
+            </p>
+            <p className="text-gray-500 text-sm leading-relaxed mb-8">
+              القيم الثلاثة دي كلها بتلاقيها في نفس الصفحة:{" "}
+              <a
+                href="https://developers.facebook.com/docs/whatsapp/cloud-api/get-started"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-[#C9A84C] underline hover:text-[#D4B55A]"
+              >
+                لوحة تطبيقك على Meta for Developers ← WhatsApp ← API Setup
+              </a>
+              .
             </p>
 
             <form onSubmit={handleSelfServiceSubmit} className="space-y-5">
@@ -563,6 +575,11 @@ export default function OnboardingPage() {
                     dir="ltr"
                   />
                 </div>
+                <p className="text-xs text-gray-500 mt-1.5">
+                  توكن الوصول (Access Token) من نفس صفحة API Setup — توكن
+                  مؤقت صالح 24 ساعة للتجربة، أو توكن دائم لو عندك System User
+                  على Business Manager.
+                </p>
               </div>
 
               {/* Phone Number ID */}
@@ -583,6 +600,10 @@ export default function OnboardingPage() {
                   }`}
                   dir="ltr"
                 />
+                <p className="text-xs text-gray-500 mt-1.5">
+                  معرّف تقني من ميتا لرقم واتساب الخاص بك — مش رقم التليفون
+                  نفسه. موجود تحت "From" في صفحة API Setup.
+                </p>
               </div>
 
               {/* WABA ID */}
@@ -603,6 +624,10 @@ export default function OnboardingPage() {
                   }`}
                   dir="ltr"
                 />
+                <p className="text-xs text-gray-500 mt-1.5">
+                  معرّف حساب الواتساب التجاري نفسه (WABA) — مختلف عن Phone
+                  Number ID أعلاه. تلاقيه في نفس صفحة API Setup تحت اسم حسابك.
+                </p>
               </div>
 
               <button

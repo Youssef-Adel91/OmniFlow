@@ -30,6 +30,8 @@ export interface TenantSettings {
   ai_system_prompt?:         string | null;
   /** Tone/objection-handling/closing-sale guidance, distinct from ai_system_prompt. */
   custom_ai_instructions?:   string | null;
+  /** E.164 contact number shown on the VCard sent to new customers (item 7). */
+  whatsapp_display_phone_number?: string | null;
 }
 
 /**
@@ -42,6 +44,7 @@ export interface TenantSettings {
 export interface TenantSettingsUpdate {
   business_name?:            string;
   max_ai_conversations?:     number | null;
+  whatsapp_display_phone_number?: string;
 }
 
 export interface LogoUploadResponse {
@@ -63,6 +66,7 @@ function normalizeSettings(raw: any): TenantSettings {
     logo_url:                 raw?.logo_url ?? null,
     ai_system_prompt:         raw?.ai_system_prompt ?? null,
     custom_ai_instructions:  raw?.custom_ai_instructions ?? null,
+    whatsapp_display_phone_number: raw?.whatsapp_display_phone_number ?? null,
   };
 }
 

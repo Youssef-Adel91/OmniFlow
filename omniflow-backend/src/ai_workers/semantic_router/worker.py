@@ -423,11 +423,11 @@ def run() -> None:
     Synchronous entrypoint for process managers (systemd, K8s, Docker).
 
     Usage:
-        # Direct:
         python -m src.ai_workers.semantic_router.worker
 
-        # Via scripts/run_worker.py:
-        python scripts/run_worker.py semantic_router
+    This is the exact command docker-compose.prod.yml's worker-router
+    service runs (see `command:` there) -- there is no run_worker.py
+    launcher script in this repo.
     """
     asyncio.run(_main())
 

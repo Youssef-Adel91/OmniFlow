@@ -64,11 +64,19 @@ settings = get_settings()
 # DEFAULT_SYSTEM_PROMPT imported above is the pre-built Ahmad Al-Sayegh prompt.
 # ─────────────────────────────────────────────────────────────────────────────
 
-# L0 deterministic responses (no LLM needed)
+# L0 deterministic responses (no LLM needed).
+# "greeting" is a template, not a literal string -- see _get_l0_response().
+# Found via a real end-to-end test (non-real-estate tenant): this used to be
+# a hardcoded "أنا مساعدك العقاري الذكي" ("I'm your real-estate assistant")
+# for every tenant regardless of actual business, contradicting the same
+# fix already made for the LLM-driven tiers' persona (tenants.py's
+# _generic_persona) -- that fix only covered the LLM path, not this
+# deterministic one.
+_L0_GREETING_TEMPLATE = "أهلاً وسهلاً! 😊 أنا مساعد {business_name} الذكي. كيف يمكنني مساعدتك اليوم؟"
+_L0_GREETING_FALLBACK = "أهلاً وسهلاً! 😊 أنا مساعدك الذكي. كيف يمكنني مساعدتك اليوم؟"
+
 _L0_RESPONSES: dict[str, str] = {
-    "greeting": "أهلاً وسهلاً! 😊 أنا مساعدك العقاري الذكي. كيف يمكنني مساعدتك اليوم؟",
     "vcard_confirmation": "ممتاز! شكراً لحفظ رقمنا 🎉 يسعدنا خدمتك في أي وقت.",
-    "general": "شكراً لتواصلك معنا! سأبحث لك عن أفضل الخيارات المتاحة. 🏠",
     # Item 14: no Whisper/Vision worker exists yet (see multimodal/__init__.py
     # stub) — sent instead of letting the LLM answer a placeholder string
     # like "[audio message — media: ...]" as if it understood the content.
@@ -258,7 +266,7 @@ class LLMInvokerWorker(BaseKafkaConsumer):
 
         if tier == RoutingTier.L0_SEMANTIC_CACHE:
             # Deterministic response — no LLM, instant reply
-            response_text = self._get_l0_response(decision)
+            response_text = await self._get_l0_response(decision)
             await self._publish_outbound(
                 decision=decision,
                 text=response_text,
@@ -651,12 +659,17 @@ class LLMInvokerWorker(BaseKafkaConsumer):
             logger.warning("customer_profile_extraction_background_failed", error=str(exc))
 
     @staticmethod
-    def _get_l0_response(decision: RoutingDecision) -> str:
-        """Return the pre-configured L0 deterministic response."""
-        intent = str(getattr(decision.event, "interactive_payload", {}) or {})
+    async def _get_l0_response(decision: RoutingDecision) -> str:
+        """Return the pre-configured L0 deterministic response, tenant-aware."""
         if "vcard" in decision.route_reason.lower():
             return _L0_RESPONSES["vcard_confirmation"]
-        return _L0_RESPONSES["greeting"]
+
+        from src.ai_engine.company_context import get_tenant_business_name  # noqa: PLC0415
+
+        business_name = await get_tenant_business_name(decision.tenant_id)
+        if business_name:
+            return _L0_GREETING_TEMPLATE.format(business_name=business_name)
+        return _L0_GREETING_FALLBACK
 
     @staticmethod
     def _build_current_message(event: Any) -> dict[str, Any]:
@@ -751,7 +764,10 @@ def run() -> None:
 
     Usage:
         python -m src.ai_workers.llm_invoker.worker
-        python scripts/run_worker.py llm_invoker
+
+    This is the exact command docker-compose.prod.yml's worker-invoker
+    service runs (see `command:` there) -- there is no run_worker.py
+    launcher script in this repo.
     """
     asyncio.run(_main())
 

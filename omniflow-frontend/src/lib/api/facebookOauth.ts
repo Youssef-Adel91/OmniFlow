@@ -35,6 +35,21 @@ async function fetchAuthorizeUrl(): Promise<string> {
   return data.authorize_url;
 }
 
+/**
+ * Origin of the redirect_uri embedded in authorize_url. The callback page
+ * is served from META_OAUTH_REDIRECT_URI's origin (an ngrok URL in dev),
+ * which differs from API_BASE_URL's origin, so postMessages from it must
+ * be accepted too.
+ */
+function redirectOriginOf(authorizeUrl: string): string | null {
+  try {
+    const redirect = new URL(authorizeUrl).searchParams.get("redirect_uri");
+    return redirect ? new URL(redirect).origin : null;
+  } catch {
+    return null;
+  }
+}
+
 /** Step 3 (only reached when fetchAuthorizeUrl's flow found >1 Page): finalize the pick. */
 export async function selectFacebookPage(
   connectionId: string,
@@ -63,6 +78,7 @@ export async function selectFacebookPage(
  */
 export async function startFacebookConnect(): Promise<FacebookOauthResult> {
   const authorizeUrl = await fetchAuthorizeUrl();
+  const redirectOrigin = redirectOriginOf(authorizeUrl);
 
   const width = 600;
   const height = 700;
@@ -87,7 +103,7 @@ export async function startFacebookConnect(): Promise<FacebookOauthResult> {
     };
 
     const onMessage = (event: MessageEvent) => {
-      if (event.origin !== BACKEND_ORIGIN) return;
+      if (event.origin !== BACKEND_ORIGIN && event.origin !== redirectOrigin) return;
       const data = event.data;
       if (!data || data.source !== "omniflow-fb-oauth") return;
       settled = true;

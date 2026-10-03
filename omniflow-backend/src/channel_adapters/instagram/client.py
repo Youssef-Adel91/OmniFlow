@@ -193,8 +193,29 @@ async def send_comment_reply(comment_id: str, text: str, *, access_token: str | 
     Returns:
         Raw JSON dict from Graph API (contains "id" of the new comment).
     """
+    return await _post_comment_reply(f"{comment_id}/comments", text, access_token)
+
+
+async def send_instagram_comment_reply(
+    comment_id: str, text: str, *, access_token: str | None = None,
+) -> dict[str, Any]:
+    """
+    Reply to a comment on an Instagram post/reel.
+
+    Different endpoint from Facebook Page comments: the Instagram Graph API
+    replies with POST /{ig-comment-id}/replies (requires
+    instagram_manage_comments). It only accepts top-level comments, so the
+    webhook router never queues replies for comments that have a parent_id.
+
+    Returns:
+        Raw JSON dict from Graph API (contains "id" of the new reply).
+    """
+    return await _post_comment_reply(f"{comment_id}/replies", text, access_token)
+
+
+async def _post_comment_reply(path: str, text: str, access_token: str | None) -> dict[str, Any]:
     access_token = access_token or settings.meta_instagram_page_access_token
-    url = f"{_GRAPH_BASE}/{_API_VERSION}/{comment_id}/comments"
+    url = f"{_GRAPH_BASE}/{_API_VERSION}/{path}"
 
     async with httpx.AsyncClient(timeout=_TIMEOUT_SECONDS) as client:
         resp = await client.post(

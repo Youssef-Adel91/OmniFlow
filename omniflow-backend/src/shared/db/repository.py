@@ -41,6 +41,7 @@ from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import joinedload, selectinload
 
+from src.shared.core.exceptions import NotFoundError
 from src.shared.db.base import Base
 from src.shared.db.models import (
     Conversation,
@@ -110,12 +111,12 @@ class BaseRepository(Generic[ModelT, CreateSchemaT, UpdateSchemaT]):
 
     async def get_or_404(self, pk: uuid.UUID) -> ModelT:
         """
-        Fetch a single row by PK; raise ValueError if not found.
-        FastAPI endpoint layer should catch ValueError and return HTTP 404.
+        Fetch a single row by PK; raise NotFoundError if not found.
+        The gateway maps NotFoundError to HTTP 404.
         """
         obj = await self.get(pk)
         if obj is None:
-            raise ValueError(
+            raise NotFoundError(
                 f"{self.model.__tablename__} with id={pk!s} not found "
                 "(or not visible to the current tenant)"
             )
@@ -708,7 +709,7 @@ class ConversationRepository(
             )
         )
         if result.rowcount == 0:
-            raise ValueError(
+            raise NotFoundError(
                 f"conversations with id={conversation_id!s} not found "
                 "(or not visible to the current tenant)"
             )

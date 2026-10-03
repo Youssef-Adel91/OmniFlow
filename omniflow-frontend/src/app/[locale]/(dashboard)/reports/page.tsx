@@ -35,6 +35,8 @@ import {
   type RevenuePoint,
 } from "@/lib/api/reports";
 import { fetchDashboardSummary, type DashboardSummary } from "@/lib/api/dashboard";
+import { Select } from "@/components/ui/Select";
+import { useAuthReady } from "@/hooks/useAuthReady";
 
 const PAGE_SIZE = 20;
 
@@ -291,13 +293,16 @@ export default function ReportsPage() {
     }
   }, [page, typeFilter, dateFrom, dateTo]);
 
+  const authReady = useAuthReady();
   useEffect(() => {
+    if (!authReady) return;
     void load();
-  }, [load]);
+  }, [authReady, load]);
 
   // Headline counters come from the dashboard summary endpoint; a failure here
   // must not block the reports table, so it is handled independently.
   useEffect(() => {
+    if (!authReady) return;
     let cancelled = false;
     (async () => {
       setSummaryLoading(true);
@@ -313,7 +318,7 @@ export default function ReportsPage() {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [authReady]);
 
   /**
    * Client-side date guard. The backend is expected to honour `date_from` /
@@ -491,7 +496,7 @@ export default function ReportsPage() {
       <div className="flex items-end gap-4 flex-wrap bg-[#111827] border border-white/10 rounded-2xl p-4">
         <div>
           <label className="block text-xs text-gray-500 mb-1.5">نوع التقرير</label>
-          <select
+          <Select
             value={typeFilter}
             onChange={(e) => {
               setTypeFilter(e.target.value);
@@ -505,7 +510,7 @@ export default function ReportsPage() {
                 {label}
               </option>
             ))}
-          </select>
+          </Select>
         </div>
 
         <div>

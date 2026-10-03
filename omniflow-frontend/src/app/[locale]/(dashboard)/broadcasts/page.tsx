@@ -34,6 +34,7 @@ import {
   TARGET_AUDIENCE_OPTIONS,
   type Broadcast,
 } from "@/lib/api/broadcasts";
+import { Select } from "@/components/ui/Select";
 
 function formatDate(iso: string | null | undefined): string {
   if (!iso) return "—";
@@ -277,7 +278,7 @@ export default function BroadcastsPage() {
                     </span>
                   ) : null}
                 </div>
-                <select
+                <Select
                   value={target}
                   onChange={(e) => setTarget(e.target.value)}
                   className={fieldClass}
@@ -287,7 +288,7 @@ export default function BroadcastsPage() {
                       {opt.label}
                     </option>
                   ))}
-                </select>
+                </Select>
                 <p className="text-xs text-gray-500 mt-2 flex items-center gap-1">
                   <Users className="w-3.5 h-3.5" /> الرقم أعلاه تقدير لحظي لعدد العملاء
                   المطابقين للشريحة، وقد يتغير عند لحظة الإرسال الفعلي.

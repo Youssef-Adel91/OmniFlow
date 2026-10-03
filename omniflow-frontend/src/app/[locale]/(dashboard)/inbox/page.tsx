@@ -24,6 +24,7 @@ import { CustomerContext }  from "@/components/features/inbox/CustomerContext";
 import { useInboxStore, useInboxLoadingState } from "@/store/inboxStore";
 import { useInboxStream }   from "@/hooks/useInboxStream";
 import { Wifi, WifiOff, AlertTriangle, RefreshCw } from "lucide-react";
+import { useAuthReady } from "@/hooks/useAuthReady";
 
 // ── SSE Status Banner ─────────────────────────────────────────────────────────
 
@@ -109,9 +110,11 @@ export default function InboxPage() {
   const { conversationsError, isLoadingConversations } = useInboxLoadingState();
 
   // ── 1. Initial data fetch ────────────────────────────────────────────────
+  const authReady = useAuthReady();
   useEffect(() => {
+    if (!authReady) return;
     void loadConversations();
-  }, [loadConversations]);
+  }, [authReady, loadConversations]);
 
   // ── 2. Live SSE stream ───────────────────────────────────────────────────
   const { status: streamStatus, reconnect } = useInboxStream();

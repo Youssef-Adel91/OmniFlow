@@ -4,6 +4,7 @@ from __future__ import annotations
 import uuid
 from sqlalchemy import select
 
+from src.shared.core.exceptions import NotFoundError
 from src.shared.core.enums import ConversationStatus
 from src.shared.db.models import Conversation, Customer
 from src.shared.db.session import get_tenant_session
@@ -31,7 +32,7 @@ async def load_conversation_state(
             raise ValueError("Conversation identity is required")
         row = (await session.execute(stmt)).first()
         if row is None:
-            raise ValueError("Conversation not found for tenant")
+            raise NotFoundError("Conversation not found for tenant")
         conv, customer = row
         return {
             "conversation_id": str(conv.conversation_id),

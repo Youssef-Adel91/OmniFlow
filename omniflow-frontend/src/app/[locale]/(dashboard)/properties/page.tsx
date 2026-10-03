@@ -30,6 +30,7 @@ import {
   PROPERTY_TYPE_LABELS,
   LISTING_STATUS_LABELS,
 } from "@/lib/api/properties";
+import { Select } from "@/components/ui/Select";
 
 // ══════════════════════════════════════════════════════════════════════════════
 // Colour palette
@@ -320,7 +321,7 @@ export default function PropertiesPage() {
       {/* ── Filter Bar ─────────────────────────────────────────────────── */}
       <div style={styles.filterBar}>
         <span style={styles.filterLabel}>تصفية:</span>
-        <select
+        <Select
           id="status-filter"
           value={statusFilter}
           onChange={(e) => { setStatusFilter(e.target.value as any); setPage(1); }}
@@ -330,8 +331,8 @@ export default function PropertiesPage() {
           {(Object.entries(LISTING_STATUS_LABELS) as [ListingStatus, { ar: string }][]).map(
             ([val, { ar }]) => <option key={val} value={val}>{ar}</option>
           )}
-        </select>
-        <select
+        </Select>
+        <Select
           id="type-filter"
           value={typeFilter}
           onChange={(e) => { setTypeFilter(e.target.value as any); setPage(1); }}
@@ -341,7 +342,7 @@ export default function PropertiesPage() {
           {(Object.entries(PROPERTY_TYPE_LABELS) as [PropertyType, { ar: string }][]).map(
             ([val, { ar }]) => <option key={val} value={val}>{ar}</option>
           )}
-        </select>
+        </Select>
         {(statusFilter || typeFilter) && (
           <button
             onClick={() => { setStatusFilter(""); setTypeFilter(""); setPage(1); }}

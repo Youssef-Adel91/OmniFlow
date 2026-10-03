@@ -74,7 +74,7 @@ interface ChannelConfig {
 }
 
 const CHANNEL_CONFIGS: ChannelConfig[] = [
-  { value: "ALL",       label: "الكل",      icon: MessageSquare, color: "text-[var(--muted-foreground)]", bg: "bg-cream-300" },
+  { value: "ALL",       label: "الكل",      icon: MessageSquare, color: "text-[var(--muted-foreground)]", bg: "bg-[var(--border)]" },
   { value: "whatsapp",  label: "WhatsApp",  icon: WhatsAppIcon,  color: "text-emerald-600",               bg: "bg-emerald-50" },
   { value: "instagram", label: "Instagram", icon: InstagramIcon, color: "text-pink-600",                  bg: "bg-pink-50"    },
   { value: "tiktok",    label: "TikTok",    icon: TikTokIcon,    color: "text-slate-900",                  bg: "bg-slate-100"  },
@@ -105,8 +105,8 @@ const STATUS_META: Record<ConversationStatus, { icon: React.ElementType; label: 
   BOT_ACTIVE:   { icon: Bot,           label: "AI نشط",    className: "badge-navy"                                        },
   AGENT_ACTIVE: { icon: UserCheck,     label: "وكيل بشري", className: "bg-warning/15 text-warning ring-warning/30 badge"  },
   ESCALATED:    { icon: AlertTriangle, label: "تصعيد",     className: "badge-danger"                                      },
-  DORMANT:      { icon: Moon,          label: "غير نشط",   className: "badge bg-cream-300 text-navy-400 ring-cream-400"   },
-  CLOSED:       { icon: CheckCheck,    label: "مغلق",      className: "badge bg-cream-300 text-navy-400 ring-cream-400"   },
+  DORMANT:      { icon: Moon,          label: "غير نشط",   className: "badge bg-[var(--border)] text-[var(--muted-foreground)] ring-[var(--border)]"   },
+  CLOSED:       { icon: CheckCheck,    label: "مغلق",      className: "badge bg-[var(--border)] text-[var(--muted-foreground)] ring-[var(--border)]"   },
 };
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -179,14 +179,14 @@ function ChannelBadge({ channel }: { channel: string }) {
 function SkeletonRow() {
   return (
     <div className="flex items-start gap-3 px-4 py-3.5 border-b border-[var(--border)]">
-      <div className="w-10 h-10 rounded-full bg-cream-200 shrink-0 animate-pulse" />
+      <div className="w-10 h-10 rounded-full bg-[var(--border)] shrink-0 animate-pulse" />
       <div className="flex-1 min-w-0 space-y-2 pt-0.5">
         <div className="flex items-center justify-between gap-2">
-          <div className="h-3 w-28 rounded-full bg-cream-200 animate-pulse" />
-          <div className="h-2.5 w-8 rounded-full bg-cream-200 animate-pulse" />
+          <div className="h-3 w-28 rounded-full bg-[var(--border)] animate-pulse" />
+          <div className="h-2.5 w-8 rounded-full bg-[var(--border)] animate-pulse" />
         </div>
-        <div className="h-2.5 w-40 rounded-full bg-cream-200 animate-pulse" />
-        <div className="h-4 w-16 rounded-full bg-cream-200 animate-pulse" />
+        <div className="h-2.5 w-40 rounded-full bg-[var(--border)] animate-pulse" />
+        <div className="h-4 w-16 rounded-full bg-[var(--border)] animate-pulse" />
       </div>
     </div>
   );
@@ -228,8 +228,8 @@ function ChannelDropdown({
         aria-expanded={open}
         className={cn(
           "flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium",
-          "border border-[var(--border)] bg-[var(--card)]",
-          "hover:bg-cream-200 transition-all duration-150",
+          "border border-[var(--border)] bg-[var(--menu-bg)]",
+          "hover:bg-[var(--menu-hover)] transition-all duration-150",
           "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gold-500/50",
           current.color,
         )}
@@ -244,7 +244,7 @@ function ChannelDropdown({
           role="listbox"
           className={cn(
             "absolute end-0 top-full mt-1 z-50 w-40",
-            "bg-[var(--card)] border border-[var(--border)] rounded-xl shadow-card-lg",
+            "bg-[var(--menu-bg)] border border-[var(--border)] rounded-xl shadow-card-lg",
             "overflow-hidden animate-fade-in",
           )}
         >
@@ -258,9 +258,9 @@ function ChannelDropdown({
                   onClick={() => { onChange(ch.value); setOpen(false); }}
                   className={cn(
                     "w-full flex items-center gap-2.5 px-3 py-2 text-xs text-start",
-                    "hover:bg-cream-100 transition-colors duration-100",
+                    "hover:bg-[var(--menu-hover)] transition-colors duration-100",
                     value === ch.value
-                      ? "bg-gold-50 text-gold-700 font-semibold"
+                      ? "bg-[var(--menu-selected-bg)] text-[var(--menu-selected-fg)] font-semibold"
                       : "text-[var(--foreground)]",
                   )}
                 >
@@ -312,11 +312,11 @@ function SortToggle({
         aria-expanded={open}
         className={cn(
           "flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium",
-          "border border-[var(--border)] bg-[var(--card)]",
-          "hover:bg-cream-200 transition-all duration-150",
+          "border border-[var(--border)] bg-[var(--menu-bg)]",
+          "hover:bg-[var(--menu-hover)] transition-all duration-150",
           "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gold-500/50",
           value === "hot_leads"
-            ? "text-orange-600 border-orange-300 bg-orange-50"
+            ? "text-[var(--hot-fg)] border-[var(--hot-border)] bg-[var(--hot-bg)]"
             : "text-[var(--muted-foreground)]",
         )}
       >
@@ -329,7 +329,7 @@ function SortToggle({
           role="listbox"
           className={cn(
             "absolute end-0 top-full mt-1 z-50 w-52",
-            "bg-[var(--card)] border border-[var(--border)] rounded-xl shadow-card-lg",
+            "bg-[var(--menu-bg)] border border-[var(--border)] rounded-xl shadow-card-lg",
             "overflow-hidden animate-fade-in",
           )}
         >
@@ -343,9 +343,9 @@ function SortToggle({
                   onClick={() => { onChange(opt.value); setOpen(false); }}
                   className={cn(
                     "w-full flex items-center gap-2.5 px-3 py-2.5 text-xs text-start",
-                    "hover:bg-cream-100 transition-colors duration-100",
+                    "hover:bg-[var(--menu-hover)] transition-colors duration-100",
                     value === opt.value
-                      ? "bg-gold-50 text-gold-700 font-semibold"
+                      ? "bg-[var(--menu-selected-bg)] text-[var(--menu-selected-fg)] font-semibold"
                       : "text-[var(--foreground)]",
                   )}
                 >
@@ -376,9 +376,9 @@ function ConversationRow({ conv, isActive }: { conv: Conversation; isActive: boo
       className={cn(
         "w-full flex items-start gap-3 px-4 py-3.5 text-start",
         "border-b border-[var(--border)] transition-all duration-150",
-        "hover:bg-cream-100 focus-visible:outline-none",
+        "hover:bg-[var(--menu-hover)] focus-visible:outline-none",
         isActive
-          ? "bg-gold-50 border-s-2 border-s-gold-500 hover:bg-gold-50"
+          ? "bg-[var(--menu-selected-bg)] border-s-2 border-s-gold-500 hover:bg-[var(--menu-selected-bg)]"
           : "bg-transparent",
       )}
     >
@@ -396,7 +396,7 @@ function ConversationRow({ conv, isActive }: { conv: Conversation; isActive: boo
           "absolute -bottom-0.5 -end-0.5 w-4 h-4 rounded-full",
           "border-2 border-[var(--card)]",
           "flex items-center justify-center overflow-hidden",
-          CHANNEL_MAP[conv.channel as ChannelFilter]?.bg ?? "bg-cream-200",
+          CHANNEL_MAP[conv.channel as ChannelFilter]?.bg ?? "bg-[var(--border)]",
         )}>
           <ChannelBadge channel={conv.channel} />
         </span>
@@ -504,7 +504,7 @@ export function ConversationList() {
           id="inbox-control-bar"
           className={cn(
             "flex items-center gap-2 p-2 rounded-xl",
-            "bg-cream-100 border border-[var(--border)]",
+            "bg-[var(--menu-bg)] border border-[var(--border)]",
           )}
         >
           {/* Channel Dropdown */}
@@ -534,8 +534,8 @@ export function ConversationList() {
             className={cn(
               "shrink-0 px-2.5 py-1 rounded-full text-2xs font-medium transition-all duration-150",
               filter === f.value
-                ? "bg-navy-800 text-cream-100"
-                : "text-[var(--muted-foreground)] hover:bg-cream-200",
+                ? "bg-[var(--menu-selected-bg)] text-[var(--menu-selected-fg)]"
+                : "text-[var(--muted-foreground)] hover:bg-[var(--menu-hover)]",
             )}
           >
             {f.label}

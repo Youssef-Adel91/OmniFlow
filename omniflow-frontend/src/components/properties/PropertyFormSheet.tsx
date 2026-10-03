@@ -27,6 +27,7 @@ import {
   createProperty,
   updateProperty,
 } from "@/lib/api/properties";
+import { Select } from "@/components/ui/Select";
 
 // ── Zod schema ─────────────────────────────────────────────────────────────
 
@@ -119,7 +120,7 @@ function SelectField({
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
       <label htmlFor={id} style={styles.label}>{label}</label>
-      <select
+      <Select
         id={id}
         style={{
           ...styles.input,
@@ -133,7 +134,7 @@ function SelectField({
         {...rest}
       >
         {children}
-      </select>
+      </Select>
       {error && <span style={styles.errorText}>{error}</span>}
     </div>
   );

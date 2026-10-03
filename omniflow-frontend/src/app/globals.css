@@ -39,6 +39,16 @@
     --danger:              #dc2626;
     --info:                #0891b2;
 
+    /* Menus / dropdowns / native selects (theme-aware; WCAG AA on both themes) */
+    --menu-bg:             #ffffff;
+    --menu-hover:          #f5efdf;
+    --menu-selected-bg:    #f6ecd2;
+    --menu-selected-fg:    #7a5c1a;
+    --hot-bg:              #fff1e6;
+    --hot-fg:              #b34700;
+    --hot-border:          #f5b98a;
+    color-scheme: light;
+
     /* Sidebar nav item states */
     --sidebar-item-hover:  rgba(201, 169, 97, 0.12);
     --sidebar-item-active: rgba(201, 169, 97, 0.20);
@@ -64,6 +74,15 @@
       --muted-foreground:    #9ca3af;
       --border:              #243044;
       --input:               #243044;
+
+      --menu-bg:             #1a2332;
+      --menu-hover:          #243044;
+      --menu-selected-bg:    #3a3220;
+      --menu-selected-fg:    #e6c97f;
+      --hot-bg:              #3b2314;
+      --hot-fg:              #ffb27a;
+      --hot-border:          #7a4a2a;
+      color-scheme: dark;
     }
   }
 }
@@ -96,6 +115,22 @@
   [dir="rtl"] body,
   [dir="rtl"] .font-arabic {
     font-family: var(--font-noto-kufi), var(--font-inter), sans-serif;
+  }
+
+  /* ── Native <select>: never a white box with light text ───────────────── */
+  select {
+    background-color: var(--menu-bg);
+    color: var(--foreground);
+    color-scheme: inherit;
+  }
+  select option,
+  select optgroup {
+    background-color: var(--menu-bg);
+    color: var(--foreground);
+  }
+  select option:checked {
+    background-color: var(--menu-selected-bg);
+    color: var(--menu-selected-fg);
   }
 
   /* ── Headings ─────────────────────────────────────────────────────────── */

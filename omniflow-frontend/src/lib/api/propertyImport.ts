@@ -22,12 +22,16 @@ export interface UploadResult {
   extracted_by_llm: boolean;
   notes: string[];
   limits: { max_file_mb: number; max_rows: number };
+  /** only the admin role may activate listings without REGA verification */
+  can_activate: boolean;
 }
 
 export type OnDuplicate = "skip" | "update" | "create_new";
 export interface ImportOptions {
   on_duplicate: OnDuplicate;
   defaults: Partial<Record<"property_type" | "status" | "city" | "district", string>>;
+  /** admin only: mark imported listings VERIFIED_ACTIVE (is_verified stays false) and index them now */
+  activate?: boolean;
 }
 
 export interface RowIssue { field: string; message: string; severity: "error" | "warning" }
@@ -49,12 +53,30 @@ export interface ImportJob {
   import_id: string; kind: string; status: ImportStatus; filename: string; file_kind: string;
   total_rows: number; processed_rows: number; percent: number;
   created: number; updated: number; skipped: number; failed: number; indexed: number;
+  index_failed: number; index_error: string | null;
   has_error_report: boolean; error_message: string | null; cancel_requested: boolean;
   options: ImportOptions | null; mapping: Record<string, string> | null; summary: ValidationSummary | null;
   created_at: string | null; started_at: string | null; finished_at: string | null;
 }
 
 export interface MappingTemplate { template_id: string; name: string; mapping: Record<string, string> }
+
+/** Shown when imported listings will be "pending verification": the assistant only sees approved (VERIFIED_ACTIVE) ones. */
+export const PENDING_WARNING = "العقارات قيد التحقق لن يراها المساعد حتى يتم اعتمادها";
+export const ACTIVATE_WARNING =
+  "لم يتم التحقق من هذه العقارات عبر الهيئة العامة للعقار (REGA). بتفعيلها فورًا ستصبح مرئية للمساعد وللعملاء وتتحمّل أنت مسؤولية صحة بياناتها. سيُسجَّل هذا الإجراء باسمك.";
+
+export function showPendingWarning(options: Pick<ImportOptions, "defaults" | "activate">): boolean {
+  if (options.activate) return false;
+  const st = options.defaults.status;
+  return !st || st === "PENDING_VERIFICATION";
+}
+
+/** How many listings the job should have indexed (created + updated, or every row of a re-index job) and how many were. */
+export function indexTotals(job: Pick<ImportJob, "kind" | "created" | "updated" | "indexed" | "index_failed" | "total_rows">) {
+  const expected = job.kind === "reindex" ? job.total_rows : job.created + job.updated;
+  return { expected, indexed: job.indexed, failed: job.index_failed, missing: Math.max(0, expected - job.indexed) };
+}
 
 export const ACTIVE_STATUSES: ImportStatus[] = ["queued", "running"];
 export const TERMINAL_STATUSES: ImportStatus[] = ["completed", "failed", "cancelled"];

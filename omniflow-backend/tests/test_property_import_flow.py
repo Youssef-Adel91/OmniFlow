@@ -17,7 +17,9 @@ import httpx
 from src.gateway import dependencies as deps
 from src.gateway.main import create_app
 from src.shared.core.config import get_settings
+from src.shared.core.enums import TenantUserRole
 from src.shared.services import property_import as svc
+from src.shared.services.vector_sync import IndexResult
 
 DB_URL = os.environ.get("OMNIFLOW_TEST_DATABASE_URL")
 RLS_URL = os.environ.get("OMNIFLOW_TEST_RLS_URL")
@@ -47,8 +49,8 @@ def make_csv(*rows: str) -> bytes:
     return (CSV_HEADER + "\n".join(rows) + "\n").encode("utf-8-sig")
 
 
-def auth_overrides(app, tenant, session_factory=None):
-    user = NS(tenant_id=tenant, user_id=uuid.uuid4())
+def auth_overrides(app, tenant, session_factory=None, role=TenantUserRole.ADMIN):
+    user = NS(tenant_id=tenant, user_id=uuid.uuid4(), role=role)
     app.dependency_overrides[deps.get_current_user] = lambda: user
     app.dependency_overrides[deps.require_property_write_role] = lambda: user
     if session_factory:
@@ -118,7 +120,7 @@ class ImportFlowTests(unittest.IsolatedAsyncioTestCase):
             await s.commit()
 
         self.storage = FakeStorage()
-        self.sync = AsyncMock(side_effect=lambda listings, tenant: [str(x.listing_id) for x in listings])
+        self.sync = AsyncMock(side_effect=lambda listings, tenant: IndexResult([str(x.listing_id) for x in listings]))
         for p in (patch.object(svc, "storage", self.storage),
                   patch.object(svc.vector_sync, "sync_listings_batch", self.sync),
                   patch("src.shared.db.session.AsyncSessionFactory", self.AppSession),
@@ -131,7 +133,7 @@ class ImportFlowTests(unittest.IsolatedAsyncioTestCase):
     async def asyncTearDown(self):
         async with self.AdminSession() as s:
             for t in self.tenants:
-                for stmt in ("DELETE FROM import_jobs WHERE tenant_id=:t", "DELETE FROM import_mapping_templates WHERE tenant_id=:t",
+                for stmt in ("DELETE FROM audit_logs WHERE tenant_id=:t", "DELETE FROM import_jobs WHERE tenant_id=:t", "DELETE FROM import_mapping_templates WHERE tenant_id=:t",
                              "DELETE FROM property_listings WHERE tenant_id=:t", "DELETE FROM tenants WHERE tenant_id=:t"):
                     await s.execute(self.text(stmt), {"t": t})
             await s.commit()
@@ -284,7 +286,7 @@ class ImportFlowTests(unittest.IsolatedAsyncioTestCase):
             async with self.AdminSession() as s:
                 await s.execute(self.text("UPDATE import_jobs SET cancel_requested=true WHERE import_id=:i"), {"i": job_id["id"]})
                 await s.commit()
-            return [str(x.listing_id) for x in listings]
+            return IndexResult([str(x.listing_id) for x in listings])
 
         self.sync.side_effect = cancel_after_first_batch
         with patch.object(get_settings(), "import_batch_size", 2):
@@ -343,11 +345,12 @@ class ImportFlowTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_qdrant_outage_does_not_fail_the_import(self):
         self.sync.side_effect = None
-        self.sync.return_value = []                  # sync_listings_batch swallowed an outage
+        self.sync.return_value = IndexResult([], "RuntimeError: qdrant down")   # sync_listings_batch swallowed an outage
         async with client_for(self.app) as c:
             import_id, _ = await self.run_import(c, make_csv("شقة,الرياض,,1,1,Q1"))
             job = await self.job(c, import_id)
         self.assertEqual((job["status"], job["created"], job["indexed"]), ("completed", 1, 0))
+        self.assertEqual((job["index_failed"], job["index_error"]), (1, "RuntimeError: qdrant down"))
 
     async def test_mapping_templates_and_option_validation(self):
         async with client_for(self.app) as c:
@@ -394,6 +397,115 @@ class ImportFlowTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual((await c2.post(f"{BASE}/{import_id}/cancel")).status_code, 404)
             self.assertEqual((await c2.post(f"{BASE}/{import_id}/commit")).status_code, 404)
         self.assertEqual(await self.listings(self.tenants[1]), [])
+
+    # ── indexing: activation, audit, re-index job ───────────────────────────────────────────
+    async def audit_rows(self, tenant=None):
+        async with self.AdminSession() as s:
+            rows = await s.execute(self.text("SELECT action, actor_user_id, details, created_at FROM audit_logs WHERE tenant_id=:t ORDER BY created_at"),
+                                   {"t": tenant or self.tenants[0]})
+            return [dict(r._mapping) for r in rows]
+
+    async def test_activate_option_activates_indexes_audits_and_keeps_is_verified_false(self):
+        async with client_for(self.app) as c:
+            up = await self.upload(c, make_csv("شقة,الرياض,,1000,100,AC1", "فيلا,جدة,,2000,200,AC2"))
+            self.assertTrue(up["can_activate"])
+            v = await c.post(f"{BASE}/{up['import_id']}/validate", json={"mapping": self.mapping_of(up), "options": {"activate": True}})
+            self.assertEqual(v.json()["options"]["activate"], True)
+            job = await self.commit(c, up["import_id"])
+        self.assertEqual((job["status"], job["created"], job["indexed"], job["index_failed"]), ("completed", 2, 2, 0))
+        rows = await self.listings()
+        self.assertEqual({r["status"] for r in rows}, {"VERIFIED_ACTIVE"})
+        sent = [x for call in self.sync.await_args_list for x in call.args[0]]
+        self.assertEqual({(x.status, x.is_verified) for x in sent}, {("VERIFIED_ACTIVE", False)})
+        audit = await self.audit_rows()
+        self.assertEqual([a["action"] for a in audit], ["property_import.activate_requested", "property_import.activated"])
+        self.assertEqual(audit[0]["details"]["expected_listings"], 2)
+        self.assertEqual(audit[1]["details"]["listings_activated"], 2)
+        self.assertIsNotNone(audit[1]["actor_user_id"])
+        self.assertIsNotNone(audit[1]["created_at"])
+
+    async def test_activation_is_admin_only_and_default_is_pending(self):
+        agent_app = create_app()
+        auth_overrides(agent_app, self.tenants[0], self.AppSession, role=TenantUserRole.AGENT)
+        async with client_for(agent_app) as c:
+            up = await self.upload(c, make_csv("شقة,الرياض,,1000,100,AG1"))
+            self.assertFalse(up["can_activate"])
+            r = await c.post(f"{BASE}/{up['import_id']}/validate", json={"mapping": self.mapping_of(up), "options": {"activate": True}})
+            self.assertEqual(r.status_code, 403, r.text)
+            # a plain import by an agent still works and stays PENDING_VERIFICATION
+            r = await c.post(f"{BASE}/{up['import_id']}/validate", json={"mapping": self.mapping_of(up)})
+            self.assertEqual(r.status_code, 200, r.text)
+            job = await self.commit(c, up["import_id"])
+        self.assertEqual(job["status"], "completed")
+        self.assertEqual({r["status"] for r in await self.listings()}, {"PENDING_VERIFICATION"})
+        self.assertEqual(await self.audit_rows(), [])
+
+    async def test_index_error_reaches_the_job_row(self):
+        self.sync.side_effect = None
+        self.sync.return_value = IndexResult([], "RuntimeError: QdrantManager not started")
+        async with client_for(self.app) as c:
+            import_id, _ = await self.run_import(c, make_csv("شقة,الرياض,,1,1,E1", "فيلا,جدة,,2,2,E2"))
+            job = await self.job(c, import_id)
+        self.assertEqual((job["status"], job["created"], job["indexed"], job["index_failed"]), ("completed", 2, 0, 2))
+        self.assertEqual(job["index_error"], "RuntimeError: QdrantManager not started")
+        self.assertTrue(all(r["qdrant_point_id"] is None for r in await self.listings()))
+
+    async def test_reindex_job_indexes_the_unindexed_and_reports_progress(self):
+        self.sync.side_effect = None
+        self.sync.return_value = IndexResult([], "RuntimeError: down")
+        async with client_for(self.app) as c:
+            await self.run_import(c, make_csv(*[f"شقة,الرياض,,{i + 1},1,R{i}" for i in range(5)]))
+            listed = (await c.get("/api/v1/properties", params={"indexed": "false", "limit": 1})).json()
+            self.assertEqual(listed["total"], 5)
+
+            self.sync.return_value = None
+            self.sync.side_effect = lambda listings, tenant: IndexResult([str(x.listing_id) for x in listings])
+            with patch.object(svc, "REINDEX_BATCH", 2):
+                r = await c.post("/api/v1/properties/reindex", json={"filters": {"indexed": False}})
+                self.assertEqual(r.status_code, 202, r.text)
+                self.assertEqual((r.json()["queued"], r.json()["job"]["kind"]), (5, "reindex"))
+                job = await self.wait(c, r.json()["job"]["import_id"])
+            self.assertEqual((job["status"], job["total_rows"], job["processed_rows"], job["indexed"], job["index_failed"], job["percent"]),
+                             ("completed", 5, 5, 5, 0, 100))
+            self.assertNotIn("ids", job["options"])
+            self.assertEqual((await c.get("/api/v1/properties", params={"indexed": "false", "limit": 1})).json()["total"], 0)
+            self.assertEqual((await c.get("/api/v1/properties", params={"indexed": "true", "limit": 1})).json()["total"], 5)
+            self.assertEqual((await c.post("/api/v1/properties/reindex", json={"filters": {"indexed": False}})).json(), {"queued": 0, "job": None})
+            bad = await c.post("/api/v1/properties/reindex", json={})
+            self.assertEqual(bad.status_code, 422)
+
+    async def test_reindex_job_failure_is_recorded_and_other_tenants_ids_are_ignored(self):
+        async with client_for(self.app) as c:
+            await self.run_import(c, make_csv("شقة,الرياض,,1,1,F1"))
+        other = create_app()
+        auth_overrides(other, self.tenants[1], self.AppSession)
+        async with client_for(other) as c2:
+            ids = [str(uuid.uuid4())]
+            r = await c2.post("/api/v1/properties/reindex", json={"ids": ids})
+            self.assertEqual(r.json(), {"queued": 0, "job": None})
+        self.sync.side_effect = None
+        self.sync.return_value = IndexResult([], "ConnectError: refused")
+        async with client_for(self.app) as c:
+            r = await c.post("/api/v1/properties/reindex", json={"filters": {}})
+            job = await self.wait(c, r.json()["job"]["import_id"])
+        self.assertEqual((job["status"], job["indexed"], job["index_failed"], job["index_error"]), ("completed", 0, 1, "ConnectError: refused"))
+
+    async def test_bulk_activate_status_is_admin_only_and_audited(self):
+        async with client_for(self.app) as c:
+            await self.run_import(c, make_csv("شقة,الرياض,,1,1,B1", "فيلا,جدة,,2,2,B2"))
+            r = await c.post("/api/v1/properties/bulk/status", json={"filters": {}, "status": "VERIFIED_ACTIVE"})
+            self.assertEqual(r.status_code, 200, r.text)
+            self.assertEqual((r.json()["updated"], bool(r.json()["reindex_job_id"])), (2, True))
+            await self.wait(c, r.json()["reindex_job_id"])
+        self.assertEqual({x["status"] for x in await self.listings()}, {"VERIFIED_ACTIVE"})
+        self.assertEqual([a["action"] for a in await self.audit_rows()], ["property.bulk_activate"])
+        agent_app = create_app()
+        auth_overrides(agent_app, self.tenants[0], self.AppSession, role=TenantUserRole.AGENT)
+        async with client_for(agent_app) as c:
+            r = await c.post("/api/v1/properties/bulk/status", json={"filters": {}, "status": "VERIFIED_ACTIVE"})
+            self.assertEqual(r.status_code, 403)
+            r = await c.post("/api/v1/properties/bulk/status", json={"filters": {}, "status": "SUSPENDED"})
+            self.assertEqual(r.status_code, 200, r.text)
 
 
 if __name__ == "__main__":

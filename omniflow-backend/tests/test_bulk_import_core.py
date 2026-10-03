@@ -168,9 +168,9 @@ class ValidationTests(unittest.TestCase):
         self.assertTrue(r.ok, r.issues)
 
     def test_options_validation(self):
-        self.assertEqual(svc.normalize_options(None), {"on_duplicate": "skip", "defaults": {}})
+        self.assertEqual(svc.normalize_options(None), {"on_duplicate": "skip", "defaults": {}, "activate": False})
         ok = svc.normalize_options({"on_duplicate": "update", "defaults": {"property_type": "شقة", "city": " الرياض ", "status": ""}})
-        self.assertEqual(ok, {"on_duplicate": "update", "defaults": {"property_type": "apartment", "city": " الرياض "}})
+        self.assertEqual(ok, {"on_duplicate": "update", "defaults": {"property_type": "apartment", "city": " الرياض "}, "activate": False})
         for bad in ({"on_duplicate": "drop"}, {"defaults": {"price": "5"}}, {"defaults": {"property_type": "سيارة"}}):
             with self.assertRaises(ValueError):
                 svc.normalize_options(bad)

@@ -15,9 +15,9 @@ import {
   AlertTriangle, CheckCircle2, Download, FileSpreadsheet, Loader2, Save, Sparkles, UploadCloud, X, XCircle,
 } from "lucide-react";
 import { Select } from "@/components/ui/Select";
-import { LISTING_STATUS_LABELS, PROPERTY_TYPE_LABELS } from "@/lib/api/properties";
+import { LISTING_STATUS_LABELS, PROPERTY_TYPE_LABELS, reindexProperties } from "@/lib/api/properties";
 import {
-  ACTIVE_STATUSES, TERMINAL_STATUSES, cancelImport, commitImport, deleteMappingTemplate, downloadImportErrors,
+  ACTIVATE_WARNING, ACTIVE_STATUSES, PENDING_WARNING, TERMINAL_STATUSES, indexTotals, showPendingWarning, cancelImport, commitImport, deleteMappingTemplate, downloadImportErrors,
   downloadImportTemplate, fetchImport, importErrorMessage, listMappingTemplates, uploadImportFile, validateImport,
   type ImportJob, type ImportOptions, type MappingSuggestion, type MappingTemplate, type OnDuplicate,
   type UploadResult, type ValidationSummary,
@@ -58,12 +58,14 @@ export default function ImportWizard({ open, onClose, onDone }: { open: boolean;
   const [uploadPct, setUploadPct] = useState(0);
   const [error, setError] = useState<string | null>(null);
   const [dragOver, setDragOver] = useState(false);
+  const [reindexJob, setReindexJob] = useState<ImportJob | null>(null);
+  const [reindexBusy, setReindexBusy] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
   const dialogRef = useRef<HTMLDivElement>(null);
 
   const reset = useCallback(() => {
     setStep("upload"); setUpload(null); setMapping({}); setSources({}); setOptions({ on_duplicate: "skip", defaults: {} });
-    setSummary(null); setJob(null); setTemplateName(""); setBusy(null); setUploadPct(0); setError(null);
+    setSummary(null); setJob(null); setReindexJob(null); setTemplateName(""); setBusy(null); setUploadPct(0); setError(null);
   }, []);
 
   const running = job != null && ACTIVE_STATUSES.includes(job.status);
@@ -99,6 +101,28 @@ export default function ImportWizard({ open, onClose, onDone }: { open: boolean;
     }, POLL_MS);
     return () => clearInterval(t);
   }, [step, job]);
+
+  // Poll the retry (re-index) job started from the progress step.
+  useEffect(() => {
+    if (!reindexJob || TERMINAL_STATUSES.includes(reindexJob.status)) return;
+    const id = reindexJob.import_id;
+    const t = setInterval(async () => {
+      try { setReindexJob(await fetchImport(id)); } catch { /* keep polling */ }
+    }, POLL_MS);
+    return () => clearInterval(t);
+  }, [reindexJob]);
+
+  const retryIndexing = async () => {
+    setReindexBusy(true); setError(null);
+    try {
+      const res = await reindexProperties({ filters: { indexed: false } });
+      if (res.job) setReindexJob(res.job);
+    } catch (e) {
+      setError(importErrorMessage(e, "تعذّر بدء إعادة الفهرسة"));
+    } finally {
+      setReindexBusy(false);
+    }
+  };
 
   const headers = upload?.detected_columns ?? [];
   const fieldByName = useMemo(() => Object.fromEntries((upload?.fields ?? []).map((f) => [f.name, f])), [upload]);
@@ -331,7 +355,29 @@ export default function ImportWizard({ open, onClose, onDone }: { open: boolean;
                     </label>
                   ))}
                 </div>
+                {showPendingWarning(options) && (
+                  <p role="status" data-testid="pending-warning" className="mt-3 flex items-start gap-2 rounded-lg border border-[var(--chart-4)] bg-[var(--menu-hover)] p-2 text-xs">
+                    <AlertTriangle className="w-4 h-4 shrink-0 text-[var(--chart-4)]" aria-hidden />{PENDING_WARNING}
+                  </p>
+                )}
               </fieldset>
+
+              {upload?.can_activate && (
+                <fieldset className="rounded-xl border border-[var(--border)] p-3">
+                  <legend className="px-2 text-xs font-semibold">التفعيل الفوري (للمدير فقط)</legend>
+                  <label className="flex items-start gap-2 text-xs cursor-pointer">
+                    <input type="checkbox" checked={!!options.activate} className="mt-0.5"
+                      onChange={(e) => setOptions((o) => ({ ...o, activate: e.target.checked }))} />
+                    <span><strong className="block">فعّل العقارات وفهرسها فورًا</strong>
+                      <span className="text-[var(--muted-foreground)]">تصبح «نشط ومعتمد» ويراها المساعد مباشرة، دون انتظار الاعتماد.</span></span>
+                  </label>
+                  {options.activate && (
+                    <p role="alert" data-testid="activate-warning" className="mt-2 flex items-start gap-2 rounded-lg border border-[var(--chart-down)] p-2 text-xs">
+                      <AlertTriangle className="w-4 h-4 shrink-0 text-[var(--chart-down)]" aria-hidden />{ACTIVATE_WARNING}
+                    </p>
+                  )}
+                </fieldset>
+              )}
 
               <fieldset className="rounded-xl border border-[var(--border)] p-3">
                 <legend className="px-2 text-xs font-semibold">إذا كان رقم الإعلان (REGA) موجودًا مسبقًا</legend>
@@ -437,14 +483,32 @@ export default function ImportWizard({ open, onClose, onDone }: { open: boolean;
                 <div className="h-full bg-[var(--chart-1)] transition-all duration-500" style={{ width: `${job.percent}%` }} />
               </div>
               <div className="grid grid-cols-2 md:grid-cols-5 gap-3 text-center">
-                {[["أُنشئ", job.created], ["حُدّث", job.updated], ["تُخطّي", job.skipped], ["فشل", job.failed], ["فُهرس للبحث", job.indexed]].map(([l, v]) => (
+                {[["أُنشئ", job.created], ["حُدّث", job.updated], ["تُخطّي", job.skipped], ["فشل", job.failed]].map(([l, v]) => (
                   <div key={String(l)} className="rounded-xl border border-[var(--border)] p-3">
                     <div className="text-xl font-bold">{fmt(v as number)}</div><div className="text-xs text-[var(--muted-foreground)]">{l}</div>
                   </div>
                 ))}
+                <div className="rounded-xl border border-[var(--border)] p-3" data-testid="index-counter">
+                  <div className="text-xl font-bold">{fmt(indexTotals(job).indexed)} / {fmt(indexTotals(job).expected)}</div>
+                  <div className="text-xs text-[var(--muted-foreground)]">فُهرس للبحث</div>
+                </div>
               </div>
-              {job.status === "completed" && job.indexed < job.created + job.updated && (
-                <p className="text-xs text-[var(--chart-4)]">بعض العقارات لم تُفهرس للبحث الذكي بعد (خدمة الفهرسة غير متاحة مؤقتًا). تُفهرس تلقائيًا عند تعديل العقار.</p>
+              {(job.index_failed > 0 || (job.status === "completed" && indexTotals(job).missing > 0)) && (
+                <div role="alert" data-testid="index-error" className="rounded-xl border border-[var(--chart-down)] p-3 space-y-2 text-sm">
+                  <p className="font-semibold">تعذّرت فهرسة {fmt(Math.max(job.index_failed, indexTotals(job).missing))} عقارًا — لن يجدها المساعد حتى تُفهرس.</p>
+                  {job.index_error && <p className="text-xs break-words" dir="ltr">{job.index_error}</p>}
+                  {reindexJob ? (
+                    <p className="text-xs" data-testid="retry-progress">
+                      إعادة الفهرسة: {fmt(reindexJob.indexed)} / {fmt(reindexJob.total_rows)} ({reindexJob.percent}٪)
+                      {reindexJob.status === "completed" && reindexJob.index_failed === 0 && " — اكتملت"}
+                      {reindexJob.index_failed > 0 && reindexJob.index_error && ` — فشل: ${reindexJob.index_error}`}
+                    </p>
+                  ) : (
+                    <button className="btn btn-outline h-8 px-3 text-xs" onClick={() => void retryIndexing()} disabled={reindexBusy || running}>
+                      {reindexBusy ? <Loader2 className="w-3.5 h-3.5 animate-spin" aria-hidden /> : "إعادة محاولة الفهرسة"}
+                    </button>
+                  )}
+                </div>
               )}
               {job.error_message && <p role="alert" className="text-sm text-[var(--chart-down)]">{job.error_message}</p>}
               {job.has_error_report && (

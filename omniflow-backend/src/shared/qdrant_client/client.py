@@ -143,6 +143,15 @@ class QdrantManager:
             grpc=settings.qdrant_use_grpc,
         )
 
+    async def ensure_started(self) -> None:
+        """
+        Idempotent start for processes that never ran an explicit on_startup (the gateway used to
+        start Qdrant only inside two unrelated endpoints, so everything else -- property indexing
+        included -- failed with "QdrantManager not started"). Safe to call on every use.
+        """
+        if not self._started:
+            await self.start()
+
     async def stop(self) -> None:
         """Close the Qdrant client connection."""
         if self._client:

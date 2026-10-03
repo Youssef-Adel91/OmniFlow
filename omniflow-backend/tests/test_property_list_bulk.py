@@ -62,6 +62,8 @@ class PropertyListBulkTests(unittest.IsolatedAsyncioTestCase):
     async def asyncTearDown(self):
         async with self.Admin() as s:
             for t in (self.A, self.B):
+                await s.execute(self.text("DELETE FROM import_jobs WHERE tenant_id=:t"), {"t": t})
+                await s.execute(self.text("DELETE FROM audit_logs WHERE tenant_id=:t"), {"t": t})
                 await s.execute(self.text("DELETE FROM property_listings WHERE tenant_id=:t"), {"t": t})
                 await s.execute(self.text("DELETE FROM tenants WHERE tenant_id=:t"), {"t": t})
             await s.commit()
@@ -106,15 +108,21 @@ class PropertyListBulkTests(unittest.IsolatedAsyncioTestCase):
         self.assertNotIn("B1", text)
 
     async def test_bulk_status_and_delete_only_touch_own_tenant(self):
-        reindex, qdrant_delete = AsyncMock(), AsyncMock()
+        reindex, qdrant_delete, start = AsyncMock(), AsyncMock(), AsyncMock()
         with patch.object(props, "delete_listings_from_qdrant", qdrant_delete), \
-             patch("src.shared.services.property_import.reindex", reindex):
+             patch("src.shared.services.property_import.reindex", reindex), \
+             patch("src.shared.services.property_import.start_reindex", start):
             async with client_for(self.app) as c:
                 ids = [str(self.ids["a"]), str(self.ids["c"]), str(self.ids["x"]), str(uuid.uuid4())]
                 r = await c.post("/api/v1/properties/bulk/status", json={"ids": ids, "status": "SUSPENDED"})
-                self.assertEqual((r.status_code, r.json()), (200, {"requested": 4, "updated": 2, "not_found": 2}))
+                body = r.json()
+                self.assertEqual((r.status_code, body["requested"], body["updated"], body["not_found"]), (200, 4, 2, 2))
+                self.assertTrue(body["reindex_job_id"])
                 self.assertEqual(sorted((await self.regas(c, status="SUSPENDED"))[0]), ["A1", "A_3"])
-                self.assertEqual(sorted(reindex.await_args.args[1]), sorted([self.ids["a"], self.ids["c"]]))
+                start.assert_awaited_once()
+                job = (await c.get(f"/api/v1/properties/import/{body['reindex_job_id']}")).json()
+                self.assertEqual((job["kind"], job["total_rows"], job["status"]), ("reindex", 2, "queued"))
+                self.assertNotIn("ids", job["options"])
                 r = await c.post("/api/v1/properties/bulk/delete", json={"ids": ids})
                 self.assertEqual(r.json(), {"requested": 4, "deleted": 2, "not_found": 2})
                 self.assertEqual(sorted(qdrant_delete.await_args.args[0]), sorted([str(self.ids["a"]), str(self.ids["c"])]))

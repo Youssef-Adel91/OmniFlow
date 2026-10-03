@@ -31,7 +31,7 @@ import json
 import re
 import uuid
 from datetime import datetime, timedelta, timezone
-from typing import Any
+from typing import Any, NamedTuple
 
 import structlog
 from sqlalchemy import String, cast, func, select, text, update
@@ -39,7 +39,8 @@ from sqlalchemy.dialects.postgresql import insert as pg_insert
 
 from src.shared.core.config import get_settings
 from src.shared.core.exceptions import NotFoundError
-from src.shared.db.models import ImportJob, ImportMappingTemplate, PropertyListing
+from src.shared.core.enums import ListingStatus
+from src.shared.db.models import AuditLog, ImportJob, ImportMappingTemplate, PropertyListing
 from src.shared.db.session import get_system_session, get_tenant_session
 from src.shared.services import vector_sync
 from src.shared.services.bulk_import import llm_extract
@@ -53,6 +54,10 @@ from src.shared.services.bulk_import.validate import RowResult, validate_table
 logger = structlog.get_logger(__name__)
 
 KIND = "properties"
+REINDEX_KIND = "reindex"
+KINDS = (KIND, REINDEX_KIND)
+REINDEX_BATCH = 100
+MAX_REINDEX_IDS = 20000
 LEASE_SECONDS = 120
 ON_DUPLICATE = ("skip", "update", "create_new")
 DEFAULT_KEYS = ("property_type", "status", "city", "district")
@@ -154,8 +159,8 @@ def _table_from_json(data: bytes) -> Table:
     return Table(doc["headers"], doc["rows"], doc.get("extracted_by_llm", False), doc.get("notes", []))
 
 
-async def _load_job(session, import_id: uuid.UUID) -> ImportJob:
-    job = await session.scalar(select(ImportJob).where(ImportJob.import_id == import_id, ImportJob.kind == KIND))
+async def _load_job(session, import_id: uuid.UUID, kinds: tuple[str, ...] = KINDS) -> ImportJob:
+    job = await session.scalar(select(ImportJob).where(ImportJob.import_id == import_id, ImportJob.kind.in_(kinds)))
     if job is None:
         raise NotFoundError("عملية الاستيراد غير موجودة")
     return job
@@ -169,8 +174,11 @@ def serialize_job(job: ImportJob) -> dict[str, Any]:
         "file_kind": job.file_kind, "total_rows": total, "processed_rows": job.processed_rows, "percent": pct,
         "created": job.created_count, "updated": job.updated_count, "skipped": job.skipped_count,
         "failed": job.failed_count, "indexed": job.indexed_count,
+        "index_failed": job.index_failed or 0, "index_error": job.index_error,
         "has_error_report": bool(job.errors_key), "error_message": job.error_message,
-        "cancel_requested": job.cancel_requested, "options": job.options, "mapping": job.mapping,
+        "cancel_requested": job.cancel_requested,
+        "options": {k: v for k, v in (job.options or {}).items() if k != "ids"} if job.options is not None else None,
+        "mapping": job.mapping,
         "summary": job.summary,
         "created_at": job.created_at.isoformat() if job.created_at else None,
         "started_at": job.started_at.isoformat() if job.started_at else None,
@@ -254,7 +262,7 @@ def normalize_options(options: dict[str, Any] | None) -> dict[str, Any]:
         except ParseError as exc:
             raise ValueError(f"قيمة افتراضية غير صالحة — {exc}") from exc
         defaults[key] = str(value) if key in ("city", "district") else parsed
-    return {"on_duplicate": on_dup, "defaults": defaults}
+    return {"on_duplicate": on_dup, "defaults": defaults, "activate": bool(options.get("activate", False))}
 
 
 async def _existing_regas(session, tenant_id: uuid.UUID, regas: list[str]) -> dict[str, uuid.UUID]:
@@ -350,7 +358,7 @@ async def queue_job(session, job: ImportJob) -> None:
     await session.flush()
 
 
-def spawn(tenant_id: uuid.UUID, import_id: uuid.UUID) -> None:
+def spawn(tenant_id: uuid.UUID, import_id: uuid.UUID, kind: str = KIND) -> None:
     """Start the job on this process's event loop (fire-and-forget; the DB row is the source of truth)."""
     if import_id in _RUNNING:
         return
@@ -358,7 +366,7 @@ def spawn(tenant_id: uuid.UUID, import_id: uuid.UUID) -> None:
 
     async def _go() -> None:
         try:
-            await run_job(tenant_id, import_id)
+            await (run_reindex if kind == REINDEX_KIND else run_job)(tenant_id, import_id)
         finally:
             _RUNNING.discard(import_id)
 
@@ -371,14 +379,18 @@ async def start_job(tenant_id: uuid.UUID, import_id: uuid.UUID) -> None:
     spawn(tenant_id, import_id)
 
 
+async def start_reindex(tenant_id: uuid.UUID, import_id: uuid.UUID) -> None:
+    spawn(tenant_id, import_id, REINDEX_KIND)
+
+
 async def resume_stale_jobs() -> int:
     """Adopt jobs whose worker died (queued, or running with an expired lease). Called at gateway startup."""
     async with get_system_session() as s:
         rows = (await s.execute(text(
-            "SELECT import_id, tenant_id FROM import_jobs WHERE status IN ('queued','running') "
+            "SELECT import_id, tenant_id, kind FROM import_jobs WHERE status IN ('queued','running') "
             "AND (lease_expires_at IS NULL OR lease_expires_at < now())"))).all()
-    for import_id, tenant_id in rows:
-        spawn(tenant_id, import_id)
+    for import_id, tenant_id, kind in rows:
+        spawn(tenant_id, import_id, kind)
     if rows:
         logger.info("import_jobs_resumed", count=len(rows))
     return len(rows)
@@ -409,7 +421,8 @@ _UPDATABLE = ("property_type", "status", "city", "district", "latitude", "longit
               "bedrooms", "bathrooms", "description_ar", "description_en")
 
 
-async def _apply_batch(session, tenant_id: uuid.UUID, import_id: uuid.UUID, batch: list[RowResult], on_dup: str) -> dict[str, Any]:
+async def _apply_batch(session, tenant_id: uuid.UUID, import_id: uuid.UUID, batch: list[RowResult], on_dup: str,
+                       activate: bool = False) -> dict[str, Any]:
     """Write one batch. Returns ids to index and per-row skips/failures. Runs inside the caller's transaction."""
     out: dict[str, Any] = {"created": [], "updated": [], "skipped": [], "failed": []}
     ready: list[tuple[RowResult, str]] = []
@@ -417,6 +430,8 @@ async def _apply_batch(session, tenant_id: uuid.UUID, import_id: uuid.UUID, batc
         if not r.ok:
             out["failed"].append((r, "; ".join(i.message for i in r.errors)))
             continue
+        if activate:        # admin-approved "activate and index now" (is_verified stays False: REGA is not checked)
+            r.values["status"] = ListingStatus.VERIFIED_ACTIVE.value
         ready.append((r, r.key or f"DEV-IMP-{import_id.hex[:8]}-{r.row_number}"))
 
     existing = await _existing_regas(session, tenant_id, [rega for r, rega in ready if r.key])
@@ -449,31 +464,121 @@ async def _apply_batch(session, tenant_id: uuid.UUID, import_id: uuid.UUID, batc
     return out
 
 
-async def _index(tenant_id: uuid.UUID, ids: list[uuid.UUID]) -> int:
-    """Embed + upsert listings, then record qdrant_point_id. Never raises."""
+class IndexOutcome(NamedTuple):
+    indexed: int
+    failed: int
+    error: str | None = None
+
+
+async def _index(tenant_id: uuid.UUID, ids: list[uuid.UUID]) -> IndexOutcome:
+    """Embed + upsert listings, then record qdrant_point_id. Never raises; the real error is returned."""
     if not ids:
-        return 0
+        return IndexOutcome(0, 0)
     try:
         async with get_tenant_session(tenant_id) as s:
             cols = PropertyListing.__table__.c
             rows = (await s.execute(select(*cols).where(PropertyListing.tenant_id == tenant_id,
                                                          PropertyListing.listing_id.in_(ids)))).mappings().all()
         listings = [PropertyListing(**dict(r)) for r in rows]
-        done = await vector_sync.sync_listings_batch(listings, tenant_id)
-        if done:
+        res = await vector_sync.sync_listings_batch(listings, tenant_id)
+        if res.ids:
             async with get_tenant_session(tenant_id) as s:
                 await s.execute(update(PropertyListing).where(
-                    PropertyListing.tenant_id == tenant_id, PropertyListing.listing_id.in_([uuid.UUID(i) for i in done]))
+                    PropertyListing.tenant_id == tenant_id, PropertyListing.listing_id.in_([uuid.UUID(i) for i in res.ids]))
                     .values(qdrant_point_id=cast(PropertyListing.listing_id, String)))
-        return len(done)
-    except Exception:  # noqa: BLE001
+        return IndexOutcome(len(res.ids), len(ids) - len(res.ids), res.error)
+    except Exception as exc:  # noqa: BLE001
         logger.error("import_index_failed", tenant_id=str(tenant_id), exc_info=True)
-        return 0
+        return IndexOutcome(0, len(ids), vector_sync.describe_index_error(exc))
 
 
-async def reindex(tenant_id: uuid.UUID, ids: list[uuid.UUID]) -> int:
-    """Re-embed listings after a bulk edit (background). Public alias of the importer's indexer."""
+async def _record_index(tenant_id: uuid.UUID, import_id: uuid.UUID, out: IndexOutcome) -> None:
+    if not (out.indexed or out.failed or out.error):
+        return
+    values: dict[str, Any] = {"indexed_count": ImportJob.indexed_count + out.indexed,
+                              "index_failed": ImportJob.index_failed + out.failed}
+    if out.error:
+        values["index_error"] = out.error
+    async with get_tenant_session(tenant_id) as s:
+        await s.execute(update(ImportJob).where(ImportJob.import_id == import_id).values(**values))
+
+
+async def reindex(tenant_id: uuid.UUID, ids: list[uuid.UUID]) -> IndexOutcome:
+    """Re-embed listings (synchronous helper; bulk operations use the reindex job)."""
     return await _index(tenant_id, ids)
+
+
+async def write_audit(session, *, tenant_id: uuid.UUID, actor_user_id: uuid.UUID | None, action: str,
+                      entity_type: str | None = None, entity_id: str | None = None,
+                      details: dict[str, Any] | None = None) -> None:
+    session.add(AuditLog(tenant_id=tenant_id, actor_user_id=actor_user_id, action=action,
+                         entity_type=entity_type, entity_id=entity_id, details=details))
+    await session.flush()
+
+
+# ── Re-index job (same job table/lease/progress machinery as imports) ────────────
+
+async def create_reindex_job(session, *, tenant_id: uuid.UUID, user_id: uuid.UUID | None, ids: list[uuid.UUID],
+                             label: str = "إعادة فهرسة العقارات") -> ImportJob:
+    if not ids:
+        raise ValueError("لا توجد عقارات لإعادة فهرستها.")
+    if len(ids) > MAX_REINDEX_IDS:
+        raise ValueError(f"الحد الأقصى {MAX_REINDEX_IDS} عقار في العملية الواحدة.")
+    busy = await session.scalar(select(ImportJob.import_id).where(
+        ImportJob.tenant_id == tenant_id, ImportJob.status.in_(ACTIVE)).limit(1))
+    if busy is not None:
+        raise ConflictError("هناك عملية استيراد/فهرسة أخرى قيد التنفيذ. انتظر حتى تنتهي.")
+    job = ImportJob(import_id=uuid.uuid4(), tenant_id=tenant_id, kind=REINDEX_KIND, status="queued", filename=label,
+                    file_kind="none", options={"ids": [str(i) for i in ids]}, total_rows=len(ids), created_by=user_id)
+    session.add(job)
+    await session.flush()
+    return job
+
+
+async def run_reindex(tenant_id: uuid.UUID, import_id: uuid.UUID) -> None:
+    try:
+        for attempt in range(6):
+            async with get_tenant_session(tenant_id) as s:
+                if await _claim(s, import_id):
+                    job = await _load_job(s, import_id, (REINDEX_KIND,))
+                    ids, done = [uuid.UUID(i) for i in (job.options or {}).get("ids", [])], job.processed_rows
+                    break
+                state = await s.scalar(select(ImportJob.status).where(ImportJob.import_id == import_id))
+            if state != "queued" or attempt == 5:
+                return
+            await asyncio.sleep(0.5)
+        for start in range(done, len(ids), REINDEX_BATCH):
+            chunk = ids[start:start + REINDEX_BATCH]
+            async with get_tenant_session(tenant_id) as s:
+                job = await _load_job(s, import_id, (REINDEX_KIND,))
+                if job.cancel_requested:
+                    job.status, job.finished_at = "cancelled", datetime.now(timezone.utc)
+                    return
+            out = await _index(tenant_id, chunk)
+            async with get_tenant_session(tenant_id) as s:
+                job = await _load_job(s, import_id, (REINDEX_KIND,))
+                job.processed_rows = start + len(chunk)
+                job.indexed_count += out.indexed
+                job.index_failed += out.failed
+                if out.error:
+                    job.index_error = out.error
+                job.lease_expires_at = datetime.now(timezone.utc) + timedelta(seconds=LEASE_SECONDS)
+            await asyncio.sleep(0)
+        async with get_tenant_session(tenant_id) as s:
+            job = await _load_job(s, import_id, (REINDEX_KIND,))
+            if job.status == "running":
+                job.status = "completed"
+            job.finished_at = job.finished_at or datetime.now(timezone.utc)
+            job.lease_expires_at = None
+    except Exception as exc:  # noqa: BLE001
+        logger.error("reindex_job_failed", import_id=str(import_id), tenant_id=str(tenant_id), exc_info=True)
+        try:
+            async with get_tenant_session(tenant_id) as s:
+                await s.execute(update(ImportJob).where(ImportJob.import_id == import_id, ImportJob.status == "running")
+                                .values(status="failed", finished_at=datetime.now(timezone.utc),
+                                        error_message=f"{type(exc).__name__}: {str(exc)[:300]}"))
+        except Exception:  # noqa: BLE001
+            logger.error("reindex_job_fail_mark_failed", import_id=str(import_id), exc_info=True)
 
 
 def build_error_csv(headers: list[str], entries: list[tuple[RowResult, str, str]]) -> bytes:
@@ -512,7 +617,7 @@ async def run_job(tenant_id: uuid.UUID, import_id: uuid.UUID) -> None:
                 if job.cancel_requested:
                     job.status, job.finished_at = "cancelled", datetime.now(timezone.utc)
                     break
-                out = await _apply_batch(s, tenant_id, import_id, batch, on_dup)
+                out = await _apply_batch(s, tenant_id, import_id, batch, on_dup, bool(options.get("activate")))
                 job.processed_rows = start + len(batch)
                 job.created_count += len(out["created"])
                 job.updated_count += len(out["updated"])
@@ -520,11 +625,7 @@ async def run_job(tenant_id: uuid.UUID, import_id: uuid.UUID) -> None:
                 job.failed_count += len(out["failed"])
                 job.lease_expires_at = datetime.now(timezone.utc) + timedelta(seconds=LEASE_SECONDS)
             report += [(r, "فشل", why) for r, why in out["failed"]] + [(r, "تخطّي", why) for r, why in out["skipped"]]
-            indexed = await _index(tenant_id, out["created"] + out["updated"])
-            if indexed:
-                async with get_tenant_session(tenant_id) as s:
-                    await s.execute(update(ImportJob).where(ImportJob.import_id == import_id)
-                                    .values(indexed_count=ImportJob.indexed_count + indexed))
+            await _record_index(tenant_id, import_id, await _index(tenant_id, out["created"] + out["updated"]))
             await asyncio.sleep(0)                      # let the API breathe between batches
 
         await _finalize(tenant_id, import_id, table.headers, report)
@@ -553,6 +654,13 @@ async def _finalize(tenant_id: uuid.UUID, import_id: uuid.UUID, headers: list[st
         job.lease_expires_at = None
         source_key, rows_key = job.source_key, job.rows_key
         job.source_key = job.rows_key = None
+        if (job.options or {}).get("activate"):
+            await write_audit(
+                s, tenant_id=tenant_id, actor_user_id=job.created_by, action="property_import.activated",
+                entity_type="import_job", entity_id=str(import_id),
+                details={"created": job.created_count, "updated": job.updated_count,
+                         "listings_activated": job.created_count + job.updated_count, "is_verified": False,
+                         "filename": job.filename})
     # The source sheet holds customer/listing data: don't keep it once the job is over.
     await storage.delete(source_key)
     await storage.delete(rows_key)

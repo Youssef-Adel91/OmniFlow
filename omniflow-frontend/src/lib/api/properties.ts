@@ -93,7 +93,20 @@ export interface ListPropertiesParams {
   search?: string;
   price_min?: number;
   price_max?: number;
+  /** true = in the RAG index (bot can find it), false = not indexed. */
+  indexed?: boolean;
   sort?: PropertySort;
+}
+
+/** The list filters, used to act on "all N matching" (server resolves the ids; max 20,000). */
+export type ListingFilters = Pick<ListPropertiesParams, "status" | "property_type" | "city" | "search" | "price_min" | "price_max" | "indexed">;
+export type BulkScope = { ids: string[] } | { filters: ListingFilters };
+
+export function cleanFilters(f: ListingFilters): ListingFilters {
+  return {
+    status: f.status, property_type: f.property_type, city: f.city?.trim() || undefined,
+    search: f.search?.trim() || undefined, price_min: f.price_min, price_max: f.price_max, indexed: f.indexed,
+  };
 }
 
 // ── Human-readable labels (bilingual) ─────────────────────────────────────
@@ -136,13 +149,18 @@ export async function listProperties(
       search:        params.search?.trim() || undefined,
       price_min:     params.price_min,
       price_max:     params.price_max,
+      indexed:       params.indexed,
       sort:          params.sort,
     },
   });
   return data;
 }
 
-export interface BulkResult { requested: number; not_found: number; deleted?: number; updated?: number }
+export interface BulkResult {
+  requested: number; not_found: number; deleted?: number; updated?: number;
+  /** background re-index job started by a status change (poll with fetchImport) */
+  reindex_job_id?: string | null;
+}
 
 /** Delete up to 500 listings at once. */
 export async function bulkDeleteProperties(ids: string[]): Promise<BulkResult> {
@@ -151,8 +169,16 @@ export async function bulkDeleteProperties(ids: string[]): Promise<BulkResult> {
 }
 
 /** Change the status of up to 500 listings at once. */
-export async function bulkSetPropertyStatus(ids: string[], status: ListingStatus): Promise<BulkResult> {
-  const { data } = await apiClient.post<BulkResult>("/properties/bulk/status", { ids, status });
+export async function bulkSetPropertyStatus(scope: BulkScope | string[], status: ListingStatus): Promise<BulkResult> {
+  const body = Array.isArray(scope) ? { ids: scope } : "filters" in scope ? { filters: cleanFilters(scope.filters) } : scope;
+  const { data } = await apiClient.post<BulkResult>("/properties/bulk/status", { ...body, status });
+  return data;
+}
+
+/** Start a background re-index job (ids ≤ 500, or filters ≤ 20,000). Poll the job with fetchImport(job.import_id). */
+export async function reindexProperties(scope: BulkScope): Promise<{ queued: number; job: import("@/lib/api/propertyImport").ImportJob | null }> {
+  const body = "filters" in scope ? { filters: cleanFilters(scope.filters) } : scope;
+  const { data } = await apiClient.post("/properties/reindex", body);
   return data;
 }
 
@@ -162,7 +188,7 @@ export async function exportPropertiesCsv(params: Omit<ListPropertiesParams, "pa
     responseType: "blob",
     params: {
       status: params.status, property_type: params.property_type, city: params.city?.trim() || undefined,
-      search: params.search?.trim() || undefined, price_min: params.price_min, price_max: params.price_max, sort: params.sort,
+      search: params.search?.trim() || undefined, price_min: params.price_min, price_max: params.price_max, indexed: params.indexed, sort: params.sort,
     },
   });
   return data;

@@ -24,7 +24,7 @@ import structlog
 from fastapi import APIRouter, BackgroundTasks, File, HTTPException, Response, UploadFile, status
 from pydantic import BaseModel, Field
 
-from src.gateway.dependencies import AuthTenantSession, PropertyWriteUser
+from src.gateway.dependencies import AuthTenantSession, PropertyWriteUser, can_activate_listings
 from src.shared.core.config import get_settings
 from src.shared.services import property_import as svc
 from src.shared.services.bulk_import.files import ImportFileError
@@ -68,8 +68,10 @@ async def upload(user: PropertyWriteUser, session: AuthTenantSession, file: Uplo
     cfg = get_settings()
     data = await _read_capped(file, cfg.import_max_file_mb * 1024 * 1024)
     try:
-        return await svc.create_upload(session, tenant_id=user.tenant_id, user_id=getattr(user, "user_id", None),
-                                       filename=file.filename or "upload", data=data)
+        out = await svc.create_upload(session, tenant_id=user.tenant_id, user_id=getattr(user, "user_id", None),
+                                      filename=file.filename or "upload", data=data)
+        out["can_activate"] = can_activate_listings(user)
+        return out
     except ImportFileError as exc:
         raise HTTPException(status_code=422, detail={"code": exc.code, "message": exc.message}) from exc
 
@@ -101,7 +103,10 @@ async def remove_template(template_id: uuid.UUID, user: PropertyWriteUser, sessi
 
 @router.post("/{import_id}/validate", summary="Dry run: validate every row without writing")
 async def validate(import_id: uuid.UUID, body: ValidateBody, user: PropertyWriteUser, session: AuthTenantSession) -> dict[str, Any]:
-    job = await svc._load_job(session, import_id)
+    if (body.options or {}).get("activate") and not can_activate_listings(user):
+        raise HTTPException(status_code=403, detail={
+            "code": "FORBIDDEN", "message": "تفعيل العقارات دون تحقق الهيئة متاح للمدير (admin) فقط."})
+    job = await svc._load_job(session, import_id, (svc.KIND,))
     try:
         summary = await svc.validate_job(session, job, body.mapping, body.options)
         if body.save_template_as:
@@ -113,13 +118,24 @@ async def validate(import_id: uuid.UUID, body: ValidateBody, user: PropertyWrite
 
 @router.post("/{import_id}/commit", status_code=status.HTTP_202_ACCEPTED, summary="Start the background import")
 async def commit(import_id: uuid.UUID, background: BackgroundTasks, user: PropertyWriteUser, session: AuthTenantSession) -> dict[str, Any]:
-    job = await svc._load_job(session, import_id)
+    job = await svc._load_job(session, import_id, (svc.KIND,))
+    activate = bool((job.options or {}).get("activate"))
+    if activate and not can_activate_listings(user):
+        raise HTTPException(status_code=403, detail={
+            "code": "FORBIDDEN", "message": "تفعيل العقارات دون تحقق الهيئة متاح للمدير (admin) فقط."})
     try:
         await svc.queue_job(session, job)
     except svc.ConflictError as exc:
         raise HTTPException(status_code=409, detail={"code": "IMPORT_IN_PROGRESS", "message": str(exc)}) from exc
     except ValueError as exc:
         raise _bad_request(exc) from exc
+    if activate:
+        counts = (job.summary or {}).get("counts", {})
+        await svc.write_audit(
+            session, tenant_id=user.tenant_id, actor_user_id=getattr(user, "user_id", None),
+            action="property_import.activate_requested", entity_type="import_job", entity_id=str(import_id),
+            details={"expected_listings": counts.get("will_create", 0) + counts.get("will_update", 0),
+                     "filename": job.filename, "is_verified": False})
     # Runs after the response (and after the session dependency has committed the `queued` row).
     # run_job also retries its claim briefly, so a slow commit can never strand the job.
     background.add_task(svc.start_job, user.tenant_id, import_id)

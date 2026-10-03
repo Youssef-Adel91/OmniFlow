@@ -90,3 +90,30 @@ test("import errors are surfaced in Arabic from every backend shape", () => {
   assert.equal(m.importErrorMessage(new Error("net"), "x"), "net");
   assert.equal(m.importErrorMessage({}, "افتراضي"), "افتراضي");
 });
+
+test("bulk by filters / re-index: ids vs 'all matching' scope, filters are trimmed, indexed flag is forwarded", async () => {
+  const { api, calls } = recorder();
+  const m = load("src/lib/api/properties.ts", api);
+  await m.bulkSetPropertyStatus({ filters: { status: "PENDING_VERIFICATION", city: "  جدة ", search: "  ", indexed: false } }, "VERIFIED_ACTIVE");
+  await m.reindexProperties({ ids: ["a"] });
+  await m.reindexProperties({ filters: { indexed: false } });
+  await m.listProperties({ indexed: false });
+  await m.exportPropertiesCsv({ indexed: true });
+  assert.deepEqual(plain(calls[0].slice(1, 3)), ["/properties/bulk/status", { filters: { status: "PENDING_VERIFICATION", city: "جدة", indexed: false }, status: "VERIFIED_ACTIVE" }]);
+  assert.deepEqual(plain(calls[1].slice(1, 3)), ["/properties/reindex", { ids: ["a"] }]);
+  assert.deepEqual(plain(calls[2].slice(1, 3)), ["/properties/reindex", { filters: { indexed: false } }]);
+  assert.equal(calls[3][2].params.indexed, false);
+  assert.equal(calls[4][2].params.indexed, true);
+});
+
+test("warnings: pending shows unless activating or another default status; index totals count missing listings", () => {
+  const m = load("src/lib/api/propertyImport.ts", {});
+  assert.equal(m.showPendingWarning({ defaults: {} }), true);
+  assert.equal(m.showPendingWarning({ defaults: { status: "PENDING_VERIFICATION" } }), true);
+  assert.equal(m.showPendingWarning({ defaults: { status: "VERIFIED_ACTIVE" } }), false);
+  assert.equal(m.showPendingWarning({ defaults: {}, activate: true }), false);
+  assert.equal(m.PENDING_WARNING, "العقارات قيد التحقق لن يراها المساعد حتى يتم اعتمادها");
+  assert.match(m.ACTIVATE_WARNING, /REGA/);
+  assert.deepEqual(plain(m.indexTotals({ kind: "properties", created: 4, updated: 1, indexed: 3, index_failed: 2, total_rows: 9 })), { expected: 5, indexed: 3, failed: 2, missing: 2 });
+  assert.deepEqual(plain(m.indexTotals({ kind: "reindex", created: 0, updated: 0, indexed: 7, index_failed: 0, total_rows: 7 })), { expected: 7, indexed: 7, failed: 0, missing: 0 });
+});

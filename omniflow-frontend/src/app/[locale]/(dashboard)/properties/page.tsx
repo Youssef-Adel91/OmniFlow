@@ -21,13 +21,15 @@ import React, { useState, useEffect, useCallback } from "react";
 import { useParams } from "next/navigation";
 import { PropertyFormSheet } from "@/components/properties/PropertyFormSheet";
 import ImportWizard from "@/components/properties/ImportWizard";
-import { saveBlob } from "@/lib/api/propertyImport";
+import { ACTIVE_STATUSES, fetchImport, importErrorMessage, saveBlob, type ImportJob } from "@/lib/api/propertyImport";
 import {
   listProperties,
   deleteProperty,
   bulkDeleteProperties,
   bulkSetPropertyStatus,
   exportPropertiesCsv,
+  reindexProperties,
+  type BulkScope,
   type PropertySort,
   type PropertyListing,
   type PropertyListingPage,
@@ -249,6 +251,10 @@ export default function PropertiesPage() {
   const [bulkBusy, setBulkBusy]             = useState(false);
   const [notice, setNotice]                 = useState<string | null>(null);
   const [exporting, setExporting]           = useState(false);
+  const [indexedFilter, setIndexedFilter]   = useState<"" | "true" | "false">("");
+  const [allMatching, setAllMatching]       = useState(false);      // "select all N matching the filter"
+  const [unindexed, setUnindexed]           = useState<number | null>(null);
+  const [reindexJob, setReindexJob]         = useState<ImportJob | null>(null);
 
   const filterParams = {
     status:        statusFilter || undefined,
@@ -257,9 +263,12 @@ export default function PropertiesPage() {
     search:        search || undefined,
     price_min:     priceMin !== "" && Number.isFinite(Number(priceMin)) ? Number(priceMin) : undefined,
     price_max:     priceMax !== "" && Number.isFinite(Number(priceMax)) ? Number(priceMax) : undefined,
+    indexed:       indexedFilter === "" ? undefined : indexedFilter === "true",
     sort,
   };
-  const hasFilters = Boolean(statusFilter || typeFilter || city || search || priceMin || priceMax);
+  const hasFilters = Boolean(statusFilter || typeFilter || city || search || priceMin || priceMax || indexedFilter);
+  // The filters (without sort) that "all matching" actions send to the server.
+  const { sort: _sort, ...matchFilters } = filterParams;
   const filterKey = JSON.stringify(filterParams);
 
   // ── Fetch ──────────────────────────────────────────────────────────────────
@@ -270,6 +279,8 @@ export default function PropertiesPage() {
       const result = await listProperties({ page, limit: 15, ...filterParams });
       setData(result);
       setSelected(new Set());
+      setAllMatching(false);
+      listProperties({ limit: 1, indexed: false }).then((r) => setUnindexed(r.total)).catch(() => undefined);
     } catch (err: any) {
       const msg = err?.response?.data?.detail ?? err?.message ?? "فشل تحميل العقارات";
       setFetchError(typeof msg === "string" ? msg : "فشل تحميل العقارات");
@@ -294,27 +305,66 @@ export default function PropertiesPage() {
   }, [searchInput]);
 
   const clearFilters = () => {
-    setStatusFilter(""); setTypeFilter(""); setCity(""); setPriceMin(""); setPriceMax("");
+    setStatusFilter(""); setTypeFilter(""); setCity(""); setPriceMin(""); setPriceMax(""); setIndexedFilter("");
     setSearchInput(""); setSearch(""); setPage(1);
   };
 
-  const toggleOne = (id: string) =>
+  const toggleOne = (id: string) => {
+    setAllMatching(false);
     setSelected((prev) => { const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n; });
+  };
   const allOnPageSelected = (data?.items.length ?? 0) > 0 && (data?.items ?? []).every((i) => selected.has(i.listing_id));
-  const toggleAll = () =>
+  const toggleAll = () => {
+    setAllMatching(false);
     setSelected(allOnPageSelected ? new Set() : new Set((data?.items ?? []).map((i) => i.listing_id)));
+  };
+  const MATCH_CAP = 20000;
+  const canSelectAllMatching = allOnPageSelected && !allMatching && (data?.total ?? 0) > (data?.items.length ?? 0);
+  const selectionCount = allMatching ? (data?.total ?? 0) : selected.size;
+  const scope = (): BulkScope => (allMatching ? { filters: matchFilters } : { ids: [...selected] });
 
-  const handleBulkStatus = async () => {
-    if (!bulkStatus || selected.size === 0) return;
+  // Poll the background re-index job; refresh the list when it ends.
+  useEffect(() => {
+    if (!reindexJob || !ACTIVE_STATUSES.includes(reindexJob.status)) return;
+    const id = reindexJob.import_id;
+    const t = setInterval(async () => {
+      try {
+        const j = await fetchImport(id);
+        setReindexJob(j);
+        if (!ACTIVE_STATUSES.includes(j.status)) {
+          setNotice(j.index_failed > 0
+            ? `انتهت إعادة الفهرسة: فُهرس ${j.indexed} وفشل ${j.index_failed}.`
+            : `اكتملت إعادة الفهرسة: فُهرس ${j.indexed} عقارًا.`);
+          void fetchListings();
+        }
+      } catch { /* transient */ }
+    }, 1500);
+    return () => clearInterval(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [reindexJob]);
+
+  const startReindex = async (sc: BulkScope) => {
     setBulkBusy(true); setFetchError(null);
     try {
-      const r = await bulkSetPropertyStatus([...selected], bulkStatus);
-      setNotice(`تم تحديث حالة ${r.updated ?? 0} عقارًا${r.not_found ? ` (${r.not_found} غير موجود)` : ""}.`);
+      const r = await reindexProperties(sc);
+      if (!r.job) setNotice("لا توجد عقارات لإعادة فهرستها.");
+      else setReindexJob(r.job);
+    } catch (err) {
+      setFetchError(importErrorMessage(err, "تعذّر بدء إعادة الفهرسة"));
+    } finally { setBulkBusy(false); }
+  };
+
+  const handleBulkStatus = async () => {
+    if (!bulkStatus || selectionCount === 0) return;
+    setBulkBusy(true); setFetchError(null);
+    try {
+      const r = await bulkSetPropertyStatus(scope(), bulkStatus);
+      setNotice(`تم تحديث حالة ${r.updated ?? 0} عقارًا${r.not_found ? ` (${r.not_found} غير موجود)` : ""}${r.reindex_job_id ? " — تجري إعادة الفهرسة في الخلفية." : "."}`);
       setBulkStatus("");
+      if (r.reindex_job_id) fetchImport(r.reindex_job_id).then(setReindexJob).catch(() => undefined);
       await fetchListings();
-    } catch (err: any) {
-      const msg = err?.response?.data?.detail;
-      setFetchError(typeof msg === "string" ? msg : "فشل تحديث الحالة");
+    } catch (err) {
+      setFetchError(importErrorMessage(err, "فشل تحديث الحالة"));
     } finally { setBulkBusy(false); }
   };
 
@@ -419,6 +469,13 @@ export default function PropertiesPage() {
           <button id="export-properties-btn" onClick={handleExport} disabled={exporting || !data?.total} style={btnGhost}>
             {exporting ? "⏳ جارٍ التصدير…" : "⬇ تصدير CSV"}
           </button>
+          {(unindexed ?? 0) > 0 && (
+            <button id="reindex-unindexed-btn" onClick={() => void startReindex({ filters: { indexed: false } })}
+              disabled={bulkBusy || (reindexJob != null && ACTIVE_STATUSES.includes(reindexJob.status))} style={btnGhost}
+              title="العقارات غير المفهرسة لا يجدها المساعد في البحث">
+              🔄 فهرسة غير المفهرس ({(unindexed ?? 0).toLocaleString("ar")})
+            </button>
+          )}
           <button id="import-properties-btn" onClick={() => setImportOpen(true)} style={btnGhost}>
             ⬆ استيراد
           </button>
@@ -432,6 +489,27 @@ export default function PropertiesPage() {
         <div role="status" style={{ ...styles.errorBanner, color: GREEN, background: `${GREEN}12`, border: `1px solid ${GREEN}40` }}>
           ✓ {notice}
           <button onClick={() => setNotice(null)} aria-label="إغلاق" style={{ ...btnGhost, fontSize: "12px", padding: "2px 10px" }}>✕</button>
+        </div>
+      )}
+
+      {reindexJob && (
+        <div role="status" aria-live="polite" data-testid="reindex-banner" style={{ ...styles.errorBanner, color: TEXT, background: `${GOLD}10`, border: `1px solid ${BORDER}`, flexDirection: "column", alignItems: "stretch", gap: "8px" }}>
+          <div style={{ display: "flex", justifyContent: "space-between", gap: "12px", flexWrap: "wrap" }}>
+            <span>
+              🔄 {ACTIVE_STATUSES.includes(reindexJob.status) ? "جارٍ إعادة الفهرسة" : reindexJob.status === "completed" ? "اكتملت إعادة الفهرسة" : "توقفت إعادة الفهرسة"}
+              {" — "}{reindexJob.indexed.toLocaleString("ar")} / {reindexJob.total_rows.toLocaleString("ar")}
+              {reindexJob.index_failed > 0 && ` (فشل ${reindexJob.index_failed.toLocaleString("ar")})`}
+            </span>
+            {!ACTIVE_STATUSES.includes(reindexJob.status) && (
+              <button onClick={() => setReindexJob(null)} aria-label="إغلاق" style={{ ...btnGhost, fontSize: "12px", padding: "2px 10px" }}>✕</button>
+            )}
+          </div>
+          <div role="progressbar" aria-valuenow={Math.round(reindexJob.percent)} aria-valuemin={0} aria-valuemax={100} style={{ height: "8px", borderRadius: "6px", background: NAVY_500, overflow: "hidden" }}>
+            <div style={{ height: "100%", width: `${reindexJob.percent}%`, background: GOLD, transition: "width .4s" }} />
+          </div>
+          {(reindexJob.index_error || reindexJob.error_message) && (
+            <span dir="ltr" style={{ color: RED, fontSize: "12px", wordBreak: "break-word" }}>{reindexJob.index_error ?? reindexJob.error_message}</span>
+          )}
         </div>
       )}
 
@@ -486,6 +564,14 @@ export default function PropertiesPage() {
           style={{ ...styles.filterSelect, minWidth: "90px", width: "110px" }} dir="ltr"
         />
         <Select
+          id="indexed-filter" value={indexedFilter} aria-label="حالة الفهرسة" style={styles.filterSelect}
+          onChange={(e) => { setIndexedFilter(e.target.value as "" | "true" | "false"); setPage(1); }}
+        >
+          <option value="">كل حالات الفهرسة</option>
+          <option value="true">مفهرس</option>
+          <option value="false">غير مفهرس</option>
+        </Select>
+        <Select
           id="sort-select" value={sort} aria-label="الترتيب" style={styles.filterSelect}
           onChange={(e) => { setSort(e.target.value as PropertySort); setPage(1); }}
         >
@@ -514,7 +600,16 @@ export default function PropertiesPage() {
 
       {selected.size > 0 && (
         <div role="region" aria-label="إجراءات جماعية" style={{ ...styles.filterBar, borderColor: GOLD }}>
-          <strong style={{ color: GOLD }}>{selected.size.toLocaleString("ar")} محدد</strong>
+          <strong style={{ color: GOLD }}>{selectionCount.toLocaleString("ar")} محدد{allMatching ? " (كل المطابق للفلتر)" : ""}</strong>
+          {canSelectAllMatching && (
+            data!.total <= MATCH_CAP ? (
+              <button id="select-all-matching" onClick={() => setAllMatching(true)} style={btnGhost}>
+                تحديد كل الـ {data!.total.toLocaleString("ar")} عقارًا المطابقة للفلتر
+              </button>
+            ) : (
+              <span style={{ color: TEXT_DIM, fontSize: "12px" }}>النتائج تتجاوز {MATCH_CAP.toLocaleString("ar")} — ضيّق الفلاتر لتحديدها كلها.</span>
+            )
+          )}
           <Select
             id="bulk-status" value={bulkStatus} aria-label="تغيير الحالة" style={styles.filterSelect}
             onChange={(e) => setBulkStatus(e.target.value as ListingStatus | "")}
@@ -525,8 +620,10 @@ export default function PropertiesPage() {
             )}
           </Select>
           <button onClick={handleBulkStatus} disabled={!bulkStatus || bulkBusy} style={btnGhost}>تطبيق</button>
-          <button onClick={() => setBulkDeleteOpen(true)} disabled={bulkBusy} style={btnDanger}>🗑️ حذف المحدد</button>
-          <button onClick={() => setSelected(new Set())} style={btnGhost}>إلغاء التحديد</button>
+          <button id="bulk-reindex" onClick={() => void startReindex(scope())} disabled={bulkBusy} style={btnGhost}>🔄 إعادة فهرسة</button>
+          <button onClick={() => setBulkDeleteOpen(true)} disabled={bulkBusy || allMatching} style={btnDanger}
+            title={allMatching ? "الحذف الجماعي متاح للعقارات المحددة صراحةً فقط" : undefined}>🗑️ حذف المحدد</button>
+          <button onClick={() => { setSelected(new Set()); setAllMatching(false); }} style={btnGhost}>إلغاء التحديد</button>
         </div>
       )}
 
@@ -626,6 +723,16 @@ export default function PropertiesPage() {
                           style={btnActionEdit}
                         >
                           ✏️ تعديل
+                        </button>
+                        <button
+                          id={`reindex-property-${listing.listing_id}`}
+                          onClick={() => void startReindex({ ids: [listing.listing_id] })}
+                          disabled={bulkBusy}
+                          aria-label={`إعادة فهرسة ${listing.rega_ad_number}`}
+                          title="إعادة فهرسة هذا العقار"
+                          style={btnActionEdit}
+                        >
+                          🔄
                         </button>
                         <button
                           id={`delete-property-${listing.listing_id}`}

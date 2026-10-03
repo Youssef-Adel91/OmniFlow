@@ -136,6 +136,14 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
                 name for name, value in checks.items() if value != "ok"
             ))
 
+    # ── Qdrant (RAG index): best effort; sync paths also lazy-start it ──────────
+    try:
+        from src.shared.qdrant_client.client import qdrant_mgr
+
+        await asyncio.wait_for(qdrant_mgr.start(), timeout=5.0)
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("qdrant_unavailable_continuing", error=str(exc)[:160])
+
     # ── Bulk import: re-adopt jobs whose worker died (best effort, never blocks startup) ──
     try:
         from src.shared.services.property_import import resume_stale_jobs
@@ -149,6 +157,12 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
 
     # ── Shutdown ──────────────────────────────────────────────────────────────
     logger.info("omniflow_shutdown", app=settings.app_name)
+    try:
+        from src.shared.qdrant_client.client import qdrant_mgr
+
+        await qdrant_mgr.stop()
+    except Exception:
+        pass
     try:
         await redis_mgr.stop()
     except Exception:

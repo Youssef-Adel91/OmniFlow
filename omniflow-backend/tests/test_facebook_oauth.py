@@ -45,6 +45,7 @@ class FacebookOAuthTests(unittest.IsolatedAsyncioTestCase):
 
         async def graph_post(client, path, params):
             self.subscribed.append(path)
+            self.subscribed_params = params
             return {"success": True}
 
         patches = [
@@ -100,6 +101,12 @@ class FacebookOAuthTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn("shop_ig", response.text)
         self.assertEqual(self.saved, [(self.tenant_id, "p1", "page-token", "ig1")])
         self.assertEqual(self.subscribed, ["p1/subscribed_apps"])
+        # "comments" is not a valid Page subscription field (Meta answers 500).
+        self.assertEqual(self.subscribed_params["subscribed_fields"], "messages,messaging_postbacks,feed")
+
+    async def test_default_scopes_include_pages_read_engagement(self):
+        scopes = fo.get_settings().__class__.model_fields["meta_oauth_scopes"].default.split(",")
+        self.assertIn("pages_read_engagement", scopes)
 
     async def test_state_is_single_use(self):
         await fo._store_state("st", self.tenant_id)

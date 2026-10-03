@@ -191,7 +191,7 @@ async def _list_pages_with_instagram(client: httpx.AsyncClient, long_lived_user_
 async def _subscribe_page_webhooks(client: httpx.AsyncClient, page_id: str, page_token: str) -> None:
     """POST /{page-id}/subscribed_apps -- wires our app to receive this Page's events."""
     await _graph_post(client, f"{page_id}/subscribed_apps", {
-        "subscribed_fields": "messages,messaging_postbacks,feed,comments",
+        "subscribed_fields": "messages,messaging_postbacks,feed",
         "access_token": page_token,
     })
 

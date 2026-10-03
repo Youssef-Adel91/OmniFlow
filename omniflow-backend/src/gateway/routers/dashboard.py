@@ -2,7 +2,12 @@
 gateway/routers/dashboard.py — Dashboard Summary API
 
 Endpoint (prefix /api/v1/dashboard):
-    GET /summary → headline counters for the authenticated tenant
+    GET /summary   → headline counters for the authenticated tenant
+    GET /analytics → operational analytics (KPIs + period-over-period change,
+                     daily series, funnel, busy-hours heatmap, distributions,
+                     inventory, topics, attention lists). Definitions live in
+                     shared/services/dashboard_analytics.py. Cached in Redis for
+                     60 s per (tenant, params); Redis being down only skips the cache.
 
 Every number is a live COUNT against PostgreSQL inside the tenant's RLS
 session — nothing is mocked or cached.
@@ -16,14 +21,26 @@ session — nothing is mocked or cached.
 """
 from __future__ import annotations
 
+import hashlib
+import json
+from datetime import date
+from typing import Annotated, Any, Literal
+
 import structlog
-from fastapi import APIRouter, status
+from fastapi import APIRouter, HTTPException, Query, status
 from pydantic import BaseModel, Field
 from sqlalchemy import Select, func, or_, select
 
 from src.gateway.dependencies import AuthTenantSession, CurrentUser
 from src.shared.core.enums import ConversationStatus
 from src.shared.db.models import Conversation, Customer, CustomerReport
+from src.shared.redis_client.client import redis_mgr
+from src.shared.services.dashboard_analytics import (
+    CHANNELS,
+    AnalyticsRangeError,
+    build_analytics,
+    resolve_window,
+)
 
 logger = structlog.get_logger(__name__)
 
@@ -105,3 +122,52 @@ async def get_summary(
         hot_leads_count=hot_leads_count,
         reports_sold_count=reports_sold_count,
     )
+
+
+_ANALYTICS_TTL_SECONDS = 60
+
+
+@router.get(
+    "/analytics",
+    status_code=status.HTTP_200_OK,
+    summary="Operational analytics for the dashboard",
+)
+async def get_analytics(
+    user: CurrentUser,
+    session: AuthTenantSession,
+    range_: Annotated[Literal["7d", "30d", "90d", "custom"], Query(alias="range")] = "7d",
+    date_from: Annotated[date | None, Query(alias="from")] = None,
+    date_to: Annotated[date | None, Query(alias="to")] = None,
+    channel: Annotated[str | None, Query(description="whatsapp | instagram | messenger | ...")] = None,
+    sla_minutes: Annotated[int, Query(ge=1, le=1440)] = 15,
+    refresh: Annotated[bool, Query(description="Bypass the 60 s cache (live auto-refresh)")] = False,
+) -> dict[str, Any]:
+    if channel is not None:
+        channel = channel.lower()
+        if channel in ("", "all"):
+            channel = None
+        elif channel not in CHANNELS:
+            raise HTTPException(status_code=422, detail=f"unknown channel '{channel}'")
+    try:
+        window = resolve_window(range_, date_from, date_to)
+    except AnalyticsRangeError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+    key_src = f"{window.first_day}|{window.last_day}|{channel}|{sla_minutes}"
+    cache_key = f"dash:analytics:{user.tenant_id}:{hashlib.sha256(key_src.encode()).hexdigest()[:16]}"
+    try:
+        cached = None if refresh else await redis_mgr.get_raw(cache_key)
+        if cached:
+            return json.loads(cached)
+    except Exception:  # noqa: BLE001 -- cache is best-effort
+        logger.warning("dashboard_analytics_cache_read_failed", exc_info=True)
+
+    data = await build_analytics(session, user.tenant_id, window, channel, sla_minutes)
+
+    try:
+        await redis_mgr.set_raw(cache_key, json.dumps(data, default=str), ttl=_ANALYTICS_TTL_SECONDS)
+    except Exception:  # noqa: BLE001
+        logger.warning("dashboard_analytics_cache_write_failed", exc_info=True)
+
+    logger.info("dashboard_analytics_served", tenant_id=str(user.tenant_id), range=range_, channel=channel)
+    return data

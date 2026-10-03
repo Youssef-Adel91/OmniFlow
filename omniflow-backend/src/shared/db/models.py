@@ -141,6 +141,13 @@ class Tenant(Base, TimestampMixin):
         nullable=True,
         comment="Per-tenant Meta Page access token for Instagram DM / Messenger sends",
     )
+    instagram_account_id: Mapped[Optional[str]] = mapped_column(
+        String(30),
+        nullable=True,
+        comment="Instagram professional account ID linked to instagram_page_id. "
+        "Meta sends Instagram webhooks with object='instagram' and entry.id = this "
+        "ID (not the Page ID), so tenant routing must be able to match on it.",
+    )
     whatsapp_display_phone_number: Mapped[Optional[str]] = mapped_column(
         String(30),
         nullable=True,

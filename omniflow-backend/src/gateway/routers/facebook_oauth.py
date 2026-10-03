@@ -47,6 +47,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 from fastapi.responses import HTMLResponse
 from pydantic import BaseModel
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 
 from src.gateway.dependencies import get_current_user
 from src.shared.core.config import get_settings
@@ -76,6 +77,10 @@ _PENDING_KEY_PREFIX: Final[str] = "fb_oauth_pending:"
 
 class FacebookOAuthError(Exception):
     """Raised for any Graph API / OAuth failure surfaced to the popup as an error."""
+
+
+class PageAlreadyConnectedError(FacebookOAuthError):
+    """The Page or its Instagram account is already linked to another tenant."""
 
 
 def _require_configured() -> None:
@@ -247,15 +252,44 @@ async def _clear_pending_pages(connection_id: str) -> None:
 # DB write
 # ══════════════════════════════════════════════════════════════════════════════
 
-async def _save_page_connection(tenant_id: uuid.UUID, page_id: str, page_access_token_plaintext: str) -> None:
+async def _save_page_connection(
+    tenant_id: uuid.UUID,
+    page_id: str,
+    page_access_token_plaintext: str,
+    instagram_account_id: str | None = None,
+) -> None:
+    """
+    Persist the chosen Page for a tenant.
+
+    `instagram_account_id` is stored alongside the Page ID because Meta
+    delivers Instagram webhooks with entry.id = the Instagram account ID, not
+    the Page ID (see channel_adapters/instagram/router.py's tenant lookup).
+    It is overwritten with None when the Page has no linked Instagram account,
+    so reconnecting a different Page never leaves a stale account ID behind.
+    Both IDs have unique indexes: a Page/account already owned by another
+    tenant raises PageAlreadyConnectedError instead of a bare IntegrityError.
+    """
     async with AsyncSessionFactory() as session:
         result = await session.execute(select(Tenant).where(Tenant.tenant_id == tenant_id))
         tenant = result.scalar_one_or_none()
         if not tenant:
             raise HTTPException(status_code=404, detail="Tenant not found")
         tenant.instagram_page_id = page_id
+        tenant.instagram_account_id = instagram_account_id
         tenant.instagram_page_access_token = encrypt_secret(page_access_token_plaintext)
-        await session.commit()
+        try:
+            await session.commit()
+        except IntegrityError as exc:
+            await session.rollback()
+            logger.warning(
+                "fb_oauth_page_already_connected",
+                tenant_id=str(tenant_id),
+                page_id=page_id,
+                instagram_account_id=instagram_account_id,
+            )
+            raise PageAlreadyConnectedError(
+                "هذه الصفحة أو حساب إنستجرام المرتبط بها مربوطة بالفعل بشركة أخرى."
+            ) from exc
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -372,8 +406,15 @@ async def facebook_oauth_callback(
             if len(pages) == 1:
                 page = pages[0]
                 await _subscribe_page_webhooks(client, page["page_id"], page["page_access_token"])
-                await _save_page_connection(tenant_id, page["page_id"], page["page_access_token"])
-                logger.info("fb_oauth_connected", tenant_id=str(tenant_id), page_id=page["page_id"])
+                await _save_page_connection(
+                    tenant_id, page["page_id"], page["page_access_token"], page["instagram_account_id"],
+                )
+                logger.info(
+                    "fb_oauth_connected",
+                    tenant_id=str(tenant_id),
+                    page_id=page["page_id"],
+                    instagram_account_id=page["instagram_account_id"],
+                )
                 return _popup_response({
                     "source": "omniflow-fb-oauth", "status": "success",
                     "page_name": page["page_name"],
@@ -446,10 +487,20 @@ async def select_facebook_page(
         except FacebookOAuthError as exc:
             raise HTTPException(status_code=502, detail=f"Meta rejected the webhook subscription: {exc}") from exc
 
-    await _save_page_connection(current_user.tenant_id, chosen["page_id"], page_token)
+    try:
+        await _save_page_connection(
+            current_user.tenant_id, chosen["page_id"], page_token, chosen.get("instagram_account_id"),
+        )
+    except PageAlreadyConnectedError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
     await _clear_pending_pages(payload.connection_id)
 
-    logger.info("fb_oauth_page_selected", tenant_id=str(current_user.tenant_id), page_id=chosen["page_id"])
+    logger.info(
+        "fb_oauth_page_selected",
+        tenant_id=str(current_user.tenant_id),
+        page_id=chosen["page_id"],
+        instagram_account_id=chosen.get("instagram_account_id"),
+    )
     return SelectPageResponse(
         page_id=chosen["page_id"],
         page_name=chosen["page_name"],

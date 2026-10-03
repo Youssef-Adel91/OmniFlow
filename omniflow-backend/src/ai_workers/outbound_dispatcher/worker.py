@@ -395,15 +395,25 @@ class OutboundDispatcherWorker(BaseKafkaConsumer):
         # ── 6. Dispatch (── route by channel, then by message_type) ─────────────
         try:
             if msg.channel == Channel.INSTAGRAM:
-                if msg.reply_target_type == "comment":
-                    # Reply to a public page/feed comment: a different Graph
-                    # API endpoint than DMs (POST /{comment_id}/comments) --
-                    # platform_conversation_id holds the comment_id itself,
-                    # not a PSID/IGSID (see router.py's _process_comment_event
-                    # and CanonicalInboundEvent.reply_target_type).
-                    from src.channel_adapters.instagram.client import send_comment_reply
+                if msg.reply_target_type in ("comment", "instagram_comment"):
+                    # Reply to a public comment: a different Graph API
+                    # endpoint than DMs -- platform_conversation_id holds the
+                    # comment_id itself, not a PSID/IGSID (see router.py's
+                    # comment processors and
+                    # CanonicalInboundEvent.reply_target_type). Facebook Page
+                    # comments reply via POST /{id}/comments, Instagram
+                    # comments via POST /{id}/replies.
+                    from src.channel_adapters.instagram.client import (
+                        send_comment_reply,
+                        send_instagram_comment_reply,
+                    )
 
-                    comment_result = await send_comment_reply(
+                    reply_fn = (
+                        send_instagram_comment_reply
+                        if msg.reply_target_type == "instagram_comment"
+                        else send_comment_reply
+                    )
+                    comment_result = await reply_fn(
                         comment_id=msg.platform_conversation_id,
                         text=msg.text,
                         access_token=instagram_access_token,

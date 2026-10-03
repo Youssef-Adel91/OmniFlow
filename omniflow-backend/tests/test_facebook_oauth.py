@@ -4,7 +4,7 @@ import re
 import unittest
 import uuid
 from types import SimpleNamespace
-from unittest.mock import patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import httpx
 from fastapi import FastAPI
@@ -40,8 +40,8 @@ class FacebookOAuthTests(unittest.IsolatedAsyncioTestCase):
         self.app.include_router(fo.router)
         self.app.dependency_overrides[fo.get_current_user] = lambda: SimpleNamespace(tenant_id=self.tenant_id)
 
-        async def save(tenant_id, page_id, token):
-            self.saved.append((tenant_id, page_id, token))
+        async def save(tenant_id, page_id, token, instagram_account_id=None):
+            self.saved.append((tenant_id, page_id, token, instagram_account_id))
 
         async def graph_post(client, path, params):
             self.subscribed.append(path)
@@ -98,7 +98,7 @@ class FacebookOAuthTests(unittest.IsolatedAsyncioTestCase):
                 response = await client.get(CALLBACK, params={"code": "c", "state": "st"})
         self.assertIn('"status": "success"', response.text)
         self.assertIn("shop_ig", response.text)
-        self.assertEqual(self.saved, [(self.tenant_id, "p1", "page-token")])
+        self.assertEqual(self.saved, [(self.tenant_id, "p1", "page-token", "ig1")])
         self.assertEqual(self.subscribed, ["p1/subscribed_apps"])
 
     async def test_state_is_single_use(self):
@@ -143,7 +143,7 @@ class FacebookOAuthTests(unittest.IsolatedAsyncioTestCase):
                 body = {"connection_id": connection_id, "page_id": "p2"}
                 chosen = await client.post("/api/v1/integrations/facebook/select-page", json=body)
                 self.assertEqual(chosen.status_code, 200)
-                self.assertEqual(self.saved, [(self.tenant_id, "p2", "t2")])
+                self.assertEqual(self.saved, [(self.tenant_id, "p2", "t2", None)])
                 replay = await client.post("/api/v1/integrations/facebook/select-page", json=body)
         self.assertEqual(replay.status_code, 410)
 
@@ -164,6 +164,74 @@ class FacebookOAuthTests(unittest.IsolatedAsyncioTestCase):
                 )
         self.assertEqual(response.status_code, 403)
         self.assertEqual(self.saved, [])
+
+    async def test_callback_reports_conflict_in_popup(self):
+        await fo._store_state("st", self.tenant_id)
+        pages = [{"id": "p1", "name": "Shop", "access_token": "t"}]
+
+        async def conflict(*a, **k):
+            raise fo.PageAlreadyConnectedError("already")
+
+        with self._graph_get(pages), patch.object(fo, "_save_page_connection", conflict):
+            async with self._client() as client:
+                response = await client.get(CALLBACK, params={"code": "c", "state": "st"})
+        self.assertIn('"status": "error"', response.text)
+        self.assertIn("already", response.text)
+
+    async def test_select_page_returns_409_on_conflict(self):
+        await fo._store_state("st", self.tenant_id)
+        pages = [
+            {"id": "p1", "name": "One", "access_token": "t1"},
+            {"id": "p2", "name": "Two", "access_token": "t2"},
+        ]
+
+        async def conflict(*a, **k):
+            raise fo.PageAlreadyConnectedError("already")
+
+        with self._graph_get(pages):
+            async with self._client() as client:
+                callback = await client.get(CALLBACK, params={"code": "c", "state": "st"})
+                connection_id = re.search(r'"connection_id": "([^"]+)"', callback.text).group(1)
+                with patch.object(fo, "_save_page_connection", conflict):
+                    response = await client.post(
+                        "/api/v1/integrations/facebook/select-page",
+                        json={"connection_id": connection_id, "page_id": "p1"},
+                    )
+        self.assertEqual(response.status_code, 409)
+
+
+class SavePageConnectionTests(unittest.IsolatedAsyncioTestCase):
+    def _session(self, tenant, commit_error=None):
+        session = MagicMock()
+        result = MagicMock()
+        result.scalar_one_or_none.return_value = tenant
+        session.execute = AsyncMock(return_value=result)
+        session.commit = AsyncMock(side_effect=commit_error)
+        session.rollback = AsyncMock()
+        factory = MagicMock()
+        factory.return_value.__aenter__ = AsyncMock(return_value=session)
+        factory.return_value.__aexit__ = AsyncMock(return_value=False)
+        return session, factory
+
+    async def test_sets_and_clears_instagram_account_id(self):
+        tenant = SimpleNamespace(instagram_page_id=None, instagram_account_id="old", instagram_page_access_token=None)
+        session, factory = self._session(tenant)
+        with patch.object(fo, "AsyncSessionFactory", factory):
+            await fo._save_page_connection(uuid.uuid4(), "p1", "tok", "ig1")
+            self.assertEqual(tenant.instagram_account_id, "ig1")
+            self.assertEqual(decrypt_secret(tenant.instagram_page_access_token), "tok")
+            await fo._save_page_connection(uuid.uuid4(), "p2", "tok", None)
+        self.assertIsNone(tenant.instagram_account_id)
+        self.assertEqual(tenant.instagram_page_id, "p2")
+
+    async def test_integrity_error_becomes_page_already_connected(self):
+        from sqlalchemy.exc import IntegrityError
+        tenant = SimpleNamespace(instagram_page_id=None, instagram_account_id=None, instagram_page_access_token=None)
+        session, factory = self._session(tenant, IntegrityError("s", {}, Exception("dup")))
+        with patch.object(fo, "AsyncSessionFactory", factory):
+            with self.assertRaises(fo.PageAlreadyConnectedError):
+                await fo._save_page_connection(uuid.uuid4(), "p1", "tok", "ig1")
+        session.rollback.assert_awaited()
 
 
 class FieldEncryptionTests(unittest.TestCase):

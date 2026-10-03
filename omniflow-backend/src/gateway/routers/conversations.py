@@ -107,8 +107,13 @@ class ConversationOut(BaseModel):
         return cls(
             id              = str(conv.conversation_id),
             tenant_id       = str(conv.tenant_id),
-            customer_phone  = getattr(conv.customer, "unified_phone", "") if conv.customer else "",  # noqa: E501
-            customer_name   = getattr(conv.customer, "display_name", "") or getattr(conv.customer, "whatsapp_profile_name", "") if conv.customer else "",  # noqa: E501
+            customer_phone  = (getattr(customer, "unified_phone", None) or "") if customer else "",
+            # display_name / whatsapp_profile_name are NULL for customers created
+            # from an Instagram/Messenger DM; never pass None into a `str` field.
+            customer_name   = (
+                (getattr(customer, "display_name", None) or getattr(customer, "whatsapp_profile_name", None) or "")
+                if customer else ""
+            ),
             channel         = str(conv.channel.value if hasattr(conv.channel, "value") else conv.channel),
             status          = status_val,
             last_message    = "",  # denormalised field — updated by SSE events

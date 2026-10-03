@@ -13,7 +13,8 @@ Architecture:
       ├── Exception handlers
       │     ├── SQLAlchemy integrity errors → HTTP 409
       │     ├── SQLAlchemy operational errors → HTTP 503
-      │     ├── ValueError (repo "not found") → HTTP 404
+      │     ├── NotFoundError (repo "not found") → HTTP 404
+      │     ├── ValueError (bug; logged traceback) → HTTP 500
       │     └── Unhandled → HTTP 500
       └── Routers
             └── health.router (/health)
@@ -45,6 +46,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from sqlalchemy.exc import IntegrityError, OperationalError, SQLAlchemyError
 
+from src.shared.core.exceptions import NotFoundError
 from src.shared.core.config import get_settings
 from src.shared.db.repository import ConversationConflictError
 from src.shared.kafka.producer import kafka_producer
@@ -316,19 +318,40 @@ def _register_exception_handlers(app: FastAPI) -> None:
             },
         )
 
+    @app.exception_handler(NotFoundError)
+    async def not_found_error_handler(
+        request: Request, exc: NotFoundError
+    ) -> JSONResponse:
+        """Repository get_or_404 / missing resources -> HTTP 404."""
+        return JSONResponse(
+            status_code=status.HTTP_404_NOT_FOUND,
+            content={"code": "NOT_FOUND", "message": str(exc)},
+        )
+
     @app.exception_handler(ValueError)
     async def value_error_handler(
         request: Request, exc: ValueError
     ) -> JSONResponse:
         """
-        Repository raises ValueError for "not found" (get_or_404).
-        Map to HTTP 404.
+        A bare ValueError is a programming/data error, NOT "not found".
+        (This handler used to return 404 for every ValueError -- including
+        pydantic ValidationError, which subclasses it -- hiding real bugs
+        such as GET /conversations failing on a null customer name.)
+        Log the full traceback and answer 500 with a correlation id.
         """
+        error_id = str(uuid.uuid4())
+        logger.exception(
+            "unhandled_value_error",
+            error_id=error_id,
+            path=request.url.path,
+            exc_type=type(exc).__name__,
+        )
         return JSONResponse(
-            status_code=status.HTTP_404_NOT_FOUND,
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             content={
-                "code": "NOT_FOUND",
-                "message": str(exc),
+                "code": "INTERNAL_SERVER_ERROR",
+                "message": "An unexpected error occurred.",
+                "error_id": error_id,
             },
         )
 

@@ -33,6 +33,7 @@ import {
   TICKET_STATUS_LABELS,
   type SupportTicket,
 } from "@/lib/api/support";
+import { Select } from "@/components/ui/Select";
 
 const REQUEST_TYPES = [
   "تعديل شخصية الذكاء الاصطناعي",
@@ -192,7 +193,7 @@ export default function SupportPage() {
               <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
                 <div>
                   <label className="block text-sm font-medium text-gray-300 mb-2">نوع الطلب</label>
-                  <select
+                  <Select
                     value={requestType}
                     onChange={(e) => setRequestType(e.target.value)}
                     className={fieldClass}
@@ -200,11 +201,11 @@ export default function SupportPage() {
                     {REQUEST_TYPES.map((t) => (
                       <option key={t} value={t}>{t}</option>
                     ))}
-                  </select>
+                  </Select>
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-gray-300 mb-2">الأولوية</label>
-                  <select
+                  <Select
                     value={priority}
                     onChange={(e) => setPriority(e.target.value)}
                     className={fieldClass}
@@ -212,7 +213,7 @@ export default function SupportPage() {
                     {PRIORITIES.map((p) => (
                       <option key={p.value} value={p.value}>{p.label}</option>
                     ))}
-                  </select>
+                  </Select>
                 </div>
               </div>
 

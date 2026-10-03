@@ -36,7 +36,7 @@ export interface UseInboxStreamReturn {
  * const { status } = useInboxStream();
  */
 export function useInboxStream(): UseInboxStreamReturn {
-  const { getToken } = useAuth();
+  const { getToken, isLoaded, isSignedIn } = useAuth();
   const [status, setStatus] = useState<StreamStatus>("connecting");
   const esRef               = useRef<ReturnType<typeof createInboxStream> | null>(null);
 
@@ -150,6 +150,8 @@ export function useInboxStream(): UseInboxStreamReturn {
 
   // ── Lifecycle ─────────────────────────────────────────────────────────────
   useEffect(() => {
+    // Don't open the stream before Clerk can hand out a token.
+    if (!isLoaded || !isSignedIn) return;
     const stream = createInboxStream({
       getUrl: buildStreamUrl,
       subscribe,
@@ -166,7 +168,7 @@ export function useInboxStream(): UseInboxStreamReturn {
       stream.disconnect();
       esRef.current = null;
     };
-  }, [buildStreamUrl, subscribe]);
+  }, [isLoaded, isSignedIn, buildStreamUrl, subscribe]);
 
   const reconnect = useCallback(() => { void esRef.current?.connect(); }, []);
   const disconnect = useCallback(() => { esRef.current?.disconnect(); }, []);

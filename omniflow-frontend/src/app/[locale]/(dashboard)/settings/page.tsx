@@ -46,6 +46,7 @@ import {
   type TenantSettings,
 } from "@/lib/api/settings";
 import { useTenantStore } from "@/store/tenantStore";
+import { useAuthReady } from "@/hooks/useAuthReady";
 
 type TabKey = "api" | "company" | "ai" | "logo";
 
@@ -160,7 +161,8 @@ export default function SettingsPage() {
     }
   }, [applySettings]);
 
-  useEffect(() => { void load(); }, [load]);
+  const authReady = useAuthReady();
+  useEffect(() => { if (authReady) void load(); }, [authReady, load]);
 
   // Auto-dismiss all success flashes
   useEffect(() => {

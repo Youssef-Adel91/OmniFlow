@@ -18,6 +18,38 @@ import axios, {
 export const API_BASE_URL =
   process.env.NEXT_PUBLIC_API_URL ?? "http://127.0.0.1:8000/api/v1";
 
+
+// ── Clerk token helper ─────────────────────────────────────────────────────
+
+type ClerkLike = {
+  loaded?: boolean;
+  session?: { getToken: (opts?: { skipCache?: boolean }) => Promise<string | null> } | null;
+};
+
+const CLERK_WAIT_MS = 5_000;
+const CLERK_POLL_MS = 50;
+
+/**
+ * Resolve a Clerk session token, waiting (bounded) for Clerk to load first.
+ * Returns null when there is no signed-in session (or it never becomes ready).
+ */
+export async function getClerkToken(opts?: { skipCache?: boolean }): Promise<string | null> {
+  if (typeof window === "undefined") return null;
+  const deadline = Date.now() + CLERK_WAIT_MS;
+  let clerk = (window as unknown as { Clerk?: ClerkLike }).Clerk;
+  while ((!clerk || !clerk.loaded) && Date.now() < deadline) {
+    await new Promise((r) => setTimeout(r, CLERK_POLL_MS));
+    clerk = (window as unknown as { Clerk?: ClerkLike }).Clerk;
+  }
+  if (!clerk?.loaded || !clerk.session) return null;
+  try {
+    return await clerk.session.getToken(opts);
+  } catch (e) {
+    console.warn("[OmniFlow API] Failed to fetch Clerk token", e);
+    return null;
+  }
+}
+
 // ── Singleton factory ──────────────────────────────────────────────────────
 
 function createApiClient(): AxiosInstance {
@@ -34,17 +66,11 @@ function createApiClient(): AxiosInstance {
   client.interceptors.request.use(
     async (config: InternalAxiosRequestConfig) => {
       if (typeof window !== "undefined") {
-        // ── Clerk JWT Bearer token ─────────────────────────────────────────
-        const clerk = (window as any).Clerk;
-        if (clerk?.session) {
-          try {
-            const token = await clerk.session.getToken();
-            if (token) {
-              config.headers.Authorization = `Bearer ${token}`;
-            }
-          } catch (e) {
-            console.error("[OmniFlow API] Failed to fetch Clerk token", e);
-          }
+        // Wait for Clerk to finish loading BEFORE sending: a request fired
+        // during hydration would otherwise go out without a token and 401.
+        const token = await getClerkToken();
+        if (token) {
+          config.headers.Authorization = `Bearer ${token}`;
         }
       }
       return config;
@@ -58,12 +84,21 @@ function createApiClient(): AxiosInstance {
     async (error: AxiosError) => {
       const httpStatus = error.response?.status;
 
-      // ── 401 Unauthorized — Handle Clerk re-authentication if necessary ───
+      // ── 401 Unauthorized — retry ONCE with a freshly minted Clerk token ──
+      // (a stale/not-yet-ready token is the common cause during startup).
+      const original = error.config as (InternalAxiosRequestConfig & { _retried?: boolean }) | undefined;
+      if (httpStatus === 401 && original && !original._retried && typeof window !== "undefined") {
+        original._retried = true;
+        const fresh = await getClerkToken({ skipCache: true });
+        if (fresh) {
+          original.headers.Authorization = `Bearer ${fresh}`;
+          return client.request(original);
+        }
+      }
       if (httpStatus === 401) {
-        console.error("[OmniFlow API] Unauthorized request", error.config?.url);
-        // Note: We don't manually clear auth here because Clerk's `<ClerkProvider>`
-        // keeps the UI state in sync. If the user is truly logged out, Clerk
-        // will naturally reflect that.
+        // Final failure only (a warn, not an error: it must not trigger the
+        // Next dev error overlay). Clerk's <ClerkProvider> owns UI auth state.
+        console.warn("[OmniFlow API] Unauthorized request", error.config?.url);
       }
 
       // ── 422 — log validation errors for debugging ────────────────────

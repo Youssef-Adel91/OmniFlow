@@ -398,8 +398,8 @@ class ConversationRepository(
                 lead_score = COALESCE(engagement_score, 0) * 0.6
                            + CASE WHEN is_vip THEN 15 ELSE 0 END
                            + LEAST(message_count, 50) * 0.4
-                           + CASE WHEN status = 'ESCALATED' THEN 20 ELSE 0 END
-                           + CASE WHEN status IN ('AI_ACTIVE','HUMAN_ACTIVE') THEN 10 ELSE 0 END
+                           + CASE WHEN status = 'escalated' THEN 20 ELSE 0 END
+                           + CASE WHEN status IN ('ai_active','human_active') THEN 10 ELSE 0 END
 
         channel: optional string filter ('whatsapp', 'instagram', etc.).
         """
@@ -445,12 +445,21 @@ class ConversationRepository(
                     else_=0.0,
                 )
                 + sqlfunc.least(cast(Conversation.message_count, Float), 50.0) * 0.4
+                # Statuses are stored as the lower-case StrEnum values
+                # ("escalated", "ai_active", ...). This used to compare against
+                # upper-case literals, so neither bonus was ever applied.
                 + case(
-                    (Conversation.status == "ESCALATED", 20.0),
+                    (Conversation.status == ConversationStatus.ESCALATED.value, 20.0),
                     else_=0.0,
                 )
                 + case(
-                    (Conversation.status.in_(["AI_ACTIVE", "HUMAN_ACTIVE"]), 10.0),
+                    (
+                        Conversation.status.in_([
+                            ConversationStatus.AI_ACTIVE.value,
+                            ConversationStatus.HUMAN_ACTIVE.value,
+                        ]),
+                        10.0,
+                    ),
                     else_=0.0,
                 )
             )

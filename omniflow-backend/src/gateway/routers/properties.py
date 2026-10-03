@@ -31,17 +31,21 @@ References: SRS §4 — API Design; Sprint 14 spec
 from __future__ import annotations
 
 import asyncio
+import csv
+import io
 import math
 import uuid
 from typing import Annotated
 
 import structlog
-from fastapi import APIRouter, Depends, Query, status
-from pydantic import BaseModel
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, Response, status
+from pydantic import BaseModel, Field
+from sqlalchemy import delete, func, or_, select, update
 
 from src.gateway.dependencies import (
     CurrentUser,
     PropertyWriteUser,
+    can_activate_listings,
     PropertyListingRepo,
     TenantSession,
     get_property_listing_repo,
@@ -54,8 +58,10 @@ from src.shared.schemas import (
     PropertyListingResponse,
     PropertyListingUpdate,
 )
+from src.shared.core.enums import ListingStatus
 from src.shared.services.vector_sync import (
     delete_listing_from_qdrant,
+    delete_listings_from_qdrant,
     sync_listing_to_qdrant,
 )
 
@@ -88,14 +94,60 @@ def _resolve_rega_number(raw: str | None) -> str:
 # GET /api/v1/properties
 # ══════════════════════════════════════════════════════════════════════════════
 
+_SORTS = {
+    "newest": lambda: PropertyListing.created_at.desc(),
+    "oldest": lambda: PropertyListing.created_at.asc(),
+    "price_asc": lambda: PropertyListing.price.asc().nulls_last(),
+    "price_desc": lambda: PropertyListing.price.desc().nulls_last(),
+    "area_desc": lambda: PropertyListing.area_sqm.desc().nulls_last(),
+}
+EXPORT_MAX_ROWS = 20_000
+BULK_MAX_IDS = 500
+
+
+def _like(term: str) -> str:
+    """Escape LIKE wildcards so user input matches literally."""
+    return "%" + term.strip().replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_") + "%"
+
+
+def _filtered(
+    status_filter: str | None, type_filter: str | None, city: str | None, search: str | None,
+    price_min: float | None, price_max: float | None, indexed: bool | None = None,
+):
+    stmt = select(PropertyListing)
+    if indexed is True:
+        stmt = stmt.where(PropertyListing.qdrant_point_id.is_not(None))
+    elif indexed is False:
+        stmt = stmt.where(PropertyListing.qdrant_point_id.is_(None))
+    if status_filter:
+        stmt = stmt.where(PropertyListing.status == status_filter)
+    if type_filter:
+        stmt = stmt.where(PropertyListing.property_type == type_filter)
+    if city and city.strip():
+        stmt = stmt.where(PropertyListing.city.ilike(_like(city), escape="\\"))
+    if price_min is not None:
+        stmt = stmt.where(PropertyListing.price >= price_min)
+    if price_max is not None:
+        stmt = stmt.where(PropertyListing.price <= price_max)
+    if search and search.strip():
+        needle = _like(search)
+        stmt = stmt.where(or_(*(
+            col.ilike(needle, escape="\\") for col in (
+                PropertyListing.rega_ad_number, PropertyListing.city, PropertyListing.district,
+                PropertyListing.description_ar, PropertyListing.description_en)
+        )))
+    return stmt
+
+
 @router.get(
     "",
     response_model=PropertyListingPage,
     status_code=status.HTTP_200_OK,
     summary="List property listings",
     description=(
-        "Return a paginated list of property listings for the authenticated tenant. "
-        "Filter by `status` or `property_type` to narrow results."
+        "Paginated list for the authenticated tenant. Filters: `status`, `property_type`, `city`, "
+        "`search` (REGA number, city, district, description), `price_min`/`price_max`; "
+        "`sort`: newest | oldest | price_asc | price_desc | area_desc."
     ),
 )
 async def list_properties(
@@ -103,46 +155,184 @@ async def list_properties(
     repo: PropertyListingRepo,
     page: int = Query(default=1, ge=1, description="1-indexed page number"),
     limit: int = Query(default=20, ge=1, le=100, description="Items per page"),
-    status_filter: str | None = Query(
-        default=None,
-        alias="status",
-        description="Filter by ListingStatus (e.g. VERIFIED_ACTIVE)",
-    ),
-    type_filter: str | None = Query(
-        default=None,
-        alias="property_type",
-        description="Filter by PropertyType (e.g. apartment)",
-    ),
+    status_filter: str | None = Query(default=None, alias="status", description="Filter by ListingStatus (e.g. VERIFIED_ACTIVE)"),
+    type_filter: str | None = Query(default=None, alias="property_type", description="Filter by PropertyType (e.g. apartment)"),
+    city: str | None = Query(default=None, max_length=100),
+    search: str | None = Query(default=None, max_length=100),
+    price_min: float | None = Query(default=None, ge=0),
+    price_max: float | None = Query(default=None, ge=0),
+    indexed: bool | None = Query(default=None, description="true = in the RAG index, false = not indexed"),
+    sort: str = Query(default="newest", pattern="^(newest|oldest|price_asc|price_desc|area_desc)$"),
 ) -> PropertyListingPage:
-    offset = (page - 1) * limit
+    stmt = _filtered(status_filter, type_filter, city, search, price_min, price_max, indexed)
+    total = await repo.session.scalar(select(func.count()).select_from(stmt.subquery())) or 0
+    rows = (await repo.session.execute(
+        stmt.order_by(_SORTS[sort](), PropertyListing.listing_id).offset((page - 1) * limit).limit(limit)
+    )).scalars().all()
 
-    # Build filters dict — only include non-None values
-    filters: dict[str, str] = {}
-    if status_filter:
-        filters["status"] = status_filter
-    if type_filter:
-        filters["property_type"] = type_filter
-
-    items, total = await repo.get_multi(
-        offset=offset,
-        limit=limit,
-        filters=filters or None,
-    )
-
-    logger.debug(
-        "properties_list",
-        tenant_id=str(user.tenant_id),
-        page=page,
-        total=total,
-    )
+    logger.debug("properties_list", tenant_id=str(user.tenant_id), page=page, total=total)
 
     return PropertyListingPage(
-        items=[PropertyListingResponse.model_validate(item) for item in items],
+        items=[PropertyListingResponse.model_validate(item) for item in rows],
         total=total,
         page=page,
         limit=limit,
         pages=max(1, math.ceil(total / limit)),
     )
+
+
+# Registered before GET /{listing_id}: a single-segment literal path must come first.
+@router.get(
+    "/export.csv",
+    summary="Export the filtered listings as CSV",
+    description=f"Same filters as the list endpoint (no pagination); capped at {EXPORT_MAX_ROWS} rows. "
+                "Cells starting with = + - @ are prefixed with ' to defuse spreadsheet formula injection.",
+)
+async def export_properties(
+    user: CurrentUser,
+    repo: PropertyListingRepo,
+    status_filter: str | None = Query(default=None, alias="status"),
+    type_filter: str | None = Query(default=None, alias="property_type"),
+    city: str | None = Query(default=None, max_length=100),
+    search: str | None = Query(default=None, max_length=100),
+    price_min: float | None = Query(default=None, ge=0),
+    price_max: float | None = Query(default=None, ge=0),
+    indexed: bool | None = Query(default=None),
+    sort: str = Query(default="newest", pattern="^(newest|oldest|price_asc|price_desc|area_desc)$"),
+) -> Response:
+    from src.shared.services.property_import import csv_safe
+
+    stmt = _filtered(status_filter, type_filter, city, search, price_min, price_max, indexed)
+    rows = (await repo.session.execute(
+        stmt.order_by(_SORTS[sort](), PropertyListing.listing_id).limit(EXPORT_MAX_ROWS)
+    )).scalars().all()
+    cols = ("rega_ad_number", "property_type", "status", "city", "district", "price", "area_sqm", "bedrooms",
+            "bathrooms", "latitude", "longitude", "description_ar", "description_en")
+    head = ("رقم الإعلان", "النوع", "الحالة", "المدينة", "الحي", "السعر", "المساحة", "الغرف", "الحمامات",
+            "خط العرض", "خط الطول", "الوصف", "الوصف (إنجليزي)")
+    buf = io.StringIO()
+    w = csv.writer(buf)
+    w.writerow(head)
+    for r in rows:
+        w.writerow([csv_safe(getattr(r, c) if getattr(r, c) is not None else "") for c in cols])
+    return Response(
+        b"\xef\xbb\xbf" + buf.getvalue().encode("utf-8"), media_type="text/csv; charset=utf-8",
+        headers={"Content-Disposition": 'attachment; filename="omniflow-properties.csv"'},
+    )
+
+
+class BulkIds(BaseModel):
+    ids: list[uuid.UUID] = Field(..., min_length=1, max_length=BULK_MAX_IDS)
+
+
+@router.post("/bulk/delete", summary="Delete several listings", description=f"Up to {BULK_MAX_IDS} ids; vectors are removed asynchronously.")
+async def bulk_delete(body: BulkIds, background: BackgroundTasks, user: PropertyWriteUser, repo: PropertyListingRepo) -> dict:
+    ids = list(dict.fromkeys(body.ids))
+    deleted = (await repo.session.execute(
+        delete(PropertyListing).where(PropertyListing.tenant_id == user.tenant_id, PropertyListing.listing_id.in_(ids))
+        .returning(PropertyListing.listing_id)
+    )).scalars().all()
+    logger.info("properties_bulk_deleted", tenant_id=str(user.tenant_id), requested=len(ids), deleted=len(deleted))
+    if deleted:
+        background.add_task(delete_listings_from_qdrant, [str(i) for i in deleted], user.tenant_id)
+    return {"requested": len(ids), "deleted": len(deleted), "not_found": len(ids) - len(deleted)}
+
+
+class ListingFilters(BaseModel):
+    """The list endpoint's filters, used to act on "all N matching" instead of explicit ids."""
+    status: str | None = None
+    property_type: str | None = None
+    city: str | None = Field(default=None, max_length=100)
+    search: str | None = Field(default=None, max_length=100)
+    price_min: float | None = Field(default=None, ge=0)
+    price_max: float | None = Field(default=None, ge=0)
+    indexed: bool | None = None
+
+
+class BulkScope(BaseModel):
+    """Either explicit `ids` (<= 500) or `filters` (all matching, <= 20,000) -- never both."""
+    ids: list[uuid.UUID] | None = Field(default=None, min_length=1, max_length=BULK_MAX_IDS)
+    filters: ListingFilters | None = None
+
+
+class BulkStatusScoped(BulkScope):
+    status: ListingStatus
+
+
+async def _scope_ids(session, tenant_id: uuid.UUID, scope: BulkScope) -> list[uuid.UUID]:
+    if (scope.ids is None) == (scope.filters is None):
+        raise HTTPException(status_code=422, detail={"code": "INVALID_SCOPE", "message": "حدّد ids أو filters (واحدًا منهما فقط)."})
+    if scope.ids is not None:
+        return list(dict.fromkeys(scope.ids))
+    f = scope.filters
+    stmt = _filtered(f.status, f.property_type, f.city, f.search, f.price_min, f.price_max, f.indexed)
+    ids = (await session.execute(
+        stmt.with_only_columns(PropertyListing.listing_id).where(PropertyListing.tenant_id == tenant_id)
+        .order_by(PropertyListing.listing_id).limit(EXPORT_MAX_ROWS + 1)
+    )).scalars().all()
+    if len(ids) > EXPORT_MAX_ROWS:
+        raise HTTPException(status_code=422, detail={
+            "code": "TOO_MANY", "message": f"النتائج تتجاوز {EXPORT_MAX_ROWS} عقار. ضيّق الفلاتر."})
+    return list(ids)
+
+
+async def _queue_reindex(session, background: BackgroundTasks, user, ids: list[uuid.UUID]):
+    """Create + start a reindex job. Returns the job, or None when another job is busy (caller falls back)."""
+    from src.shared.services import property_import as svc
+
+    try:
+        job = await svc.create_reindex_job(session, tenant_id=user.tenant_id, user_id=getattr(user, "user_id", None), ids=ids)
+    except svc.ConflictError:
+        return None
+    background.add_task(svc.start_reindex, user.tenant_id, job.import_id)
+    return job
+
+
+@router.post("/bulk/status", summary="Change the status of several listings",
+             description=f"`ids` (<= {BULK_MAX_IDS}) or `filters` (all matching, <= {EXPORT_MAX_ROWS}). Re-indexing runs as a background job. "
+                         "Setting VERIFIED_ACTIVE (bypasses REGA verification) is admin-only and audit-logged.")
+async def bulk_status(body: BulkStatusScoped, background: BackgroundTasks, user: PropertyWriteUser, repo: PropertyListingRepo) -> dict:
+    from src.shared.services.property_import import reindex, write_audit
+
+    if body.status == ListingStatus.VERIFIED_ACTIVE and not can_activate_listings(user):
+        raise HTTPException(status_code=403, detail={
+            "code": "FORBIDDEN", "message": "اعتماد العقارات (نشط ومعتمد) دون تحقق الهيئة متاح للمدير (admin) فقط."})
+    ids = await _scope_ids(repo.session, user.tenant_id, body)
+    updated: list[uuid.UUID] = []
+    for i in range(0, len(ids), 1000):
+        updated += (await repo.session.execute(
+            update(PropertyListing).where(PropertyListing.tenant_id == user.tenant_id, PropertyListing.listing_id.in_(ids[i:i + 1000]))
+            .values(status=body.status.value).returning(PropertyListing.listing_id)
+        )).scalars().all()
+    logger.info("properties_bulk_status", tenant_id=str(user.tenant_id), status=body.status.value, updated=len(updated))
+    if updated and body.status == ListingStatus.VERIFIED_ACTIVE:
+        await write_audit(repo.session, tenant_id=user.tenant_id, actor_user_id=getattr(user, "user_id", None),
+                          action="property.bulk_activate", entity_type="property_listing",
+                          details={"listings": len(updated), "is_verified": False})
+    job = await _queue_reindex(repo.session, background, user, updated) if updated else None
+    if updated and job is None:                     # another job is busy: still re-embed, just without progress tracking
+        background.add_task(reindex, user.tenant_id, list(updated))
+    return {"requested": len(ids), "updated": len(updated), "not_found": len(ids) - len(updated),
+            "reindex_job_id": str(job.import_id) if job else None}
+
+
+@router.post("/reindex", status_code=status.HTTP_202_ACCEPTED, summary="Re-index listings into the RAG index (background job)",
+             description=f"`ids` (<= {BULK_MAX_IDS}) or `filters` (all matching, <= {EXPORT_MAX_ROWS}); poll GET /api/v1/properties/import/{{job_id}}.")
+async def reindex_properties(body: BulkScope, background: BackgroundTasks, user: PropertyWriteUser, repo: PropertyListingRepo) -> dict:
+    from src.shared.services import property_import as svc
+
+    ids = await _scope_ids(repo.session, user.tenant_id, body)
+    if body.ids is not None:                       # explicit ids: keep only this tenant's listings
+        ids = list((await repo.session.execute(select(PropertyListing.listing_id).where(
+            PropertyListing.tenant_id == user.tenant_id, PropertyListing.listing_id.in_(ids)))).scalars().all())
+    if not ids:
+        return {"queued": 0, "job": None}
+    try:
+        job = await svc.create_reindex_job(repo.session, tenant_id=user.tenant_id, user_id=getattr(user, "user_id", None), ids=ids)
+    except svc.ConflictError as exc:
+        raise HTTPException(status_code=409, detail={"code": "IMPORT_IN_PROGRESS", "message": str(exc)}) from exc
+    background.add_task(svc.start_reindex, user.tenant_id, job.import_id)
+    return {"queued": len(ids), "job": svc.serialize_job(job)}
 
 
 # ══════════════════════════════════════════════════════════════════════════════

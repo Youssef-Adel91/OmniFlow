@@ -56,6 +56,7 @@ from src.gateway.routers import health as health_router
 from src.gateway.routers import conversations as conversations_router
 from src.gateway.routers import auth as auth_router
 from src.gateway.routers import properties as properties_router
+from src.gateway.routers import property_import as property_import_router
 from src.gateway.routers import tenants as tenants_router
 from src.gateway.routers import broadcasts as broadcasts_router
 from src.gateway.routers import customers as customers_router
@@ -134,6 +135,14 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
             raise RuntimeError("Production dependency readiness failed: " + ", ".join(
                 name for name, value in checks.items() if value != "ok"
             ))
+
+    # ── Bulk import: re-adopt jobs whose worker died (best effort, never blocks startup) ──
+    try:
+        from src.shared.services.property_import import resume_stale_jobs
+
+        await asyncio.wait_for(resume_stale_jobs(), timeout=10.0)
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("import_resume_skipped", error=str(exc)[:120])
 
     logger.info("omniflow_ready", host=settings.app_host, port=settings.app_port)
     yield  # ← application runs here
@@ -420,6 +429,7 @@ def _register_routers(app: FastAPI) -> None:
     # actionable 410 instead of a confusing 404.
     app.include_router(auth_router.router, prefix="/api/v1/auth", tags=["Auth"])
     app.include_router(tenants_router.router)
+    app.include_router(property_import_router.router)   # /api/v1/properties/import (before /{listing_id})
     app.include_router(properties_router.router)
 
     from src.gateway.routers import webhooks

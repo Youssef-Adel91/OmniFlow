@@ -169,6 +169,9 @@ class Settings(BaseSettings):
     # Knowledge Base uploads (SRS §4.2). MUST stay private — these are the
     # tenant's internal documents, unlike s3_assets_bucket which is public.
     s3_knowledge_bucket: str = "omniflow-knowledge-docs"
+    # Private bucket for bulk-import uploads (property/customer sheets) and their
+    # error reports. Created on first use if missing; NEVER anonymous-readable.
+    s3_imports_bucket: str = "omniflow-imports"
     s3_endpoint_url: str | None = None        # Set for MinIO in dev
     s3_use_path_style: bool = True
     vault_presigned_url_ttl_seconds: int = 900
@@ -186,6 +189,11 @@ class Settings(BaseSettings):
     minio_access_key: str = ""        # MinIO root user (minioadmin in dev)
     minio_secret_key: str = ""        # MinIO root password
     minio_bucket_name: str = "omniflow-media"   # Bucket for TTS audio + media
+
+    # ── Bulk import (properties / customers) ─────────────────────────────────
+    import_max_file_mb: int = 20
+    import_max_rows: int = 20_000
+    import_batch_size: int = 500
 
 
     # ── Meta WhatsApp ─────────────────────────────────────────────────────────

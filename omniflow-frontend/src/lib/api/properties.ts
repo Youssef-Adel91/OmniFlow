@@ -81,11 +81,19 @@ export type PropertyListingUpdate = Partial<PropertyListingCreate> & {
   is_verified?: boolean;
 };
 
+export type PropertySort = "newest" | "oldest" | "price_asc" | "price_desc" | "area_desc";
+
 export interface ListPropertiesParams {
   page?: number;
   limit?: number;
   status?: ListingStatus;
   property_type?: PropertyType;
+  city?: string;
+  /** REGA number, city, district or description (server-side, wildcard-safe). */
+  search?: string;
+  price_min?: number;
+  price_max?: number;
+  sort?: PropertySort;
 }
 
 // ── Human-readable labels (bilingual) ─────────────────────────────────────
@@ -124,6 +132,37 @@ export async function listProperties(
       limit:         params.limit ?? 20,
       status:        params.status,
       property_type: params.property_type,
+      city:          params.city?.trim() || undefined,
+      search:        params.search?.trim() || undefined,
+      price_min:     params.price_min,
+      price_max:     params.price_max,
+      sort:          params.sort,
+    },
+  });
+  return data;
+}
+
+export interface BulkResult { requested: number; not_found: number; deleted?: number; updated?: number }
+
+/** Delete up to 500 listings at once. */
+export async function bulkDeleteProperties(ids: string[]): Promise<BulkResult> {
+  const { data } = await apiClient.post<BulkResult>("/properties/bulk/delete", { ids });
+  return data;
+}
+
+/** Change the status of up to 500 listings at once. */
+export async function bulkSetPropertyStatus(ids: string[], status: ListingStatus): Promise<BulkResult> {
+  const { data } = await apiClient.post<BulkResult>("/properties/bulk/status", { ids, status });
+  return data;
+}
+
+/** Download the CSV for the current filters (server-side; formula-injection safe). */
+export async function exportPropertiesCsv(params: Omit<ListPropertiesParams, "page" | "limit"> = {}): Promise<Blob> {
+  const { data } = await apiClient.get<Blob>("/properties/export.csv", {
+    responseType: "blob",
+    params: {
+      status: params.status, property_type: params.property_type, city: params.city?.trim() || undefined,
+      search: params.search?.trim() || undefined, price_min: params.price_min, price_max: params.price_max, sort: params.sort,
     },
   });
   return data;

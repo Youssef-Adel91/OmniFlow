@@ -31,13 +31,16 @@ References: SRS §4 — API Design; Sprint 14 spec
 from __future__ import annotations
 
 import asyncio
+import csv
+import io
 import math
 import uuid
 from typing import Annotated
 
 import structlog
-from fastapi import APIRouter, Depends, Query, status
-from pydantic import BaseModel
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, Response, status
+from pydantic import BaseModel, Field
+from sqlalchemy import delete, func, or_, select, update
 
 from src.gateway.dependencies import (
     CurrentUser,
@@ -54,8 +57,10 @@ from src.shared.schemas import (
     PropertyListingResponse,
     PropertyListingUpdate,
 )
+from src.shared.core.enums import ListingStatus
 from src.shared.services.vector_sync import (
     delete_listing_from_qdrant,
+    delete_listings_from_qdrant,
     sync_listing_to_qdrant,
 )
 
@@ -88,14 +93,56 @@ def _resolve_rega_number(raw: str | None) -> str:
 # GET /api/v1/properties
 # ══════════════════════════════════════════════════════════════════════════════
 
+_SORTS = {
+    "newest": lambda: PropertyListing.created_at.desc(),
+    "oldest": lambda: PropertyListing.created_at.asc(),
+    "price_asc": lambda: PropertyListing.price.asc().nulls_last(),
+    "price_desc": lambda: PropertyListing.price.desc().nulls_last(),
+    "area_desc": lambda: PropertyListing.area_sqm.desc().nulls_last(),
+}
+EXPORT_MAX_ROWS = 20_000
+BULK_MAX_IDS = 500
+
+
+def _like(term: str) -> str:
+    """Escape LIKE wildcards so user input matches literally."""
+    return "%" + term.strip().replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_") + "%"
+
+
+def _filtered(
+    status_filter: str | None, type_filter: str | None, city: str | None, search: str | None,
+    price_min: float | None, price_max: float | None,
+):
+    stmt = select(PropertyListing)
+    if status_filter:
+        stmt = stmt.where(PropertyListing.status == status_filter)
+    if type_filter:
+        stmt = stmt.where(PropertyListing.property_type == type_filter)
+    if city and city.strip():
+        stmt = stmt.where(PropertyListing.city.ilike(_like(city), escape="\\"))
+    if price_min is not None:
+        stmt = stmt.where(PropertyListing.price >= price_min)
+    if price_max is not None:
+        stmt = stmt.where(PropertyListing.price <= price_max)
+    if search and search.strip():
+        needle = _like(search)
+        stmt = stmt.where(or_(*(
+            col.ilike(needle, escape="\\") for col in (
+                PropertyListing.rega_ad_number, PropertyListing.city, PropertyListing.district,
+                PropertyListing.description_ar, PropertyListing.description_en)
+        )))
+    return stmt
+
+
 @router.get(
     "",
     response_model=PropertyListingPage,
     status_code=status.HTTP_200_OK,
     summary="List property listings",
     description=(
-        "Return a paginated list of property listings for the authenticated tenant. "
-        "Filter by `status` or `property_type` to narrow results."
+        "Paginated list for the authenticated tenant. Filters: `status`, `property_type`, `city`, "
+        "`search` (REGA number, city, district, description), `price_min`/`price_max`; "
+        "`sort`: newest | oldest | price_asc | price_desc | area_desc."
     ),
 )
 async def list_properties(
@@ -103,46 +150,104 @@ async def list_properties(
     repo: PropertyListingRepo,
     page: int = Query(default=1, ge=1, description="1-indexed page number"),
     limit: int = Query(default=20, ge=1, le=100, description="Items per page"),
-    status_filter: str | None = Query(
-        default=None,
-        alias="status",
-        description="Filter by ListingStatus (e.g. VERIFIED_ACTIVE)",
-    ),
-    type_filter: str | None = Query(
-        default=None,
-        alias="property_type",
-        description="Filter by PropertyType (e.g. apartment)",
-    ),
+    status_filter: str | None = Query(default=None, alias="status", description="Filter by ListingStatus (e.g. VERIFIED_ACTIVE)"),
+    type_filter: str | None = Query(default=None, alias="property_type", description="Filter by PropertyType (e.g. apartment)"),
+    city: str | None = Query(default=None, max_length=100),
+    search: str | None = Query(default=None, max_length=100),
+    price_min: float | None = Query(default=None, ge=0),
+    price_max: float | None = Query(default=None, ge=0),
+    sort: str = Query(default="newest", pattern="^(newest|oldest|price_asc|price_desc|area_desc)$"),
 ) -> PropertyListingPage:
-    offset = (page - 1) * limit
+    stmt = _filtered(status_filter, type_filter, city, search, price_min, price_max)
+    total = await repo.session.scalar(select(func.count()).select_from(stmt.subquery())) or 0
+    rows = (await repo.session.execute(
+        stmt.order_by(_SORTS[sort](), PropertyListing.listing_id).offset((page - 1) * limit).limit(limit)
+    )).scalars().all()
 
-    # Build filters dict — only include non-None values
-    filters: dict[str, str] = {}
-    if status_filter:
-        filters["status"] = status_filter
-    if type_filter:
-        filters["property_type"] = type_filter
-
-    items, total = await repo.get_multi(
-        offset=offset,
-        limit=limit,
-        filters=filters or None,
-    )
-
-    logger.debug(
-        "properties_list",
-        tenant_id=str(user.tenant_id),
-        page=page,
-        total=total,
-    )
+    logger.debug("properties_list", tenant_id=str(user.tenant_id), page=page, total=total)
 
     return PropertyListingPage(
-        items=[PropertyListingResponse.model_validate(item) for item in items],
+        items=[PropertyListingResponse.model_validate(item) for item in rows],
         total=total,
         page=page,
         limit=limit,
         pages=max(1, math.ceil(total / limit)),
     )
+
+
+# Registered before GET /{listing_id}: a single-segment literal path must come first.
+@router.get(
+    "/export.csv",
+    summary="Export the filtered listings as CSV",
+    description=f"Same filters as the list endpoint (no pagination); capped at {EXPORT_MAX_ROWS} rows. "
+                "Cells starting with = + - @ are prefixed with ' to defuse spreadsheet formula injection.",
+)
+async def export_properties(
+    user: CurrentUser,
+    repo: PropertyListingRepo,
+    status_filter: str | None = Query(default=None, alias="status"),
+    type_filter: str | None = Query(default=None, alias="property_type"),
+    city: str | None = Query(default=None, max_length=100),
+    search: str | None = Query(default=None, max_length=100),
+    price_min: float | None = Query(default=None, ge=0),
+    price_max: float | None = Query(default=None, ge=0),
+    sort: str = Query(default="newest", pattern="^(newest|oldest|price_asc|price_desc|area_desc)$"),
+) -> Response:
+    from src.shared.services.property_import import csv_safe
+
+    stmt = _filtered(status_filter, type_filter, city, search, price_min, price_max)
+    rows = (await repo.session.execute(
+        stmt.order_by(_SORTS[sort](), PropertyListing.listing_id).limit(EXPORT_MAX_ROWS)
+    )).scalars().all()
+    cols = ("rega_ad_number", "property_type", "status", "city", "district", "price", "area_sqm", "bedrooms",
+            "bathrooms", "latitude", "longitude", "description_ar", "description_en")
+    head = ("رقم الإعلان", "النوع", "الحالة", "المدينة", "الحي", "السعر", "المساحة", "الغرف", "الحمامات",
+            "خط العرض", "خط الطول", "الوصف", "الوصف (إنجليزي)")
+    buf = io.StringIO()
+    w = csv.writer(buf)
+    w.writerow(head)
+    for r in rows:
+        w.writerow([csv_safe(getattr(r, c) if getattr(r, c) is not None else "") for c in cols])
+    return Response(
+        b"\xef\xbb\xbf" + buf.getvalue().encode("utf-8"), media_type="text/csv; charset=utf-8",
+        headers={"Content-Disposition": 'attachment; filename="omniflow-properties.csv"'},
+    )
+
+
+class BulkIds(BaseModel):
+    ids: list[uuid.UUID] = Field(..., min_length=1, max_length=BULK_MAX_IDS)
+
+
+class BulkStatus(BulkIds):
+    status: ListingStatus
+
+
+@router.post("/bulk/delete", summary="Delete several listings", description=f"Up to {BULK_MAX_IDS} ids; vectors are removed asynchronously.")
+async def bulk_delete(body: BulkIds, background: BackgroundTasks, user: PropertyWriteUser, repo: PropertyListingRepo) -> dict:
+    ids = list(dict.fromkeys(body.ids))
+    deleted = (await repo.session.execute(
+        delete(PropertyListing).where(PropertyListing.tenant_id == user.tenant_id, PropertyListing.listing_id.in_(ids))
+        .returning(PropertyListing.listing_id)
+    )).scalars().all()
+    logger.info("properties_bulk_deleted", tenant_id=str(user.tenant_id), requested=len(ids), deleted=len(deleted))
+    if deleted:
+        background.add_task(delete_listings_from_qdrant, [str(i) for i in deleted], user.tenant_id)
+    return {"requested": len(ids), "deleted": len(deleted), "not_found": len(ids) - len(deleted)}
+
+
+@router.post("/bulk/status", summary="Change the status of several listings", description=f"Up to {BULK_MAX_IDS} ids; vectors are re-indexed asynchronously.")
+async def bulk_status(body: BulkStatus, background: BackgroundTasks, user: PropertyWriteUser, repo: PropertyListingRepo) -> dict:
+    from src.shared.services.property_import import reindex
+
+    ids = list(dict.fromkeys(body.ids))
+    updated = (await repo.session.execute(
+        update(PropertyListing).where(PropertyListing.tenant_id == user.tenant_id, PropertyListing.listing_id.in_(ids))
+        .values(status=body.status.value).returning(PropertyListing.listing_id)
+    )).scalars().all()
+    logger.info("properties_bulk_status", tenant_id=str(user.tenant_id), status=body.status.value, updated=len(updated))
+    if updated:
+        background.add_task(reindex, user.tenant_id, list(updated))
+    return {"requested": len(ids), "updated": len(updated), "not_found": len(ids) - len(updated)}
 
 
 # ══════════════════════════════════════════════════════════════════════════════

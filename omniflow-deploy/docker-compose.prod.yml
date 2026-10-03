@@ -220,6 +220,7 @@ services:
       S3_MEDIA_TEMP_BUCKET: ${S3_MEDIA_TEMP_BUCKET:-omniflow-media-temp}
       S3_ASSETS_BUCKET: ${S3_ASSETS_BUCKET:-omniflow-public-assets}
       S3_KNOWLEDGE_BUCKET: ${S3_KNOWLEDGE_BUCKET:-omniflow-knowledge-docs}
+      S3_IMPORTS_BUCKET: ${S3_IMPORTS_BUCKET:-omniflow-imports}
     depends_on:
       minio:
         condition: service_healthy
@@ -242,7 +243,7 @@ services:
       - |
         init() {
           mc alias set myminio http://minio:9000 "$${MINIO_ROOT_USER}" "$${MINIO_ROOT_PASSWORD}" || return 1
-          for bucket in omniflow-media omniflow-backups "$${S3_VAULT_BUCKET}" "$${S3_MEDIA_TEMP_BUCKET}" "$${S3_ASSETS_BUCKET}" "$${S3_KNOWLEDGE_BUCKET}"; do
+          for bucket in omniflow-media omniflow-backups "$${S3_VAULT_BUCKET}" "$${S3_MEDIA_TEMP_BUCKET}" "$${S3_ASSETS_BUCKET}" "$${S3_KNOWLEDGE_BUCKET}" "$${S3_IMPORTS_BUCKET}"; do
             mc mb --ignore-existing "myminio/$$bucket" || return 1
             mc anonymous set none "myminio/$$bucket" || return 1
           done

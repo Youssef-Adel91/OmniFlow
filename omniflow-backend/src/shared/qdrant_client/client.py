@@ -453,6 +453,32 @@ class QdrantManager:
             collection=collection,
         )
 
+    async def upsert_property_listings(
+        self,
+        tenant_id: str | uuid.UUID,
+        points: list[tuple[str, list[float], dict[str, Any]]],
+    ) -> None:
+        """Upsert many listing vectors in one call (bulk import). tenant_id is force-injected."""
+        if not points:
+            return
+        collection = _tenant_collection(tenant_id)
+        await self._ensure_collection_exists(collection)
+        structs = []
+        for listing_id, vector, payload in points:
+            payload["tenant_id"] = str(tenant_id)
+            structs.append(qmodels.PointStruct(id=listing_id, vector=vector, payload=payload))
+        await self._c.upsert(collection_name=collection, points=structs)
+        logger.debug("qdrant_listings_batch_upserted", tenant_id=str(tenant_id), count=len(structs), collection=collection)
+
+    async def delete_property_listings(self, tenant_id: str | uuid.UUID, listing_ids: list[str]) -> None:
+        """Delete many listing vectors in one call (bulk delete)."""
+        if not listing_ids:
+            return
+        await self._c.delete(
+            collection_name=_tenant_collection(tenant_id),
+            points_selector=qmodels.PointIdsList(points=list(listing_ids)),
+        )
+
     async def delete_property_listing(
         self, tenant_id: str | uuid.UUID, listing_id: str
     ) -> None:

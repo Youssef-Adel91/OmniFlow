@@ -1393,3 +1393,69 @@ class Appointment(Base, TimestampMixin, TenantScopedMixin):
 
     def __repr__(self) -> str:
         return f"<Appointment id={self.appointment_id} status={self.status} at={self.scheduled_at}>"
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# 17. ImportJob / ImportMappingTemplate -- bulk import (properties now, customers next)
+# ══════════════════════════════════════════════════════════════════════════════
+class ImportJob(Base, TimestampMixin, TenantScopedMixin):
+    """
+    One bulk-import run. The uploaded file and its normalised rows live in object
+    storage (private bucket); this row holds state, mapping, options and counters.
+
+    status: uploaded -> validated -> queued -> running -> completed | failed | cancelled
+    A failed job can be re-committed: it resumes from `processed_rows`.
+    """
+    __tablename__ = "import_jobs"
+    __table_args__ = (
+        Index("ix_import_jobs_tenant_created", "tenant_id", "created_at"),
+        Index("ix_import_jobs_status_lease", "status", "lease_expires_at"),
+    )
+
+    import_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    tenant_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("tenants.tenant_id", ondelete="RESTRICT"),
+        nullable=False, index=True, comment="RLS partition key — must match app.current_tenant_id",
+    )
+    kind: Mapped[str] = mapped_column(String(30), nullable=False, comment="properties | customers")
+    status: Mapped[str] = mapped_column(String(20), nullable=False, default="uploaded")
+    filename: Mapped[str] = mapped_column(String(255), nullable=False)
+    file_kind: Mapped[str] = mapped_column(String(10), nullable=False)
+    file_size: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    source_key: Mapped[Optional[str]] = mapped_column(String(500), nullable=True, comment="object key of the original upload")
+    rows_key: Mapped[Optional[str]] = mapped_column(String(500), nullable=True, comment="object key of the normalised rows JSON")
+    errors_key: Mapped[Optional[str]] = mapped_column(String(500), nullable=True, comment="object key of the failed-rows CSV")
+    columns: Mapped[Optional[list]] = mapped_column(JSONB, nullable=True)
+    mapping: Mapped[Optional[dict]] = mapped_column(JSONB, nullable=True)
+    options: Mapped[Optional[dict]] = mapped_column(JSONB, nullable=True)
+    summary: Mapped[Optional[dict]] = mapped_column(JSONB, nullable=True, comment="dry-run summary + first issues")
+    total_rows: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    processed_rows: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    created_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    updated_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    skipped_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    failed_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    indexed_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0, comment="listings synced to Qdrant")
+    error_message: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    cancel_requested: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    lease_expires_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_by: Mapped[Optional[uuid.UUID]] = mapped_column(UUID(as_uuid=True), nullable=True)
+    started_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    finished_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
+class ImportMappingTemplate(Base, TimestampMixin, TenantScopedMixin):
+    """A saved column mapping ("my agency's export looks like this") reused on later imports."""
+    __tablename__ = "import_mapping_templates"
+    __table_args__ = (
+        UniqueConstraint("tenant_id", "kind", "name", name="uq_import_template_name"),
+    )
+
+    template_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    tenant_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("tenants.tenant_id", ondelete="RESTRICT"),
+        nullable=False, index=True, comment="RLS partition key — must match app.current_tenant_id",
+    )
+    kind: Mapped[str] = mapped_column(String(30), nullable=False)
+    name: Mapped[str] = mapped_column(String(100), nullable=False)
+    mapping: Mapped[dict] = mapped_column(JSONB, nullable=False)

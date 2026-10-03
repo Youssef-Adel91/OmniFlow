@@ -18,10 +18,10 @@ from typing import Annotated, Literal, Optional
 import structlog
 from fastapi import APIRouter, HTTPException, Path, Query, status
 from pydantic import BaseModel, ConfigDict, Field
-from sqlalchemy import func, select
+from sqlalchemy import func, or_, select
 
 from src.gateway.dependencies import AuthTenantSession, CurrentUser
-from src.shared.db.models import CustomerReport
+from src.shared.db.models import Customer, CustomerReport
 from src.shared.services.report_download import report_download_url
 
 logger = structlog.get_logger(__name__)
@@ -83,6 +83,14 @@ class RevenueBucket(BaseModel):
     count: int = Field(..., description="Number of reports created in the bucket.")
 
 
+class RevenueByType(BaseModel):
+    """Revenue of one report type over the same window as the series."""
+
+    report_type: str
+    total_revenue: float
+    count: int
+
+
 class RevenueAnalytics(BaseModel):
     period: str
     buckets: int
@@ -90,6 +98,7 @@ class RevenueAnalytics(BaseModel):
     total_revenue: float
     total_count: int
     series: list[RevenueBucket]
+    by_type: list[RevenueByType] = []
 
 
 # Bucket sizes: period → (postgres date_trunc unit, default number of buckets)
@@ -128,6 +137,10 @@ async def list_reports(
     ] = None,
     date_from: Annotated[date | None, Query(description="Inclusive start date (UTC)")] = None,
     date_to: Annotated[date | None, Query(description="Inclusive end date (UTC)")] = None,
+    search: Annotated[
+        str | None,
+        Query(max_length=100, description="Match payment reference, customer name or phone"),
+    ] = None,
     page: Annotated[int, Query(ge=1, description="1-indexed page number")] = 1,
     page_size: Annotated[int, Query(ge=1, le=100, description="Items per page")] = 20,
 ) -> ReportPage:
@@ -143,6 +156,25 @@ async def list_reports(
         stmt = stmt.where(CustomerReport.created_at >= datetime.combine(date_from, datetime.min.time(), tzinfo=timezone.utc))
     if date_to:
         stmt = stmt.where(CustomerReport.created_at <= datetime.combine(date_to, datetime.max.time(), tzinfo=timezone.utc))
+
+    if search and search.strip():
+        # Escape LIKE wildcards so a user typing "%" or "_" matches literally.
+        needle = "%" + search.strip().replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_") + "%"
+        stmt = stmt.where(
+            or_(
+                CustomerReport.payment_reference.ilike(needle, escape="\\"),
+                select(Customer.customer_id)
+                .where(
+                    Customer.customer_id == CustomerReport.customer_id,
+                    or_(
+                        Customer.display_name.ilike(needle, escape="\\"),
+                        Customer.whatsapp_profile_name.ilike(needle, escape="\\"),
+                        Customer.unified_phone.ilike(needle, escape="\\"),
+                    ),
+                )
+                .exists(),
+            )
+        )
 
     total = await session.scalar(
         select(func.count()).select_from(stmt.subquery())
@@ -281,12 +313,30 @@ async def revenue_analytics(
             )
         )
 
+    type_stmt = (
+        select(
+            CustomerReport.report_type,
+            func.coalesce(func.sum(CustomerReport.price_sar), 0),
+            func.count(CustomerReport.report_id),
+        )
+        .where(CustomerReport.created_at >= window_start)
+        .group_by(CustomerReport.report_type)
+        .order_by(func.coalesce(func.sum(CustomerReport.price_sar), 0).desc())
+    )
+    if delivered_only:
+        type_stmt = type_stmt.where(CustomerReport.is_delivered.is_(True))
+    by_type = [
+        RevenueByType(report_type=str(rt), total_revenue=round(float(total or 0), 2), count=int(cnt or 0))
+        for rt, total, cnt in (await session.execute(type_stmt)).all()
+    ]
+
     return RevenueAnalytics(
         period=period,
         buckets=bucket_count,
         total_revenue=round(sum(b.total_revenue for b in series), 2),
         total_count=sum(b.count for b in series),
         series=series,
+        by_type=by_type,
     )
 
 

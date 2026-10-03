@@ -33,6 +33,7 @@ import {
   type Report,
   type ReportPage,
   type RevenuePoint,
+  type RevenueByType,
 } from "@/lib/api/reports";
 import { fetchDashboardSummary, type DashboardSummary } from "@/lib/api/dashboard";
 import { Select } from "@/components/ui/Select";
@@ -64,11 +65,16 @@ function formatPrice(price: number | null | undefined, currency = "SAR"): string
 
 /** Short Arabic label for a "YYYY-MM" bucket coming from the analytics API. */
 function formatMonthLabel(month: string): string {
+  const day = /^(\d{4})-(\d{2})-(\d{2})$/.exec(month);
+  if (day) {
+    const d = new Date(Number(day[1]), Number(day[2]) - 1, Number(day[3]));
+    return new Intl.DateTimeFormat("ar-SA-u-ca-gregory", { day: "numeric", month: "short" }).format(d);
+  }
   const match = /^(\d{4})-(\d{2})/.exec(month);
   if (!match) return month || "—";
   const d = new Date(Number(match[1]), Number(match[2]) - 1, 1);
   if (Number.isNaN(d.getTime())) return month;
-  return new Intl.DateTimeFormat("ar-SA", { month: "short", year: "2-digit" }).format(d);
+  return new Intl.DateTimeFormat("ar-SA-u-ca-gregory", { month: "short", year: "2-digit" }).format(d);
 }
 
 function compactNumber(value: number): string {
@@ -134,12 +140,24 @@ function downloadCsv(filename: string, csv: string): void {
 // `recharts` is not a dependency of this project (checked package.json), so the
 // chart is a lightweight CSS/flexbox bar chart — no new bundle weight.
 
+const PERIOD_OPTIONS: { value: "daily" | "weekly" | "monthly"; label: string; title: string }[] = [
+  { value: "daily", label: "يومي", title: "الإيرادات اليومية (آخر 30 يومًا)" },
+  { value: "weekly", label: "أسبوعي", title: "الإيرادات الأسبوعية (آخر 12 أسبوعًا)" },
+  { value: "monthly", label: "شهري", title: "الإيرادات الشهرية (آخر 6 أشهر)" },
+];
+
 function RevenueChart({
   points,
+  byType,
+  period,
+  onPeriodChange,
   loading,
   error,
 }: {
   points: RevenuePoint[];
+  byType: RevenueByType[];
+  period: "daily" | "weekly" | "monthly";
+  onPeriodChange: (p: "daily" | "weekly" | "monthly") => void;
   loading: boolean;
   error: string | null;
 }) {
@@ -151,8 +169,21 @@ function RevenueChart({
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 mb-6">
         <h2 className="text-lg font-bold text-white flex items-center gap-2">
           <TrendingUp className="w-5 h-5 text-[#C9A84C]" />
-          الإيرادات الشهرية
+          {PERIOD_OPTIONS.find((o) => o.value === period)?.title}
         </h2>
+        <div role="tablist" aria-label="الفترة" className="inline-flex rounded-lg border border-white/10 overflow-hidden text-xs">
+          {PERIOD_OPTIONS.map((o) => (
+            <button
+              key={o.value}
+              role="tab"
+              aria-selected={period === o.value}
+              onClick={() => onPeriodChange(o.value)}
+              className={`px-3 py-1.5 transition-colors ${period === o.value ? "bg-[#C9A84C]/20 text-[#E0C46A] font-semibold" : "text-gray-400 hover:bg-white/5"}`}
+            >
+              {o.label}
+            </button>
+          ))}
+        </div>
         {!loading && !error && points.length > 0 && (
           <span className="text-sm text-gray-400">
             الإجمالي:{" "}
@@ -213,6 +244,31 @@ function RevenueChart({
           })}
         </div>
       )}
+
+      {!loading && !error && byType.length > 0 && (
+        <div className="mt-6 pt-5 border-t border-white/10">
+          <h3 className="text-sm font-semibold text-white mb-3">الإيراد حسب نوع التقرير</h3>
+          <ul className="space-y-2.5">
+            {byType.map((t) => {
+              const top = Math.max(1, ...byType.map((x) => x.total_revenue));
+              return (
+                <li key={t.report_type} className="text-xs">
+                  <div className="flex justify-between text-gray-300 mb-1">
+                    <span>{REPORT_TYPE_LABELS[t.report_type] ?? t.report_type}</span>
+                    <span>
+                      <strong className="text-[#E0C46A]">{formatPrice(t.total_revenue)}</strong>
+                      <span className="text-gray-500 ms-2">({t.count} تقرير)</span>
+                    </span>
+                  </div>
+                  <div className="h-2 rounded-full bg-white/5">
+                    <div className="h-full rounded-full bg-[#C9A84C]" style={{ width: `${Math.max(3, (t.total_revenue / top) * 100)}%` }} />
+                  </div>
+                </li>
+              );
+            })}
+          </ul>
+        </div>
+      )}
     </div>
   );
 }
@@ -260,6 +316,10 @@ export default function ReportsPage() {
   const [typeFilter, setTypeFilter] = useState("");
   const [dateFrom, setDateFrom]     = useState("");
   const [dateTo, setDateTo]         = useState("");
+  const [searchInput, setSearchInput] = useState("");
+  const [search, setSearch]           = useState("");
+  const [revenuePeriod, setRevenuePeriod] = useState<"daily" | "weekly" | "monthly">("monthly");
+  const [revenueByType, setRevenueByType] = useState<RevenueByType[]>([]);
 
   const [summary, setSummary] = useState<DashboardSummary | null>(null);
   const [summaryLoading, setSummaryLoading] = useState(true);
@@ -283,6 +343,7 @@ export default function ReportsPage() {
         report_type: typeFilter || undefined,
         date_from: dateFrom || undefined,
         date_to: dateTo || undefined,
+        search: search || undefined,
       });
       setData(result);
     } catch (err: any) {
@@ -291,7 +352,7 @@ export default function ReportsPage() {
     } finally {
       setLoading(false);
     }
-  }, [page, typeFilter, dateFrom, dateTo]);
+  }, [page, typeFilter, dateFrom, dateTo, search]);
 
   const authReady = useAuthReady();
   useEffect(() => {
@@ -340,13 +401,17 @@ export default function ReportsPage() {
   // Monthly revenue for the chart — independent of the table so a failure
   // here only blanks the chart.
   useEffect(() => {
+    if (!authReady) return;
     let cancelled = false;
     (async () => {
       setRevenueLoading(true);
       setRevenueError(null);
       try {
-        const result = await fetchRevenueAnalytics("monthly");
-        if (!cancelled) setRevenue(result.items);
+        const result = await fetchRevenueAnalytics(revenuePeriod);
+        if (!cancelled) {
+          setRevenue(result.items);
+          setRevenueByType(result.by_type);
+        }
       } catch (err: any) {
         if (!cancelled) {
           const detail = err?.response?.data?.detail ?? err?.message;
@@ -361,7 +426,19 @@ export default function ReportsPage() {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [authReady, revenuePeriod]);
+
+  // Debounce the search box so we don't query on every keystroke.
+  useEffect(() => {
+    const t = setTimeout(() => {
+      setSearch((prev) => {
+        const next = searchInput.trim();
+        if (next !== prev) setPage(1);
+        return next;
+      });
+    }, 350);
+    return () => clearTimeout(t);
+  }, [searchInput]);
 
   /**
    * Export every report matching the current filters to a CSV file.
@@ -377,6 +454,7 @@ export default function ReportsPage() {
         report_type: typeFilter || undefined,
         date_from: dateFrom || undefined,
         date_to: dateTo || undefined,
+        search: search || undefined,
       });
 
       // Defensive: if the backend ignores the date params, apply them here too
@@ -490,10 +568,30 @@ export default function ReportsPage() {
       </div>
 
       {/* Monthly revenue chart */}
-      <RevenueChart points={revenue} loading={revenueLoading} error={revenueError} />
+      <RevenueChart
+        points={revenue}
+        byType={revenueByType}
+        period={revenuePeriod}
+        onPeriodChange={setRevenuePeriod}
+        loading={revenueLoading}
+        error={revenueError}
+      />
 
       {/* Filters */}
       <div className="flex items-end gap-4 flex-wrap bg-[#111827] border border-white/10 rounded-2xl p-4">
+        <div className="min-w-[220px] flex-1">
+          <label htmlFor="reports-search" className="block text-xs text-gray-500 mb-1.5">بحث</label>
+          <input
+            id="reports-search"
+            type="search"
+            value={searchInput}
+            onChange={(e) => setSearchInput(e.target.value)}
+            placeholder="اسم العميل أو رقمه أو مرجع الدفع"
+            maxLength={100}
+            className="w-full bg-[#0A0F1C] border border-white/10 rounded-lg py-2 px-4 text-white text-sm placeholder:text-gray-500 focus:outline-none focus:border-[#C9A84C]/50"
+          />
+        </div>
+
         <div>
           <label className="block text-xs text-gray-500 mb-1.5">نوع التقرير</label>
           <Select
@@ -547,12 +645,14 @@ export default function ReportsPage() {
           />
         </div>
 
-        {(typeFilter || dateFrom || dateTo) && (
+        {(typeFilter || dateFrom || dateTo || searchInput) && (
           <button
             onClick={() => {
               setTypeFilter("");
               setDateFrom("");
               setDateTo("");
+              setSearchInput("");
+              setSearch("");
               setPage(1);
             }}
             className="text-xs text-gray-400 hover:text-white transition-colors flex items-center gap-1 py-2.5"

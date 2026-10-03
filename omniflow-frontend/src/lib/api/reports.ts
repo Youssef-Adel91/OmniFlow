@@ -47,6 +47,8 @@ export interface ListReportsParams {
   date_from?:   string;
   /** ISO date (YYYY-MM-DD) — inclusive upper bound on `created_at`. */
   date_to?:     string;
+  /** Matches payment reference, customer name or phone (server-side). */
+  search?:      string;
 }
 
 export type RevenuePeriod = "monthly" | "weekly" | "daily" | string;
@@ -58,8 +60,15 @@ export interface RevenuePoint {
   count:         number;
 }
 
+export interface RevenueByType {
+  report_type:   string;
+  total_revenue: number;
+  count:         number;
+}
+
 export interface RevenueAnalytics {
-  items: RevenuePoint[];
+  items:   RevenuePoint[];
+  by_type: RevenueByType[];
 }
 
 // ── Normalisation ──────────────────────────────────────────────────────────
@@ -99,6 +108,7 @@ export async function fetchReports(
       report_type: params.report_type || undefined,
       date_from:   params.date_from || undefined,
       date_to:     params.date_to || undefined,
+      search:      params.search?.trim() || undefined,
     },
   });
 
@@ -163,6 +173,11 @@ export async function fetchRevenueAnalytics(
       month: String(raw?.month ?? raw?.period ?? raw?.bucket ?? raw?.label ?? ""),
       total_revenue: Number(raw?.total_revenue ?? raw?.revenue ?? raw?.total ?? 0) || 0,
       count: Number(raw?.count ?? raw?.reports_count ?? 0) || 0,
+    })),
+    by_type: (Array.isArray(data?.by_type) ? data.by_type : []).map((raw: any) => ({
+      report_type: String(raw?.report_type ?? ""),
+      total_revenue: Number(raw?.total_revenue ?? 0) || 0,
+      count: Number(raw?.count ?? 0) || 0,
     })),
   };
 }

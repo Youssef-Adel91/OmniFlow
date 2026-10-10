@@ -23,8 +23,9 @@
 #       /var/log/omniflow-backup.log { weekly rotate 8 compress missingok notifempty }
 #
 # ⚠️ CLIENT ACTION: a backup that only lives on the same server is not a
-# backup. Ship $BACKUP_ROOT off-box (S3, another region, rsync to NAS) and test
-# a RESTORE at least once per quarter.
+# backup. Set OFFHOST_COMMAND in .env.prod (see step 4 below) and test a RESTORE
+# (tests/restore_drill.sh) at least once per quarter. Prefer the systemd timer in
+# systemd/ over cron: it catches up after downtime (Persistent=true).
 # ═════════════════════════════════════════════════════════════════════════════
 
 set -uo pipefail   # NOTE: no `-e` — a failing optional step must not kill the run.
@@ -77,7 +78,7 @@ POSTGRES_DB="${POSTGRES_DB:-omniflow_db}"
 
 # Resolve after loading ENV_FILE. An explicit space-separated list overrides
 # defaults; each source gets its own prefix to avoid colliding object names.
-read -r -a SOURCE_BUCKETS <<< "${MINIO_SOURCE_BUCKETS:-${MINIO_SOURCE_BUCKET} ${S3_VAULT_BUCKET:-omniflow-reports-vault} ${S3_MEDIA_TEMP_BUCKET:-omniflow-media-temp} ${S3_ASSETS_BUCKET:-omniflow-public-assets} ${S3_KNOWLEDGE_BUCKET:-omniflow-knowledge-docs}}"
+read -r -a SOURCE_BUCKETS <<< "${MINIO_SOURCE_BUCKETS:-${MINIO_SOURCE_BUCKET} ${S3_VAULT_BUCKET:-omniflow-reports-vault} ${S3_MEDIA_TEMP_BUCKET:-omniflow-media-temp} ${S3_ASSETS_BUCKET:-omniflow-public-assets} ${S3_KNOWLEDGE_BUCKET:-omniflow-knowledge-docs} ${S3_IMPORTS_BUCKET:-omniflow-imports} ${S3_SUPPORT_BUCKET:-omniflow-support}}"
 
 mkdir -p "$BACKUP_ROOT/postgres" "$BACKUP_ROOT/qdrant" "$BACKUP_ROOT/minio" || {
     fail "Cannot create backup directories under $BACKUP_ROOT"
@@ -278,6 +279,54 @@ if container_running "$MINIO_CONTAINER"; then
         "myminio/${MINIO_BACKUP_BUCKET}" >/dev/null 2>&1 \
         || warn "Could not prune old objects in myminio/${MINIO_BACKUP_BUCKET}."
 fi
+
+# ═════════════════════════════════════════════════════════════════════════════
+# 4. Off-host copy (a backup that only lives on the same server is not a backup)
+# ═════════════════════════════════════════════════════════════════════════════
+# OFFHOST_COMMAND is YOUR transfer command, run through `bash -c` with BACKUP_ROOT and TIMESTAMP exported, e.g.
+#   OFFHOST_COMMAND='rclone copy "$BACKUP_ROOT" remote:omniflow-backups --max-age 2d'
+#   OFFHOST_COMMAND='aws s3 sync "$BACKUP_ROOT" s3://my-bucket/omniflow --only-show-errors'
+#   OFFHOST_COMMAND='rsync -a --delete-after "$BACKUP_ROOT/" backup@host:/srv/omniflow/'
+# Unset => the run is reported (and alerted on) as "no off-host copy"; it never pretends the copy happened.
+OFFHOST_OK=0
+OFFHOST_CONFIGURED=0
+if [ -n "${OFFHOST_COMMAND:-}" ]; then
+    OFFHOST_CONFIGURED=1
+    log "── [4/4] Off-host copy ──────────────────────────────────"
+    if [ "$EXIT_CODE" -ne 0 ]; then
+        warn "Skipping the off-host copy: this run had errors, so it is not a complete backup."
+    elif BACKUP_ROOT="$BACKUP_ROOT" TIMESTAMP="$TIMESTAMP" timeout "${OFFHOST_TIMEOUT:-3600}" bash -c "$OFFHOST_COMMAND"; then
+        OFFHOST_OK=1
+        log "✅ Off-host copy finished."
+    else
+        fail "OFFHOST_COMMAND failed — the backup exists only on this server."
+    fi
+else
+    warn "OFFHOST_COMMAND is not set — NO off-host copy was made."
+fi
+
+# ═════════════════════════════════════════════════════════════════════════════
+# 5. Freshness markers (read by backup-status.sh and, via node-exporter's textfile collector, by Prometheus alerts)
+# ═════════════════════════════════════════════════════════════════════════════
+NOW_EPOCH="$(date +%s)"
+TEXTFILE_DIR="${TEXTFILE_DIR:-monitoring/textfile}"
+mkdir -p "$BACKUP_ROOT" "$TEXTFILE_DIR" 2>/dev/null || true
+[ "$EXIT_CODE" -eq 0 ] && echo "$NOW_EPOCH" > "$BACKUP_ROOT/.last_success"
+[ "$OFFHOST_OK" -eq 1 ] && echo "$NOW_EPOCH" > "$BACKUP_ROOT/.last_offhost_success"
+LAST_OK="$(cat "$BACKUP_ROOT/.last_success" 2>/dev/null || echo 0)"
+LAST_OFF="$(cat "$BACKUP_ROOT/.last_offhost_success" 2>/dev/null || echo 0)"
+PROM_TMP="$TEXTFILE_DIR/.omniflow_backup.prom.$$"
+{
+    echo "# HELP omniflow_backup_last_success_timestamp_seconds Unix time of the last fully successful backup run."
+    echo "# TYPE omniflow_backup_last_success_timestamp_seconds gauge"
+    [ "$LAST_OK" -gt 0 ] && echo "omniflow_backup_last_success_timestamp_seconds $LAST_OK"
+    echo "# HELP omniflow_backup_last_offhost_success_timestamp_seconds Unix time of the last successful off-host copy."
+    echo "# TYPE omniflow_backup_last_offhost_success_timestamp_seconds gauge"
+    [ "$LAST_OFF" -gt 0 ] && echo "omniflow_backup_last_offhost_success_timestamp_seconds $LAST_OFF"
+    echo "# HELP omniflow_backup_offhost_configured 1 if OFFHOST_COMMAND is set."
+    echo "# TYPE omniflow_backup_offhost_configured gauge"
+    echo "omniflow_backup_offhost_configured $OFFHOST_CONFIGURED"
+} > "$PROM_TMP" 2>/dev/null && mv -f "$PROM_TMP" "$TEXTFILE_DIR/omniflow_backup.prom" 2>/dev/null || warn "Could not write the Prometheus textfile marker."
 
 # ═════════════════════════════════════════════════════════════════════════════
 log "=============================================="

@@ -33,6 +33,7 @@ networks:
 volumes:
   prometheus_prod_data:
   grafana_prod_data:
+  alertmanager_prod_data:
 
 services:
   prometheus:
@@ -47,6 +48,7 @@ services:
       - --web.enable-lifecycle
     volumes:
       - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./monitoring/rules:/etc/prometheus/rules:ro
       - prometheus_prod_data:/prometheus
     ports:
       - "127.0.0.1:9091:9090"
@@ -87,6 +89,53 @@ services:
       timeout: 5s
       retries: 3
       start_period: 30s
+
+  alertmanager:
+    image: prom/alertmanager:v0.27.0
+    container_name: prod-alertmanager
+    restart: always
+    logging: *monitoring-logging
+    command:
+      - --config.file=/etc/alertmanager/alertmanager.yml
+      - --storage.path=/alertmanager
+    volumes:
+      - ./monitoring/alertmanager.yml:/etc/alertmanager/alertmanager.yml:ro
+      - alertmanager_prod_data:/alertmanager
+    ports:
+      - "127.0.0.1:9093:9093"
+    networks:
+      - omniflow-prod-net
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1:9093/-/healthy || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+
+  blackbox-exporter:
+    image: prom/blackbox-exporter:v0.25.0
+    container_name: prod-blackbox-exporter
+    restart: always
+    logging: *monitoring-logging
+    command: ["--config.file=/etc/blackbox/blackbox.yml"]
+    volumes:
+      - ./monitoring/blackbox.yml:/etc/blackbox/blackbox.yml:ro
+    networks:
+      - omniflow-prod-net
+
+  node-exporter:
+    image: prom/node-exporter:v1.8.2
+    container_name: prod-node-exporter
+    restart: always
+    logging: *monitoring-logging
+    command:
+      - --path.rootfs=/host
+      - --collector.textfile.directory=/textfile
+    volumes:
+      - /:/host:ro,rslave
+      - ./monitoring/textfile:/textfile:ro      # backup.sh writes omniflow_backup.prom here
+    networks:
+      - omniflow-prod-net
 
   postgres-exporter:
     image: prometheuscommunity/postgres-exporter:v0.16.0

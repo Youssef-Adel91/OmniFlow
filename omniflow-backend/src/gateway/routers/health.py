@@ -103,7 +103,7 @@ async def readiness_check(response: Response):
     return {"status": "ready" if ready else "unavailable", "checks": checks}
 
 
-WORKER_NAMES = ("SemanticRouterWorker", "LLMInvokerWorker", "OutboundDispatcherWorker", "BroadcastWorker", "VCardGatekeeperWorker")
+WORKER_NAMES = ("SemanticRouterWorker", "LLMInvokerWorker", "OutboundDispatcherWorker", "BroadcastWorker", "VCardGatekeeperWorker", "VaultWorker")
 
 
 @router.get("/health/workers", summary="Kafka worker heartbeats (informational; not part of readiness)")

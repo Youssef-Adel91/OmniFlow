@@ -218,6 +218,7 @@ class BaseKafkaConsumer(ABC):
         try:
             from src.shared.redis_client import redis_mgr
 
+            await redis_mgr.start()          # idempotent; some workers (broadcast, vault) never start Redis themselves
             await redis_mgr.set_raw(f"hb:worker:{self.__class__.__name__}", str(int(time.time())), ttl=60)
         except Exception:  # noqa: BLE001 - monitoring must never affect processing
             pass

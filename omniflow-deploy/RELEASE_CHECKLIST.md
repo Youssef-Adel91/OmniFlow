@@ -10,7 +10,15 @@ The current working tree is a verified local development milestone, not an appro
 - Set the actual domain in Nginx, CORS, API/frontend URLs and Clerk configuration. Configure provider webhook URLs/signatures. Build the frontend with the correct public Clerk key and `NEXT_PUBLIC_API_URL`; these are build-time values.
 - Keep unfinished paid reports and unconfigured voice integrations disabled. Their production paths now reject placeholders, but disabling them does not complete the associated product journeys.
 - Complete public storage addressing for signed media/report links and logos, and verify private-bucket access. The current MinIO initialization/backup coverage is not yet a complete storage deployment.
-- Implement and verify Sentry/OTel export. Configuration flags alone do not send telemetry. Define alert routing, queue lag/DLQ monitoring and an incident owner.
+- Sentry is now initialised in the gateway, every Kafka worker and Celery (PII-redacting logs everywhere); **verify an event actually arrives** (`DSN` set → raise a test error). Define alert routing in `monitoring/alertmanager.yml` (ships with a no-op receiver), and an incident owner (`RUNBOOK.md` §14). Worker liveness is `GET /health/workers` (Redis heartbeats) + container healthchecks; Kafka lag/DLQ checks are in `RUNBOOK.md` §4.
+
+## Operator documents (added with the launch-readiness work)
+
+- `MANUAL_STEPS.md` — everything only a human can do (domain, VPS, Clerk/Moyasar/Sentry/email accounts, off-host backup target, legal texts, pricing decisions) and the acceptance tests to run on the real host.
+- `RUNBOOK.md` — Arabic incident runbook (bot silent, API down, DB down, Kafka lag, payments, certificates, restore, rollback).
+- `rollback.sh` (dry-run by default), `backup-status.sh`, `systemd/` timers, `monitoring/rules/` + Alertmanager + black-box probes.
+- `bash tests/validate_deploy_files.sh` — static validation (no Docker daemon needed). `nginx -t`, `promtool check rules`, a real boot and a real restore were **not** run where these files were written.
+- Edge CSP (`nginx/snippets/security-headers.conf`) now allows Clerk/Turnstile on `SERVER_DOMAIN` — before this the production sign-in page would have been blocked. Replace `SERVER_DOMAIN` in **both** `prod.conf` and the snippet, then check the browser console for CSP violations.
 
 ## Staging checks
 

@@ -1,0 +1,86 @@
+# Prometheus alert rules for OmniFlow. Loaded via prometheus.yml `rule_files`.
+# Severity: critical = customers are affected now; warning = act within the day.
+groups:
+  - name: omniflow-availability
+    rules:
+      - alert: ApiNotReady
+        expr: probe_success{job="blackbox-ready"} == 0
+        for: 2m
+        labels: {severity: critical}
+        annotations:
+          summary: "الـ API غير جاهز (قاعدة البيانات/Redis/Kafka)"
+          description: "فحص /health/ready فشل لأكثر من دقيقتين. راجع RUNBOOK.md ← «الموقع/الـ API لا يعمل»."
+      - alert: WorkersDown
+        expr: probe_success{job="blackbox-workers"} == 0
+        for: 3m
+        labels: {severity: critical}
+        annotations:
+          summary: "عامل واحد على الأقل متوقف — البوت قد لا يرد على العملاء"
+          description: "GET /health/workers يُظهر نبضة مفقودة. افتح الرابط من داخل الشبكة لمعرفة أي عامل، ثم RUNBOOK.md ← «البوت لا يرد»."
+      - alert: InstanceDown
+        expr: up{job=~"postgres|redis|qdrant|node"} == 0
+        for: 3m
+        labels: {severity: critical}
+        annotations:
+          summary: "{{ $labels.job }} لا يستجيب لـ Prometheus"
+  - name: omniflow-data
+    rules:
+      - alert: PostgresDown
+        expr: pg_up == 0
+        for: 1m
+        labels: {severity: critical}
+        annotations: {summary: "PostgreSQL متوقف"}
+      - alert: PostgresConnectionsHigh
+        expr: sum(pg_stat_activity_count) / max(pg_settings_max_connections) > 0.8
+        for: 5m
+        labels: {severity: warning}
+        annotations: {summary: "اتصالات PostgreSQL فوق 80% من الحد"}
+      - alert: RedisDown
+        expr: redis_up == 0
+        for: 1m
+        labels: {severity: critical}
+        annotations: {summary: "Redis متوقف"}
+      - alert: RedisMemoryHigh
+        expr: redis_memory_max_bytes > 0 and (redis_memory_used_bytes / redis_memory_max_bytes) > 0.9
+        for: 10m
+        labels: {severity: warning}
+        annotations: {summary: "ذاكرة Redis فوق 90%"}
+  - name: omniflow-host
+    rules:
+      - alert: DiskSpaceLow
+        expr: (node_filesystem_avail_bytes{mountpoint="/",fstype!~"tmpfs|overlay"} / node_filesystem_size_bytes{mountpoint="/",fstype!~"tmpfs|overlay"}) < 0.15
+        for: 10m
+        labels: {severity: warning}
+        annotations: {summary: "مساحة القرص أقل من 15%", description: "النسخ الاحتياطية والسجلات قد تتوقف. راجع RUNBOOK.md ← «القرص ممتلئ»."}
+      - alert: MemoryHigh
+        expr: (1 - node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes) > 0.92
+        for: 10m
+        labels: {severity: warning}
+        annotations: {summary: "ذاكرة الخادم فوق 92%"}
+  - name: omniflow-backups-and-tls
+    rules:
+      - alert: BackupMissing
+        expr: absent(omniflow_backup_last_success_timestamp_seconds)
+        for: 30m
+        labels: {severity: warning}
+        annotations: {summary: "لم يُسجَّل أي نسخ احتياطي ناجح بعد", description: "ثبّت مؤقّت النسخ الاحتياطي (systemd/cron) وشغّل backup.sh مرة."}
+      - alert: BackupStale
+        expr: time() - omniflow_backup_last_success_timestamp_seconds > 26 * 3600
+        for: 10m
+        labels: {severity: critical}
+        annotations: {summary: "آخر نسخة احتياطية ناجحة أقدم من 26 ساعة"}
+      - alert: OffHostBackupStale
+        expr: omniflow_backup_offhost_configured == 1 and (time() - omniflow_backup_last_offhost_success_timestamp_seconds > 26 * 3600)
+        for: 10m
+        labels: {severity: critical}
+        annotations: {summary: "النسخة خارج الخادم لم تُرفع منذ أكثر من 26 ساعة"}
+      - alert: OffHostBackupNotConfigured
+        expr: omniflow_backup_offhost_configured == 0
+        for: 1d
+        labels: {severity: warning}
+        annotations: {summary: "لا توجد نسخة احتياطية خارج الخادم", description: "نسخة على نفس الخادم ليست نسخة احتياطية. اضبط OFFHOST_COMMAND في .env.prod."}
+      - alert: TlsCertificateExpiring
+        expr: probe_ssl_earliest_cert_expiry{job="blackbox-tls"} - time() < 14 * 86400
+        for: 1h
+        labels: {severity: warning}
+        annotations: {summary: "شهادة TLS تنتهي خلال أقل من 14 يومًا", description: "تحقق من مهمة certbot renew. RUNBOOK.md ← «الشهادة»."}

@@ -221,6 +221,7 @@ services:
       S3_ASSETS_BUCKET: ${S3_ASSETS_BUCKET:-omniflow-public-assets}
       S3_KNOWLEDGE_BUCKET: ${S3_KNOWLEDGE_BUCKET:-omniflow-knowledge-docs}
       S3_IMPORTS_BUCKET: ${S3_IMPORTS_BUCKET:-omniflow-imports}
+      S3_SUPPORT_BUCKET: ${S3_SUPPORT_BUCKET:-omniflow-support}
     depends_on:
       minio:
         condition: service_healthy
@@ -243,7 +244,7 @@ services:
       - |
         init() {
           mc alias set myminio http://minio:9000 "$${MINIO_ROOT_USER}" "$${MINIO_ROOT_PASSWORD}" || return 1
-          for bucket in omniflow-media omniflow-backups "$${S3_VAULT_BUCKET}" "$${S3_MEDIA_TEMP_BUCKET}" "$${S3_ASSETS_BUCKET}" "$${S3_KNOWLEDGE_BUCKET}" "$${S3_IMPORTS_BUCKET}"; do
+          for bucket in omniflow-media omniflow-backups "$${S3_VAULT_BUCKET}" "$${S3_MEDIA_TEMP_BUCKET}" "$${S3_ASSETS_BUCKET}" "$${S3_KNOWLEDGE_BUCKET}" "$${S3_IMPORTS_BUCKET}" "$${S3_SUPPORT_BUCKET}"; do
             mc mb --ignore-existing "myminio/$$bucket" || return 1
             mc anonymous set none "myminio/$$bucket" || return 1
           done
@@ -337,14 +338,15 @@ services:
       redis:
         condition: service_healthy
     healthcheck:
-      # These workers expose no HTTP port, so we assert that the expected
-      # module is still the process running as PID 1. Reading /proc avoids
-      # depending on procps (`pgrep`) being present in the image.
-      test: ["CMD-SHELL", "grep -q semantic_router /proc/1/cmdline || exit 1"]
+      # Kafka consumers expose no HTTP port. Each one refreshes a Redis heartbeat
+      # (`hb:worker:<Class>`, every ~15 s, TTL 60 s) from inside its poll loop, so
+      # this detects a WEDGED consumer (alive process, dead loop), not just a dead
+      # process. The same keys feed GET /health/workers and the Prometheus alerts.
+      test: ["CMD-SHELL", "python -m src.shared.kafka.healthcheck SemanticRouterWorker"]
       interval: 30s
-      timeout: 5s
+      timeout: 15s
       retries: 3
-      start_period: 30s
+      start_period: 60s
 
   worker-invoker:
     <<: *backend-base
@@ -358,11 +360,11 @@ services:
       redis:
         condition: service_healthy
     healthcheck:
-      test: ["CMD-SHELL", "grep -q llm_invoker /proc/1/cmdline || exit 1"]
+      test: ["CMD-SHELL", "python -m src.shared.kafka.healthcheck LLMInvokerWorker"]
       interval: 30s
-      timeout: 5s
+      timeout: 15s
       retries: 3
-      start_period: 30s
+      start_period: 60s
 
   worker-dispatcher:
     <<: *backend-base
@@ -376,11 +378,11 @@ services:
       redis:
         condition: service_healthy
     healthcheck:
-      test: ["CMD-SHELL", "grep -q outbound_dispatcher /proc/1/cmdline || exit 1"]
+      test: ["CMD-SHELL", "python -m src.shared.kafka.healthcheck OutboundDispatcherWorker"]
       interval: 30s
-      timeout: 5s
+      timeout: 15s
       retries: 3
-      start_period: 30s
+      start_period: 60s
 
   # Found missing from this file entirely during a real end-to-end test: a
   # brand-new WhatsApp customer's first message is intercepted by
@@ -401,11 +403,11 @@ services:
       redis:
         condition: service_healthy
     healthcheck:
-      test: ["CMD-SHELL", "grep -q vcard_gatekeeper /proc/1/cmdline || exit 1"]
+      test: ["CMD-SHELL", "python -m src.shared.kafka.healthcheck VCardGatekeeperWorker"]
       interval: 30s
-      timeout: 5s
+      timeout: 15s
       retries: 3
-      start_period: 30s
+      start_period: 60s
 
   worker-vault:
     <<: *backend-base
@@ -421,11 +423,11 @@ services:
       minio:
         condition: service_healthy
     healthcheck:
-      test: ["CMD-SHELL", "grep -q vault_worker /proc/1/cmdline || exit 1"]
+      test: ["CMD-SHELL", "python -m src.shared.kafka.healthcheck VaultWorker"]
       interval: 30s
-      timeout: 5s
+      timeout: 15s
       retries: 3
-      start_period: 30s
+      start_period: 60s
 
   worker-broadcast:
     <<: *backend-base
@@ -439,11 +441,11 @@ services:
       redis:
         condition: service_healthy
     healthcheck:
-      test: ["CMD-SHELL", "grep -q broadcast_worker /proc/1/cmdline || exit 1"]
+      test: ["CMD-SHELL", "python -m src.shared.kafka.healthcheck BroadcastWorker"]
       interval: 30s
-      timeout: 5s
+      timeout: 15s
       retries: 3
-      start_period: 30s
+      start_period: 60s
 
   # ── Celery (scheduled + background tasks) ──────────────────────────────────
   # Application code lives in omniflow-backend/src/celery_app.

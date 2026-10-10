@@ -1,0 +1,12 @@
+[Unit]
+Description=Renew the Let's Encrypt certificate and reload nginx
+After=docker.service
+Requires=docker.service
+
+[Service]
+Type=oneshot
+WorkingDirectory=/opt/omniflow/omniflow-deploy
+User=omniflow
+Group=docker
+ExecStart=/bin/sh -c 'docker run --rm -v "$(pwd)/certbot/conf:/etc/letsencrypt" -v "$(pwd)/certbot/www:/var/www/certbot" certbot/certbot renew --quiet'
+ExecStartPost=/usr/bin/docker exec prod-nginx nginx -s reload

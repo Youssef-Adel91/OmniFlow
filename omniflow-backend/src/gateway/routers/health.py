@@ -101,3 +101,20 @@ async def readiness_check(response: Response):
     response.status_code = 200 if ready else 503
     response.headers["Cache-Control"] = "no-store"
     return {"status": "ready" if ready else "unavailable", "checks": checks}
+
+
+WORKER_NAMES = ("SemanticRouterWorker", "LLMInvokerWorker", "OutboundDispatcherWorker", "BroadcastWorker", "VCardGatekeeperWorker")
+
+
+@router.get("/health/workers", summary="Kafka worker heartbeats (informational; not part of readiness)")
+async def workers_status(response: Response):
+    """Each consumer refreshes `hb:worker:<Class>` every ~15 s (TTL 60 s). A missing key = that worker is down or stuck.
+
+    Deliberately NOT folded into /health/ready: an unrelated worker outage must not take the API out of the load balancer.
+    """
+    out = {}
+    for name in WORKER_NAMES:
+        raw = await redis_mgr.get_raw(f"hb:worker:{name}")
+        out[name] = "ok" if raw else "missing"
+    response.headers["Cache-Control"] = "no-store"
+    return {"all_ok": all(v == "ok" for v in out.values()), "workers": out}

@@ -177,3 +177,30 @@ export async function downloadAttachment(a: Attachment): Promise<void> {
   link.remove();
   URL.revokeObjectURL(url);
 }
+
+// ── Staff console (only for emails listed in SUPPORT_STAFF_EMAILS; everyone else gets 404) ──────────────────
+
+export interface StaffTicket extends SupportTicket { tenant_name: string; awaiting_reply: boolean }
+
+export async function fetchIsStaff(): Promise<boolean> {
+  try { return (await apiClient.get<{ is_staff: boolean }>("/support/staff/me")).data.is_staff; } catch { return false; }
+}
+export async function fetchStaffTickets(params: { status?: TicketStatus | ""; priority?: string; page?: number } = {}): Promise<{ items: StaffTicket[]; total: number }> {
+  const { data } = await apiClient.get<any>("/support/staff/tickets", { params: { status: params.status || undefined, priority: params.priority || undefined, page: params.page ?? 1 } }); // eslint-disable-line @typescript-eslint/no-explicit-any
+  return { items: (data.items ?? []).map((r: any) => ({ ...normalizeTicket(r), tenant_name: r.tenant_name ?? "", awaiting_reply: !!r.awaiting_reply })), total: data.total ?? 0 }; // eslint-disable-line @typescript-eslint/no-explicit-any
+}
+export async function fetchStaffTicket(id: string): Promise<{ ticket: SupportTicket; messages: ThreadMessage[] }> {
+  const { data } = await apiClient.get<any>(`/support/staff/tickets/${id}`); // eslint-disable-line @typescript-eslint/no-explicit-any
+  return { ticket: normalizeTicket(data.ticket), messages: (data.messages ?? []).map(normMessage) };
+}
+export async function staffReply(id: string, body: string, status?: TicketStatus): Promise<ThreadMessage> {
+  return normMessage((await apiClient.post<any>(`/support/staff/tickets/${id}/reply`, { body, status })).data); // eslint-disable-line @typescript-eslint/no-explicit-any
+}
+
+/** Oldest-waiting-first ordering helper for the staff queue (urgent before the rest, never-answered before answered). */
+export function staffQueueOrder(a: StaffTicket, b: StaffTicket): number {
+  const rank: Record<string, number> = { urgent: 0, high: 1, normal: 2, low: 3 };
+  if (a.status === "closed" !== (b.status === "closed")) return a.status === "closed" ? 1 : -1;
+  if (a.awaiting_reply !== b.awaiting_reply) return a.awaiting_reply ? -1 : 1;
+  return (rank[a.priority] ?? 2) - (rank[b.priority] ?? 2);
+}

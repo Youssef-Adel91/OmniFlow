@@ -54,6 +54,14 @@ router = APIRouter(prefix="/webhooks", tags=["Webhooks"])
 _CLERK_MANAGED_PASSWORD = "clerk_managed"
 
 
+def _email_verified(data: dict, email: str) -> bool:
+    """True when Clerk reports the given address as verified (invitations are only honoured for verified addresses)."""
+    for e in data.get("email_addresses") or []:
+        if (e.get("email_address") or "").lower().strip() == email and (e.get("verification") or {}).get("status") == "verified":
+            return True
+    return False
+
+
 def _extract_identity(data: dict) -> tuple[str | None, str, str]:
     """Return (clerk_id, email, full_name) from a Clerk user payload."""
     clerk_id = data.get("id")
@@ -138,7 +146,7 @@ async def clerk_webhook(
         return {"status": "ignored", "reason": "missing user id"}
 
     if event_type == "user.created":
-        return await _handle_user_created(clerk_id, email, full_name)
+        return await _handle_user_created(clerk_id, email, full_name, _email_verified(data, email))
     if event_type == "user.updated":
         return await _handle_user_updated(clerk_id, email, full_name)
     if event_type == "user.deleted":
@@ -148,7 +156,7 @@ async def clerk_webhook(
     return {"status": "ok", "message": f"Event '{event_type}' not handled."}
 
 
-async def _handle_user_created(clerk_id: str, email: str, full_name: str) -> dict:
+async def _handle_user_created(clerk_id: str, email: str, full_name: str, email_verified: bool = False) -> dict:
     """
     Auto-provision Tenant + ADMIN TenantUser for a brand-new Clerk user.
 
@@ -164,6 +172,18 @@ async def _handle_user_created(clerk_id: str, email: str, full_name: str) -> dic
         if existing:
             logger.info("clerk_user_already_exists", clerk_id=clerk_id)
             return {"status": "ok", "message": "User already exists"}
+
+        # An invited colleague joins the inviting tenant instead of getting a workspace of their own.
+        from src.shared.services import team as team_svc
+
+        try:
+            async with session.begin_nested():
+                joined = await team_svc.accept_for_new_user(session, clerk_id=clerk_id, email=email, full_name=full_name, email_verified=email_verified)
+        except IntegrityError:
+            joined = None
+        if joined is not None:
+            logger.info("clerk_user_joined_via_invitation", clerk_id=clerk_id, tenant_id=str(joined.tenant_id))
+            return {"status": "ok", "message": "User joined an existing tenant"}
 
         # A SAVEPOINT keeps a lost provisioning race from poisoning the
         # surrounding transaction opened by get_system_session().

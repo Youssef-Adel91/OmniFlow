@@ -173,9 +173,15 @@ class BaseKafkaConsumer(ABC):
         _handle_record() which implements retry + DLQ logic.
         Stops cleanly when SIGTERM is received or stop() is called.
         """
+        from src.shared.core.config import get_settings as _gs
+        from src.shared.observability.logging_config import setup_process_observability
+
+        setup_process_observability(_gs())           # PII-redacting logs + Sentry for every worker process
         await self.start()
+        last_beat = 0.0
         try:
             while not self._stop_event.is_set():
+                last_beat = await self._heartbeat(last_beat)
                 try:
                     # Fetch a batch — blocks for up to fetch_max_wait_ms
                     batch = await self._consumer.getmany(  # type: ignore[union-attr]
@@ -201,6 +207,21 @@ class BaseKafkaConsumer(ABC):
             logger.info("kafka_consumer_cancelled", worker=self.__class__.__name__)
         finally:
             await self.stop()
+
+    async def _heartbeat(self, last: float) -> float:
+        """Every ~15 s write `hb:worker:<Class>` (TTL 60 s) so /health/workers can tell a live consumer from a dead one."""
+        import time
+
+        now = time.monotonic()
+        if now - last < 15:
+            return last
+        try:
+            from src.shared.redis_client import redis_mgr
+
+            await redis_mgr.set_raw(f"hb:worker:{self.__class__.__name__}", str(int(time.time())), ttl=60)
+        except Exception:  # noqa: BLE001 - monitoring must never affect processing
+            pass
+        return now
 
     async def _handle_record(self, record: ConsumerRecord) -> None:
         """

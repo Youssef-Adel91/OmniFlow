@@ -448,6 +448,7 @@ async def list_conversation_notes(
             select(ConversationNote)
             .where(ConversationNote.conversation_id == conversation_id)
             .order_by(ConversationNote.created_at.desc())
+            .limit(200)
         )
     ).scalars().all()
     return [ConversationNoteOut.model_validate(r) for r in rows]
@@ -508,6 +509,7 @@ async def list_appointments(
             select(Appointment)
             .where(Appointment.conversation_id == conversation_id)
             .order_by(Appointment.scheduled_at.asc())
+            .limit(200)
         )
     ).scalars().all()
     return [AppointmentOut.model_validate(r) for r in rows]

@@ -4,7 +4,7 @@ import Link from "next/link";
 import { AlertTriangle, Clock, Flame, MessageSquare } from "lucide-react";
 import type { AttentionItem, DashboardAnalytics } from "@/lib/api/dashboardAnalytics";
 import { CHANNEL_LABELS, STATUS_LABELS, fmtDuration, fmtNumber } from "./format";
-import { EmptyChart } from "./Charts";
+import { EmptyChart } from "./ChartWidgets";
 
 function who(i: AttentionItem) {
   return i.name || i.phone || "عميل بدون اسم";

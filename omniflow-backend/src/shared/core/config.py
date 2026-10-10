@@ -217,6 +217,20 @@ class Settings(BaseSettings):
     billing_admin_api_key: str = ""          # enables staff manual activation (header X-Billing-Key); empty = disabled
     billing_enforce_message_limit: bool = False   # True = stop AI replies at 100 % of the plan's monthly messages
 
+    # ── Email (all optional: with no provider configured, email notifications are simply off) ──
+    email_provider: str = ""                 # "resend" | "smtp" | "" (disabled)
+    email_from: str = ""                     # e.g. "OmniFlow <no-reply@your-domain>"
+    resend_api_key: str = ""
+    smtp_host: str = ""
+    smtp_port: int = 587
+    smtp_user: str = ""
+    smtp_password: str = ""
+    smtp_starttls: bool = True
+    support_staff_emails: str = ""           # comma-separated emails of OmniFlow staff allowed to use the support console
+    team_invite_ttl_days: int = 7
+    support_tickets_per_hour: int = 10       # per-tenant ticket creation limit
+    clerk_api_base: str = "https://api.clerk.com/v1"
+
     # ── Bulk import (properties / customers) ─────────────────────────────────
     import_max_file_mb: int = 20
     import_max_rows: int = 20_000
@@ -419,7 +433,7 @@ class Settings(BaseSettings):
     # ── Rate Limiting ─────────────────────────────────────────────────────────
     rate_limit_enabled: bool = True
     rate_limit_webhook_per_min: int = 300
-    rate_limit_api_per_min: int = 120
+    rate_limit_api_per_min: int = 300         # per bearer token per minute (generous: an import wizard alone polls 40/min); nginx limit_req is the strict layer
     rate_limit_llm_per_min: int = 60
 
     @model_validator(mode="after")

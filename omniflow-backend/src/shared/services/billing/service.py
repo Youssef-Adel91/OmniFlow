@@ -24,6 +24,7 @@ from src.shared.services.billing.access import Access, evaluate
 from src.shared.services.billing.providers import get_provider
 from src.shared.services.billing.providers.base import PaymentInfo, ProviderError, WebhookEvent
 from src.shared.security.crypto import decrypt_secret, encrypt_secret
+from src.shared.services.notifications import notify_safe
 
 logger = structlog.get_logger(__name__)
 
@@ -429,6 +430,9 @@ async def _fail_attempt(session, sub: Subscription, txn: PaymentTransaction | No
         await _mirror_tenant(session, sub)
         await _audit(session, sub.tenant_id, "billing.past_due", str(sub.subscription_id), {"reason": reason[:200]})
         await _renewal_link(session, sub, now, urls)
+        await notify_safe(session, sub.tenant_id, "payment_failed", "تعذّر تحصيل اشتراكك",
+                          f"سيتوقف المساعد الذكي في {sub.grace_ends_at:%Y-%m-%d} إن لم يتم السداد. حدّث الدفع من صفحة الفوترة.", "/settings#billing",
+                          dedupe_key=f"past_due:{sub.current_period_end:%Y%m%d}" if sub.current_period_end else None)
         return "past_due"
     sub.next_retry_at = now + timedelta(hours=cfg.billing_retry_interval_hours)
     await session.flush()
@@ -479,11 +483,21 @@ async def run_sweep(session, urls: dict[str, str], now: datetime | None = None) 
     now = now or _now()
     out = {"trial_expired": 0, "renewed": 0, "retry_scheduled": 0, "past_due": 0, "suspended": 0, "cancelled": 0, "pending_expired": 0}
 
+    warn_until = now + timedelta(days=3)
+    for sub in (await session.execute(select(Subscription).where(
+            Subscription.status == "trial", Subscription.is_exempt.is_(False), Subscription.trial_ends_at >= now, Subscription.trial_ends_at <= warn_until))).scalars():
+        if await notify_safe(session, sub.tenant_id, "trial_ending", "تنتهي تجربتك قريبًا",
+                             f"تنتهي الفترة التجريبية في {sub.trial_ends_at:%Y-%m-%d}. اختر باقة لتستمر الخدمة.", "/settings#billing",
+                             dedupe_key=f"trial_ending:{sub.trial_ends_at:%Y%m%d}"):
+            out["trial_warned"] = out.get("trial_warned", 0) + 1
+
     for sub in (await session.execute(select(Subscription).where(
             Subscription.status == "trial", Subscription.is_exempt.is_(False), Subscription.trial_ends_at < now)
             .with_for_update(skip_locked=True))).scalars():
         sub.status = "suspended"
         await session.flush(); await _mirror_tenant(session, sub)
+        await notify_safe(session, sub.tenant_id, "subscription_suspended", "انتهت الفترة التجريبية",
+                          "توقف المساعد الذكي. اختر باقة لاستعادة الخدمة.", "/settings#billing", dedupe_key=f"trial_expired:{now:%Y%m%d}")
         out["trial_expired"] += 1
 
     for sub in (await session.execute(select(Subscription).where(
@@ -508,6 +522,8 @@ async def run_sweep(session, urls: dict[str, str], now: datetime | None = None) 
         sub.status = "suspended"
         await session.flush(); await _mirror_tenant(session, sub)
         await _audit(session, sub.tenant_id, "billing.suspended", str(sub.subscription_id), {})
+        await notify_safe(session, sub.tenant_id, "subscription_suspended", "تم إيقاف اشتراكك",
+                          "توقف المساعد الذكي والحساب في وضع القراءة فقط. جدّد الاشتراك لاستعادة الخدمة.", "/settings#billing", dedupe_key=f"suspended:{now:%Y%m%d}")
         out["suspended"] += 1
 
     cutoff = now - timedelta(hours=PENDING_EXPIRE_HOURS)

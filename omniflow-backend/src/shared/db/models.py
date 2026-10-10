@@ -356,6 +356,7 @@ class Customer(Base, TimestampMixin, TenantScopedMixin):
     opt_in_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
     opt_out_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
     archived_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    erased_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True, comment="PDPL erasure: PII wiped, row kept for aggregates")
 
     # PDPL / Privacy
     is_processing_restricted: Mapped[bool] = mapped_column(
@@ -1707,4 +1708,53 @@ class UsageCounter(Base):
     ai_messages: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     alerted_80_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
     alerted_100_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# Launch gaps (migration 0027): team invitations, notifications — tenant RLS
+# ══════════════════════════════════════════════════════════════════════════════
+
+class TeamInvitation(Base):
+    __tablename__ = "team_invitations"
+
+    invitation_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    tenant_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("tenants.tenant_id", ondelete="RESTRICT"), nullable=False,
+                                                 comment="RLS partition key — must match app.current_tenant_id")
+    email: Mapped[str] = mapped_column(String(254), nullable=False)
+    role: Mapped[str] = mapped_column(String(20), nullable=False)
+    invited_by_user_id: Mapped[Optional[uuid.UUID]] = mapped_column(UUID(as_uuid=True))
+    status: Mapped[str] = mapped_column(String(12), nullable=False, default="pending")
+    clerk_invitation_id: Mapped[Optional[str]] = mapped_column(String(100))
+    delivery: Mapped[Optional[str]] = mapped_column(String(20))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    accepted_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
+
+
+class Notification(Base):
+    __tablename__ = "notifications"
+
+    notification_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    tenant_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("tenants.tenant_id", ondelete="RESTRICT"), nullable=False,
+                                                 comment="RLS partition key — must match app.current_tenant_id")
+    user_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("tenant_users.user_id", ondelete="CASCADE"), nullable=False)
+    kind: Mapped[str] = mapped_column(String(40), nullable=False)
+    title: Mapped[str] = mapped_column(String(200), nullable=False)
+    body: Mapped[Optional[str]] = mapped_column(Text)
+    link: Mapped[Optional[str]] = mapped_column(String(300))
+    dedupe_key: Mapped[Optional[str]] = mapped_column(String(120))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    read_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
+
+
+class NotificationPref(Base):
+    __tablename__ = "notification_prefs"
+
+    tenant_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("tenants.tenant_id", ondelete="RESTRICT"), nullable=False,
+                                                 comment="RLS partition key — must match app.current_tenant_id")
+    user_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("tenant_users.user_id", ondelete="CASCADE"), primary_key=True)
+    kind: Mapped[str] = mapped_column(String(40), primary_key=True)
+    in_app: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    email: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)

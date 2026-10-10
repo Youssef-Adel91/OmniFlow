@@ -3,7 +3,6 @@
 import { useRouter } from "next/navigation";
 import { useTranslations } from "next-intl";
 import {
-  Bell,
   Search,
   Globe,
   ChevronDown,
@@ -12,8 +11,9 @@ import {
 import { UserButton, SignedIn, SignedOut, SignInButton } from "@clerk/nextjs";
 import * as DropdownMenu from "@radix-ui/react-dropdown-menu";
 import { cn } from "@/lib/utils";
-import { useTenantStore, useUnreadCount } from "@/store/tenantStore";
+import { useTenantStore } from "@/store/tenantStore";
 import { localeMeta, type Locale } from "@/i18n/config";
+import { NotificationBell } from "./NotificationBell";
 
 interface TopNavProps {
   locale: Locale;
@@ -22,7 +22,6 @@ interface TopNavProps {
 export function TopNav({ locale }: TopNavProps) {
   const t          = useTranslations("header");
   const router     = useRouter();
-  const unread     = useUnreadCount();
   const setLocale  = useTenantStore((s) => s.setLocale);
 
   // NOTE: sign-out is handled by Clerk's <UserButton /> below (and by the
@@ -112,19 +111,8 @@ export function TopNav({ locale }: TopNavProps) {
           </DropdownMenu.Portal>
         </DropdownMenu.Root>
 
-        {/* Notification Bell */}
-        <button
-          className="relative btn btn-ghost h-9 w-9 p-0"
-          aria-label={t("notifications")}
-        >
-          <Bell className="w-4.5 h-4.5 text-[var(--muted-foreground)]" />
-          {unread > 0 && (
-            <span className={cn(
-              "absolute top-1 w-2 h-2 rounded-full bg-gold-500 border-2 border-[var(--header)]",
-              locale === "ar" ? "left-1" : "right-1"
-            )} />
-          )}
-        </button>
+        {/* Notification Bell (real, backend-backed) */}
+        <NotificationBell locale={locale} />
 
         {/* Profile Dropdown */}
         <SignedIn>

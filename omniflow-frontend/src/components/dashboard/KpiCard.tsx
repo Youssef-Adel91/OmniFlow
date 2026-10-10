@@ -1,8 +1,10 @@
 "use client";
 
 import { ArrowDownRight, ArrowUpRight, Minus } from "lucide-react";
-import { Area, AreaChart, ResponsiveContainer } from "recharts";
+import dynamic from "next/dynamic";
 import { fmtPercent } from "./format";
+
+const KpiSpark = dynamic(() => import("./KpiSpark"), { ssr: false, loading: () => <div className="h-full w-full rounded bg-[var(--menu-hover)] animate-pulse" aria-hidden /> });
 
 interface Props {
   label: string;
@@ -42,11 +44,7 @@ export function KpiCard({ label, value, hint, icon: Icon, changePct, previousLab
         </span>
         {sparkData.length > 1 && (
           <div className="h-9 w-24" aria-hidden>
-            <ResponsiveContainer width="100%" height="100%">
-              <AreaChart data={sparkData} margin={{ top: 2, bottom: 2, left: 0, right: 0 }}>
-                <Area type="monotone" dataKey="v" stroke="var(--chart-1)" fill="var(--chart-1)" fillOpacity={0.18} strokeWidth={1.5} isAnimationActive={false} />
-              </AreaChart>
-            </ResponsiveContainer>
+            <KpiSpark data={sparkData} />
           </div>
         )}
       </div>

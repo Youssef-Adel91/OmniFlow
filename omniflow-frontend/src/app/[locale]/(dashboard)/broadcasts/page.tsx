@@ -16,7 +16,9 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { useParams } from "next/navigation";
 import Link from "next/link";
-import { Bar, BarChart, CartesianGrid, Cell, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
+import dynamic from "next/dynamic";
+
+const CampaignBars = dynamic(() => import("@/components/broadcasts/CampaignBars"), { ssr: false, loading: () => <div className="h-full w-full rounded bg-white/5 animate-pulse" aria-busy="true" /> });
 import {
   AlertTriangle, BarChart3, Ban, CheckCircle2, Clock, Loader2, Megaphone, MessageSquare, RefreshCw, Send, ShieldCheck, Users,
 } from "lucide-react";
@@ -501,15 +503,7 @@ function StatsPanel({ s }: { s: BroadcastStats }) {
         نسبة الوصول {s.rates.delivered_pct}٪ · نسبة القراءة {s.rates.read_pct}٪ من الواصلة · الردود خلال {s.reply_window_hours} ساعة {s.rates.reply_pct}٪ · إلغاء الاشتراك {s.rates.unsubscribe_pct}٪
       </p>
       <div className="h-44" role="img" aria-label="رسم بياني لأرقام الحملة">
-        <ResponsiveContainer width="100%" height="100%">
-          <BarChart data={bars} margin={{ top: 4, right: 8, left: 0, bottom: 0 }}>
-            <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.1)" />
-            <XAxis dataKey="name" tick={{ fill: "#D1D5DB", fontSize: 11 }} />
-            <YAxis allowDecimals={false} tick={{ fill: "#D1D5DB", fontSize: 11 }} />
-            <Tooltip contentStyle={{ background: "#0A0F1C", border: "1px solid rgba(255,255,255,0.15)", color: "#fff" }} />
-            <Bar dataKey="value" radius={[4, 4, 0, 0]}>{bars.map((b) => <Cell key={b.name} fill={b.color} />)}</Bar>
-          </BarChart>
-        </ResponsiveContainer>
+        <CampaignBars bars={bars} />
       </div>
       {s.top_errors.length > 0 && (
         <details className="text-xs"><summary className="cursor-pointer font-semibold text-gray-100">أكثر أسباب الفشل</summary>

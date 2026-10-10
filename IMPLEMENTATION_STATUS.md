@@ -917,3 +917,32 @@ Most of `omniflow-deploy/` already existed (compose, nginx, deploy/backup/restor
 - **Docs:** Arabic `RUNBOOK.md`, `MANUAL_STEPS.md`, updated `RELEASE_CHECKLIST.md`, `.env.prod.example` (billing/email/support/rate-limit/backup variables).
 - **Verified here:** `bash -n` on every script; `docker compose config` for the prod and prod+monitoring files (docker CLI only); YAML parse of monitoring files; nginx config parsed with `crossplane` (only the expected "`map` outside http" context error because the file is a `conf.d` include); backup tests above; 271 backend tests.
 - **NOT verified:** `nginx -t`, `promtool check rules`/PromQL results, any container actually starting, TLS issuance, the restore drill (needs a Docker daemon), a real off-host copy, alerts firing, load behaviour. **Postgres restore has no script** (documented procedure in RUNBOOK §12, to be drilled).
+
+
+## Merge to `main` — 2026-10-10 (PRs #14 → #21)
+
+All eight stacked PRs were merged into `main` one at a time with the **merge commit** method, each only after the self-hosted CI run (backend + frontend) on the `main`-targeted PR was green. No force-push, no branch deleted.
+
+| PR | Content | Migration | Merge commit |
+|----|---------|-----------|--------------|
+| #14 | Property import + indexing fix | 0020/0021 | `d4679ae` |
+| #15 | Customers + PDPL consent | 0022 | `06ccc0e` |
+| #16 | Broadcasts | 0023 | `7307b60` |
+| #17 | Settings redesign | 0024 | `2fdbdcf` |
+| #18 | Support center + UX | 0025 | `060e439` |
+| #19 | Subscriptions & billing (Moyasar) | 0026 | `a4186fd` |
+| #20 | Launch gaps (team, notifications, PDPL, security) | 0027 | `d16adbb` |
+| #21 | Deployment files (`omniflow-deploy/`) — nothing deployed | — | `3c20a96` |
+
+Run `alembic upgrade head` (head = 0027) after pulling. Existing tenants are grandfathered (`subscriptions.is_exempt=true`); plan prices are placeholders (`plans.is_placeholder`) and production checkout refuses them.
+
+### Still NOT verified against real services (do not treat as production-proven)
+- **Moyasar:** no sandbox keys were ever available; the payment, webhook and auto-renew token flow are unit/integration-tested against fakes only.
+- **Clerk invitations / webhook** and the **nginx CSP on a real Clerk session** (CSP was fixed on paper to allow Clerk; never exercised in a browser).
+- **Invoice PDF** layout was not inspected visually (and makes no ZATCA claim).
+- **S3/MinIO attachments** real round-trip (tests use in-memory storage).
+- Real email delivery (SMTP/Resend), real WhatsApp/Meta template and delivery webhooks, Kafka router→invoker→handoff chain.
+- Deploy files: `nginx -t`, `promtool`, container boot, backup/restore drill (no Docker daemon in the build environment).
+- New screens in a real browser with a real Clerk login.
+
+The durable content of the temporary `NIGHT_REPORT.md` (open decisions, manual test commands) now lives in `docs/launch-decisions-and-manual-tests.md`.

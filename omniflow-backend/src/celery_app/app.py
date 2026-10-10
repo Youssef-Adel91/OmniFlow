@@ -27,6 +27,10 @@ from src.shared.core.config import get_settings
 
 settings = get_settings()
 
+from src.shared.observability.logging_config import setup_process_observability  # noqa: E402
+
+setup_process_observability(settings)   # PII-redacting logs + Sentry for Celery workers and beat
+
 
 def _results_backend_url() -> str:
     """Redis URL pointing at the dedicated Celery *results* database."""

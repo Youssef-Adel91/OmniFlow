@@ -22,6 +22,9 @@ import { useTenantStore } from "@/store/tenantStore";
 import { fetchPreferences, fetchSettings, settingsErrorMessage, type PreferencesResponse, type TenantSettings } from "@/lib/api/settings";
 import AiSection from "@/components/settings/AiSection";
 import BillingSection from "@/components/settings/BillingSection";
+import NotificationsSection from "@/components/settings/NotificationsSection";
+import PrivacySection from "@/components/settings/PrivacySection";
+import TeamSection from "@/components/settings/TeamSection";
 import ChannelsSection from "@/components/settings/ChannelsSection";
 import ComingSoonSection from "@/components/settings/ComingSoonSection";
 import HoursHandoffSection from "@/components/settings/HoursHandoffSection";
@@ -32,11 +35,11 @@ type SectionKey = "channels" | "team" | "hours" | "ai" | "notifications" | "priv
 
 const SECTIONS: { key: SectionKey; label: string; icon: React.ElementType; soon?: boolean }[] = [
   { key: "channels", label: "القنوات والتكاملات", icon: PlugZap },
-  { key: "team", label: "الفريق والصلاحيات", icon: Users, soon: true },
+  { key: "team", label: "الفريق والصلاحيات", icon: Users },
   { key: "hours", label: "ساعات العمل والتحويل", icon: Clock },
   { key: "ai", label: "الذكاء الاصطناعي", icon: Bot },
-  { key: "notifications", label: "الإشعارات", icon: Bell, soon: true },
-  { key: "privacy", label: "الخصوصية والامتثال", icon: ShieldCheck, soon: true },
+  { key: "notifications", label: "الإشعارات", icon: Bell },
+  { key: "privacy", label: "الخصوصية والامتثال", icon: ShieldCheck },
   { key: "billing", label: "الفوترة والاستهلاك", icon: CreditCard },
   { key: "developers", label: "المطورون", icon: Code2, soon: true },
   { key: "identity", label: "الهوية", icon: Building2 },
@@ -45,7 +48,7 @@ const SECTIONS: { key: SectionKey; label: string; icon: React.ElementType; soon?
 // which dirty-flags belong to which section (a section can hold several independently saved cards)
 const DIRTY_OF: Record<SectionKey, string[]> = {
   channels: ["display"], hours: ["hours", "handoff"], ai: ["persona", "behavior"], identity: ["name", "identity"],
-  team: [], notifications: [], privacy: [], billing: [], developers: [],
+  team: [], notifications: ["notif"], privacy: [], billing: [], developers: [],
 };
 
 const isSection = (v: string): v is SectionKey => SECTIONS.some((s) => s.key === v);
@@ -157,6 +160,9 @@ export default function SettingsPage() {
             <IdentitySection settings={settings} identity={p?.identity ?? null} currencies={prefs?.currencies ?? []} onSettings={applySettings} onIdentity={(i) => patchPrefs("identity", i)}
               onDirtyName={flag("name")} onDirtyIdentity={flag("identity")} />
           )}
+          {active === "team" && <TeamSection />}
+          {active === "notifications" && <NotificationsSection onDirty={flag("notif")} />}
+          {active === "privacy" && <PrivacySection />}
           {active === "billing" && <BillingSection />}
           {SECTIONS.find((s) => s.key === active)?.soon && <ComingSoonSection sectionKey={active} settings={settings} />}
         </div>

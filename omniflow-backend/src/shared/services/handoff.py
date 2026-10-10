@@ -73,6 +73,13 @@ async def perform_handoff(tenant_id: uuid.UUID, conversation_id: uuid.UUID, *, r
                                        Conversation.status == ConversationStatus.AI_ACTIVE).values(**values))
         if not res.rowcount:                     # a human took it / it was closed meanwhile: leave it alone
             return HandoffResult()
+        from src.shared.services.notifications import notify_safe
+
+        # Tell the assigned agent (or every admin when nobody could be picked) — in-app by default, email only if they opted in.
+        await notify_safe(session, tenant_id, "handoff", "محادثة جديدة محوّلة إليك" if agent_id else "محادثة تنتظر موظفًا",
+                          "يحتاج عميل إلى موظف بشري." + (f" السبب: {reason[:80]}" if reason and reason not in SILENT_REASONS else ""),
+                          f"/inbox?conversation={conversation_id}", user_ids=[agent_id] if agent_id else None,
+                          dedupe_key=f"{conversation_id}:{int(now.timestamp()) // 600}")
 
     open_now = prefs_svc.is_open(hours, now)
     text: str | None

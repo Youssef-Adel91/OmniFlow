@@ -23,7 +23,9 @@ import { useInboxStream } from "@/hooks/useInboxStream";
 import { useInboxStore } from "@/store/inboxStore";
 import { fetchDashboardAnalytics, type DashboardAnalytics, type KpiKey } from "@/lib/api/dashboardAnalytics";
 import { KpiCard } from "@/components/dashboard/KpiCard";
-import { BarList, ChannelDonut, EmptyChart, Funnel, Heatmap, VolumeChart } from "@/components/dashboard/Charts";
+import dynamic from "next/dynamic";
+import { BarList, EmptyChart, Funnel, Heatmap } from "@/components/dashboard/ChartWidgets";
+
 import { AttentionPanels, InventoryGaps } from "@/components/dashboard/Panels";
 import { Filters, isFilterValid, type FilterState } from "@/components/dashboard/Filters";
 import { analyticsToCsv, downloadCsv } from "@/components/dashboard/exportCsv";
@@ -31,6 +33,11 @@ import {
   PROPERTY_STATUS_LABELS, PROPERTY_TYPE_LABELS, STATUS_LABELS,
   fmtDuration, fmtNumber, fmtPercent, fmtSar,
 } from "@/components/dashboard/format";
+
+// recharts is ~100 KB gzipped: load it only when the dashboard actually renders a chart, never in the first bundle.
+const ChartSkeleton = ({ h = "h-72" }: { h?: string }) => <div className={`card ${h} animate-pulse`} aria-busy="true" aria-label="جارٍ تحميل الرسم البياني" />;
+const VolumeChart = dynamic(() => import("@/components/dashboard/Charts").then((m) => m.VolumeChart), { ssr: false, loading: () => <ChartSkeleton /> });
+const ChannelDonut = dynamic(() => import("@/components/dashboard/Charts").then((m) => m.ChannelDonut), { ssr: false, loading: () => <ChartSkeleton /> });
 
 interface KpiDef {
   key: KpiKey;

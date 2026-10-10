@@ -54,6 +54,7 @@ from src.shared.observability.tracing import setup_opentelemetry, setup_sentry
 from src.shared.redis_client.client import redis_mgr
 from fastapi import Depends
 from src.gateway.dependencies import subscription_write_gate
+from src.gateway.security_middleware import RateLimitMiddleware, SecurityHeadersMiddleware
 from src.gateway.routers import health as health_router
 from src.gateway.routers import conversations as conversations_router
 from src.gateway.routers import auth as auth_router
@@ -70,6 +71,9 @@ from src.gateway.routers import reports as reports_router
 from src.gateway.routers import settings as settings_router
 from src.gateway.routers import support as support_router
 from src.gateway.routers import billing as billing_router
+from src.gateway.routers import notifications as notifications_router
+from src.gateway.routers import team as team_router
+from src.gateway.routers import privacy as privacy_router
 from src.gateway.routers import users as users_router
 from src.channel_adapters.whatsapp import router as whatsapp_router
 from src.channel_adapters.instagram.router import router as meta_webhook_router
@@ -128,6 +132,8 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         )
 
     # ── Item 17: OpenTelemetry tracing + Sentry error tracking ──────────────────
+    from src.shared.observability.logging_config import setup_logging
+    setup_logging(settings)
     setup_opentelemetry(settings, app)
     setup_sentry(settings)
 
@@ -240,12 +246,14 @@ def _register_middleware(app: FastAPI) -> None:
         "http://127.0.0.1:3001",
         "http://127.0.0.1:8000",
     ]
-    _origins = _dev_origins if settings.is_development else settings.allowed_origins_list
-    if "http://localhost:3000" not in _origins:
-        _origins.append("http://localhost:3000")
-    if "http://127.0.0.1:3000" not in _origins:
-        _origins.append("http://127.0.0.1:3000")
-        
+    # Production/staging: ONLY the explicit ALLOWED_ORIGINS (validated as HTTPS at start-up). Localhost origins used to be
+    # appended unconditionally — with credentials enabled that let any page on a visitor's own localhost call the API.
+    _origins = list(_dev_origins if settings.is_development else settings.allowed_origins_list)
+
+    # add_middleware wraps outermost-LAST: register rate limit + security headers first so CORS stays outermost and
+    # even a 429 carries the CORS headers (otherwise the browser reports a CORS error instead of "too many requests").
+    app.add_middleware(RateLimitMiddleware)
+    app.add_middleware(SecurityHeadersMiddleware)
     app.add_middleware(
         CORSMiddleware,
         allow_origins=_origins,
@@ -466,6 +474,9 @@ def _register_routers(app: FastAPI) -> None:
     app.include_router(billing_router.router)      # /api/v1/billing   (never behind the subscription gate)
     app.include_router(billing_router.webhook_router)  # /api/v1/webhooks/payments
     app.include_router(broadcasts_router.router, dependencies=_GATE)   # /api/v1/broadcasts
+    app.include_router(privacy_router.router)      # /api/v1/privacy (never gated: data-subject rights survive a suspension)
+    app.include_router(team_router.router, dependencies=_GATE)         # /api/v1/team
+    app.include_router(notifications_router.router)  # /api/v1/notifications (read/prefs only; never gated)
     app.include_router(users_router.router, dependencies=_GATE)        # /api/v1/users
     app.include_router(dashboard_router.router, dependencies=_GATE)    # /api/v1/dashboard
     app.include_router(knowledge_router.router, dependencies=_GATE)    # /api/v1/knowledge

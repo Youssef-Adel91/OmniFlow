@@ -736,6 +736,13 @@ async def _billing_usage_flush_async() -> dict[str, Any]:
         plans = {p.code: (p.limits or {}).get("messages_per_month") for p in (await session.execute(_select(Plan))).scalars()}
         limits = {s.tenant_id: plans.get(s.plan_code) for s in (await session.execute(_select(Subscription))).scalars()}
         alerts = await usage.flush(session, limits)
+    from src.shared.services.notifications import notify_safe
+
     for a in alerts:
         logger.warning("billing_usage_threshold", tenant_id=str(a["tenant_id"]), period=a["period"], level=a["level"], used=a["used"])
+        async with get_system_session() as ns:
+            await notify_safe(ns, a["tenant_id"], "usage_threshold",
+                              "بلغت 100% من رسائل باقتك هذا الشهر" if a["level"] == 100 else "اقتربت من حد رسائل باقتك (80%)",
+                              f"استهلكت {a['used']} رسالة ذكاء اصطناعي هذا الشهر. رقِّ باقتك لتفادي التوقف.", "/settings#billing",
+                              dedupe_key=f"usage{a['level']}:{a['period']}")
     return {"alerts": len(alerts)}

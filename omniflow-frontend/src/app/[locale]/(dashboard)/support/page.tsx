@@ -9,7 +9,7 @@ import Link from "next/link";
 import { useParams } from "next/navigation";
 import { AlertTriangle, CheckCircle2, ChevronLeft, FileText, Headphones, Inbox, Loader2, MessageCircle, Paperclip, RefreshCw, Search, Send, Video, X } from "lucide-react";
 import {
-  apiErrorMessage, createTicket, fetchMeta, fetchPlatformStatus, fetchTickets, formatBytes, formatTarget, searchKb, TICKET_STATUS_LABELS,
+  apiErrorMessage, createTicket, fetchIsStaff, fetchMeta, fetchPlatformStatus, fetchTickets, formatBytes, formatTarget, searchKb, TICKET_STATUS_LABELS,
   uploadAttachment, validateAttachment, type KbArticle, type PlatformStatus, type SupportMeta, type SupportTicket, type TicketStatus,
 } from "@/lib/api/support";
 import { Select } from "@/components/ui/Select";
@@ -27,6 +27,7 @@ export default function SupportPage() {
   const [meta, setMeta] = useState<SupportMeta | null>(null);
   const [metaError, setMetaError] = useState<string | null>(null);
   const [platform, setPlatform] = useState<PlatformStatus | null>(null);
+  const [isStaff, setIsStaff] = useState(false);
 
   // Help center
   const [q, setQ] = useState("");
@@ -68,6 +69,7 @@ export default function SupportPage() {
   useEffect(() => {
     fetchMeta().then(setMeta).catch((e) => setMetaError(apiErrorMessage(e, "تعذّر تحميل خيارات الدعم.")));
     fetchPlatformStatus().then(setPlatform).catch(() => setPlatform(null));
+    fetchIsStaff().then(setIsStaff);
   }, []);
 
   // Debounced help-center search (answers before a ticket is opened).
@@ -132,6 +134,7 @@ export default function SupportPage() {
           </div>
         )}
       </div>
+      {isStaff && <p><Link href={`/${locale}/support/staff`} className="text-[#E6C766] underline text-sm">فتح لوحة فريق الدعم</Link></p>}
       {metaError && <p role="alert" className="text-sm text-red-300 flex items-center gap-1.5"><AlertTriangle className="w-4 h-4" />{metaError}</p>}
 
       {/* Help center */}

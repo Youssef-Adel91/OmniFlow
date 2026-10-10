@@ -21,11 +21,11 @@ import hmac
 import re
 import secrets
 import uuid
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Annotated, Optional
 
 import structlog
-from fastapi import APIRouter, File, Header, HTTPException, Path, Query, Response, UploadFile, status
+from fastapi import APIRouter, Depends, File, Header, HTTPException, Path, Query, Response, UploadFile, status
 from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import func, select
 
@@ -264,6 +264,12 @@ async def create_ticket(user: CurrentUser, session: AuthTenantSession, body: Tic
     subject, message = body.subject.strip(), body.message.strip()
     if len(subject) < 3 or not message:
         raise _bad("EMPTY", "العنوان والرسالة مطلوبان.")
+    cap = get_settings().support_tickets_per_hour
+    recent = await session.scalar(select(func.count()).select_from(SupportTicket).where(
+        SupportTicket.created_at > datetime.now(timezone.utc) - timedelta(hours=1)))
+    if cap and (recent or 0) >= cap:
+        raise HTTPException(status_code=429, headers={"Retry-After": "600"},
+                            detail={"code": "TICKET_RATE_LIMIT", "message": f"أنشأت {recent} تذاكر خلال الساعة الأخيرة. للمتابعة أضف رسالة إلى تذكرة قائمة أو حاول لاحقًا."})
     # tenant_id comes from the verified token, never from the request body.
     ticket = SupportTicket(tenant_id=user.tenant_id, created_by_user_id=user.user_id, subject=subject, message=message,
                            status=SupportTicketStatus.OPEN, reference=new_reference(),
@@ -384,6 +390,24 @@ class StaffReply(BaseModel):
     status: Optional[SupportTicketStatus] = None
 
 
+async def _staff_reply_core(session, t: SupportTicket, text: str, status_: Optional[SupportTicketStatus]) -> SupportTicketMessage:
+    m = await _add_message(session, t, author_type="support", user_id=None, body=text)
+    if t.first_response_at is None:
+        t.first_response_at = datetime.now(timezone.utc)
+    new_status = status_ or (SupportTicketStatus.IN_PROGRESS if t.status == SupportTicketStatus.OPEN else None)
+    if new_status is not None and t.status != new_status.value:
+        t.status = new_status
+        t.closed_at = datetime.now(timezone.utc) if new_status == SupportTicketStatus.CLOSED else None
+        labels = {"in_progress": "التذكرة قيد المعالجة", "closed": "أُغلقت التذكرة", "open": "أُعيد فتح التذكرة"}
+        await _add_message(session, t, author_type="system", user_id=None, kind="status", body=labels[new_status.value])
+    await session.flush()
+    from src.shared.services.notifications import notify_safe
+
+    await notify_safe(session, t.tenant_id, "support_reply", f"رد جديد على تذكرتك {t.reference or ''}".strip(), text[:300], "/support",
+                      user_ids=[t.created_by_user_id] if t.created_by_user_id else None)
+    return m
+
+
 @router.post("/admin/tickets/{ticket_id}/reply", response_model=MessageItem, status_code=status.HTTP_201_CREATED,
              summary="Support-staff reply (X-Support-Key)")
 async def staff_reply(ticket_id: Annotated[uuid.UUID, Path()], body: StaffReply,
@@ -400,14 +424,71 @@ async def staff_reply(ticket_id: Annotated[uuid.UUID, Path()], body: StaffReply,
         t = await session.scalar(select(SupportTicket).where(SupportTicket.ticket_id == ticket_id))
         if t is None:
             raise _not_found()
-        m = await _add_message(session, t, author_type="support", user_id=None, body=text)
-        if t.first_response_at is None:
-            t.first_response_at = datetime.now(timezone.utc)
-        new_status = body.status or (SupportTicketStatus.IN_PROGRESS if t.status == SupportTicketStatus.OPEN else None)
-        if new_status is not None and t.status != new_status.value:
-            t.status = new_status
-            t.closed_at = datetime.now(timezone.utc) if new_status == SupportTicketStatus.CLOSED else None
-            labels = {"in_progress": "التذكرة قيد المعالجة", "closed": "أُغلقت التذكرة", "open": "أُعيد فتح التذكرة"}
-            await _add_message(session, t, author_type="system", user_id=None, kind="status", body=labels[new_status.value])
-        await session.flush()
+        return MessageItem.model_validate(await _staff_reply_core(session, t, text, body.status))
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# Staff console (signed-in OmniFlow staff; allow-listed by email in SUPPORT_STAFF_EMAILS). Hidden (404) for everyone else.
+# ══════════════════════════════════════════════════════════════════════════════
+
+def _staff_emails() -> set[str]:
+    return {e.strip().lower() for e in (get_settings().support_staff_emails or "").split(",") if e.strip()}
+
+
+def is_staff(user) -> bool:
+    return bool(getattr(user, "email", None)) and user.email.strip().lower() in _staff_emails() and bool(getattr(user, "is_active", True))
+
+
+async def require_staff(user: CurrentUser):
+    if not is_staff(user):
+        raise HTTPException(status_code=404, detail={"code": "NOT_FOUND", "message": "Not found."})
+    return user
+
+
+StaffUser = Annotated[object, Depends(require_staff)]
+
+
+@router.get("/staff/me", summary="Is the caller OmniFlow support staff?")
+async def staff_me(user: CurrentUser) -> dict:
+    return {"is_staff": is_staff(user)}
+
+
+@router.get("/staff/tickets", summary="Staff: tickets across all tenants")
+async def staff_tickets(staff: StaffUser, status_filter: Annotated[SupportTicketStatus | None, Query(alias="status")] = None,
+                        priority: Optional[str] = None, page: Annotated[int, Query(ge=1)] = 1,
+                        page_size: Annotated[int, Query(ge=1, le=100)] = 30) -> dict:
+    from src.shared.db.models import Tenant
+
+    async with get_system_session() as session:
+        stmt = select(SupportTicket, Tenant.business_name).join(Tenant, Tenant.tenant_id == SupportTicket.tenant_id)
+        if status_filter is not None:
+            stmt = stmt.where(SupportTicket.status == status_filter.value)
+        if priority:
+            stmt = stmt.where(SupportTicket.priority == priority)
+        total = await session.scalar(select(func.count()).select_from(stmt.subquery())) or 0
+        urgency = {"urgent": 0, "high": 1, "normal": 2, "low": 3}
+        rows = (await session.execute(stmt.order_by(SupportTicket.created_at.asc()).offset((page - 1) * page_size).limit(page_size))).all()
+        items = [{**TicketItem.model_validate(t).model_dump(mode="json"), "tenant_name": name, "awaiting_reply": t.first_response_at is None} for t, name in rows]
+        items.sort(key=lambda i: (i["status"] == "closed", urgency.get(i["priority"], 2)))
+        return {"items": items, "total": total, "page": page, "page_size": page_size}
+
+
+@router.get("/staff/tickets/{ticket_id}", summary="Staff: a ticket with its thread")
+async def staff_ticket(staff: StaffUser, ticket_id: Annotated[uuid.UUID, Path()]) -> dict:
+    async with get_system_session() as session:
+        t = await _ticket(session, ticket_id)
+        msgs = (await session.execute(select(SupportTicketMessage).where(SupportTicketMessage.ticket_id == ticket_id)
+                                      .order_by(SupportTicketMessage.created_at, SupportTicketMessage.message_id))).scalars().all()
+        return {"ticket": TicketItem.model_validate(t).model_dump(mode="json"), "messages": [MessageItem.model_validate(m).model_dump(mode="json") for m in msgs]}
+
+
+@router.post("/staff/tickets/{ticket_id}/reply", response_model=MessageItem, status_code=status.HTTP_201_CREATED, summary="Staff: reply / set status")
+async def staff_console_reply(staff: StaffUser, ticket_id: Annotated[uuid.UUID, Path()], body: StaffReply) -> MessageItem:
+    text = body.body.strip()
+    if not text:
+        raise _bad("EMPTY", "الرد فارغ.")
+    async with get_system_session() as session:
+        t = await _ticket(session, ticket_id)
+        m = await _staff_reply_core(session, t, text, body.status)
+        logger.info("support_staff_reply", ticket_id=str(ticket_id), tenant_id=str(t.tenant_id), staff_user=str(getattr(staff, "user_id", "")))
         return MessageItem.model_validate(m)

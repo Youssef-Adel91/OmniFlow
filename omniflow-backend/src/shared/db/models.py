@@ -874,6 +874,11 @@ class SupportTicket(Base, TimestampMixin, TenantScopedMixin):
         default=SupportTicketStatus.OPEN,
         comment="open | in_progress | closed",
     )
+    reference: Mapped[Optional[str]] = mapped_column(String(20), nullable=True, unique=True, comment="Human-friendly number shown to the customer, e.g. OF-7K3Q9ZP2")
+    category: Mapped[str] = mapped_column(String(30), nullable=False, default="other", server_default="other")
+    priority: Mapped[str] = mapped_column(String(10), nullable=False, default="normal", server_default="normal")
+    first_response_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    closed_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
 
     # ── Relationships ─────────────────────────────────────────────────────────
     tenant: Mapped[Tenant] = relationship("Tenant")
@@ -1504,6 +1509,37 @@ class TenantPreferences(Base):
     identity: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict, server_default="{}")
     updated_by: Mapped[Optional[uuid.UUID]] = mapped_column(UUID(as_uuid=True), nullable=True)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+
+class SupportTicketMessage(Base):
+    """One entry of a support ticket thread: a customer/support message or a status-change line. Tenant RLS."""
+    __tablename__ = "support_ticket_messages"
+
+    message_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    ticket_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("support_tickets.ticket_id", ondelete="CASCADE"), nullable=False)
+    tenant_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("tenants.tenant_id", ondelete="RESTRICT"), nullable=False,
+                                                 comment="RLS partition key — must match app.current_tenant_id")
+    author_type: Mapped[str] = mapped_column(String(10), nullable=False, comment="customer | support | system")
+    author_user_id: Mapped[Optional[uuid.UUID]] = mapped_column(UUID(as_uuid=True), nullable=True)
+    kind: Mapped[str] = mapped_column(String(10), nullable=False, default="message", server_default="message", comment="message | status")
+    body: Mapped[str] = mapped_column(Text, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+
+class SupportAttachment(Base):
+    """A file attached to a ticket/message. The bytes live in the private support bucket; served only through the API."""
+    __tablename__ = "support_attachments"
+
+    attachment_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    ticket_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("support_tickets.ticket_id", ondelete="CASCADE"), nullable=False)
+    message_id: Mapped[Optional[uuid.UUID]] = mapped_column(UUID(as_uuid=True), ForeignKey("support_ticket_messages.message_id", ondelete="CASCADE"), nullable=True)
+    tenant_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("tenants.tenant_id", ondelete="RESTRICT"), nullable=False,
+                                                 comment="RLS partition key — must match app.current_tenant_id")
+    filename: Mapped[str] = mapped_column(String(255), nullable=False)
+    content_type: Mapped[str] = mapped_column(String(100), nullable=False)
+    size_bytes: Mapped[int] = mapped_column(Integer, nullable=False)
+    storage_key: Mapped[str] = mapped_column(String(500), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
 
 
 class AuditLog(Base, TenantScopedMixin):

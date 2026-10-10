@@ -121,7 +121,7 @@ export default function ProfilePage() {
   const inputClass =
     "w-full bg-[#0A0F1C] border border-white/10 rounded-lg py-3 pr-12 pl-4 text-white focus:outline-none focus:border-[#C9A84C]/50";
   const readOnlyClass =
-    "w-full bg-[#0A0F1C] border border-white/10 rounded-lg py-3 pr-12 pl-4 text-gray-500 focus:outline-none cursor-not-allowed";
+    "w-full bg-[#0A0F1C] border border-white/10 rounded-lg py-3 pr-12 pl-4 text-gray-400 focus:outline-none cursor-not-allowed";
 
   return (
     <div className="space-y-8 max-w-4xl" dir="rtl">

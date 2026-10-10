@@ -55,6 +55,19 @@ def apply_marketing_consent(customer: Customer, opt_in: bool, source: str, *, no
     return True
 
 
+_OPT_OUT_WORDS = {
+    "stop", "unsubscribe", "stop all", "cancel subscription", "opt out", "optout",
+    "الغاء الاشتراك", "الغاء اشتراكي", "ايقاف", "ايقاف الاشتراك", "توقف", "لا ارغب بالتواصل", "لا اريد استلام الرسائل",
+}
+
+
+def is_opt_out_keyword(text: str) -> bool:
+    """True only when the WHOLE message is an unsubscribe keyword ("STOP", "إلغاء الاشتراك"…) -- never inside a sentence."""
+    from src.shared.services.bulk_import.text import norm_text
+
+    return norm_text(text) in {norm_text(w) for w in _OPT_OUT_WORDS}
+
+
 async def find_by_phone(session, tenant_id: uuid.UUID, phone: str) -> Customer | None:
     """The customer owning this real phone number, whichever identity column holds it."""
     return (await session.scalars(

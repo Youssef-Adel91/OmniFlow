@@ -93,6 +93,18 @@ async def persist_inbound_message(
             channel=str(channel.value if hasattr(channel, "value") else channel),
         )
 
+        # PDPL: a plain "stop / unsubscribe" message withdraws marketing consent (never fails ingestion)
+        if text_content:
+            try:
+                from src.shared.services import customers as customer_svc
+
+                if customer_svc.is_opt_out_keyword(text_content) and customer_svc.apply_marketing_consent(
+                        customer, False, "inbound_keyword"):
+                    await customer_svc.audit(session, tenant_id=tenant_id, actor_id=None, action="customer.opt_out",
+                                             customer_id=customer.customer_id, details={"source": "inbound_keyword"})
+            except Exception:  # noqa: BLE001
+                logger.warning("opt_out_keyword_handling_failed", exc_info=True)
+
         # Patch display name if we have a richer one from WhatsApp profile
         if customer_display_name and not customer.display_name:
             customer.whatsapp_profile_name = customer_display_name
@@ -382,7 +394,10 @@ async def update_message_delivery_status_by_wamid(
                         customer.vcard_opened_at = datetime.now(tz=timezone.utc)
 
     if message_id is None:
-        return False
+        # Not a conversation message: it may be a broadcast template message (delivery tracking for campaign stats).
+        return await _update_broadcast_delivery_status(
+            tenant_id=tenant_id, platform_message_id=platform_message_id,
+            delivery_status=delivery_status, failure_reason=failure_reason)
 
     await _publish_sse(
         tenant_id=tenant_id,
@@ -394,6 +409,38 @@ async def update_message_delivery_status_by_wamid(
             "failure_reason": failure_reason,
         },
     )
+    return True
+
+
+_DELIVERY_RANK = {"PENDING": 0, "SENT": 1, "DELIVERED": 2, "READ": 3}
+
+
+async def _update_broadcast_delivery_status(
+    *, tenant_id: uuid.UUID, platform_message_id: str, delivery_status: str, failure_reason: str | None,
+) -> bool:
+    """Meta status webhook -> BroadcastDelivery (by wamid). Statuses only move forward (a late SENT never undoes READ)."""
+    from datetime import datetime, timezone
+
+    from sqlalchemy import select
+
+    from src.shared.db.models import BroadcastDelivery
+
+    async with get_tenant_session(tenant_id) as session:
+        row = await session.scalar(select(BroadcastDelivery).where(BroadcastDelivery.platform_message_id == platform_message_id))
+        if row is None:
+            return False
+        now = datetime.now(timezone.utc)
+        new = delivery_status.upper()
+        if new == "FAILED":
+            if row.delivery_status not in ("DELIVERED", "READ"):
+                row.delivery_status, row.error_detail = "FAILED", (failure_reason or "failed")[:2000]
+        elif _DELIVERY_RANK.get(new, -1) > _DELIVERY_RANK.get(row.delivery_status, 0):
+            row.delivery_status = new
+            if new == "DELIVERED":
+                row.delivered_at = now
+            elif new == "READ":
+                row.delivered_at = row.delivered_at or now
+                row.read_at = now
     return True
 
 

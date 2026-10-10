@@ -342,6 +342,8 @@ PropertyActivateUser = Annotated[TenantUser, Depends(require_listing_activation_
 
 # Customers: admin and agent may create/edit/import/merge; auditor is read-only; hard delete is admin only.
 CustomerWriteUser = PropertyWriteUser
+# Broadcasts message real customers: admin and agent may compose/schedule/cancel; auditor is read-only.
+MarketingWriteUser = PropertyWriteUser
 
 
 def require_admin_role(user: Annotated[TenantUser, Depends(require_property_write_role)]) -> TenantUser:

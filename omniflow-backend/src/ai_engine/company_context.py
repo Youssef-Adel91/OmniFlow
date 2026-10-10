@@ -304,6 +304,19 @@ async def get_tenant_persona(tenant_id: str | uuid.UUID | None) -> str | None:
             persona = f"{base_prompt}\n\n{_CUSTOM_INSTRUCTIONS_HEADING}\n{custom_instructions}"
         else:
             persona = base_prompt or custom_instructions
+
+        # Tone / dialect / language / currency / constraints chosen in Settings → AI. Only appended when the tenant
+        # actually saved them, so tenants who never opened that section keep exactly their previous behaviour.
+        from src.shared.db.models import TenantPreferences  # noqa: PLC0415
+        from src.shared.services.tenant_prefs import behavior_block  # noqa: PLC0415
+
+        async with get_tenant_session(tenant_uuid) as session:
+            prefs_row = (await session.execute(
+                select(TenantPreferences.ai_behavior, TenantPreferences.identity)
+                .where(TenantPreferences.tenant_id == tenant_uuid))).one_or_none()
+        if prefs_row and (prefs_row[0] or prefs_row[1]):
+            block = behavior_block(prefs_row[0] or {}, prefs_row[1] or {})
+            persona = f"{persona}\n\n{block}" if persona else block
     except Exception as exc:  # noqa: BLE001 — degradation, never a hard failure
         logger.warning("tenant_persona_load_failed", tenant_id=key, error=str(exc)[:300])
         _PERSONA_CACHE[key] = (now + 30, None)

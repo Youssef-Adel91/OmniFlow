@@ -139,7 +139,7 @@ async def get_analytics(
     date_from: Annotated[date | None, Query(alias="from")] = None,
     date_to: Annotated[date | None, Query(alias="to")] = None,
     channel: Annotated[str | None, Query(description="whatsapp | instagram | messenger | ...")] = None,
-    sla_minutes: Annotated[int, Query(ge=1, le=1440)] = 15,
+    sla_minutes: Annotated[int | None, Query(ge=1, le=1440, description="default: the tenant's SLA from Settings → handoff")] = None,
     refresh: Annotated[bool, Query(description="Bypass the 60 s cache (live auto-refresh)")] = False,
 ) -> dict[str, Any]:
     if channel is not None:
@@ -152,6 +152,11 @@ async def get_analytics(
         window = resolve_window(range_, date_from, date_to)
     except AnalyticsRangeError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+    if sla_minutes is None:
+        from src.shared.services.tenant_prefs import get_prefs
+
+        sla_minutes = int((await get_prefs(user.tenant_id))["handoff"]["sla_minutes"])
 
     key_src = f"{window.first_day}|{window.last_day}|{channel}|{sla_minutes}"
     cache_key = f"dash:analytics:{user.tenant_id}:{hashlib.sha256(key_src.encode()).hexdigest()[:16]}"

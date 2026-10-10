@@ -37,7 +37,7 @@ import uuid
 from datetime import datetime
 from typing import Any, Generic, TypeVar
 
-from sqlalchemy import func, select, update
+from sqlalchemy import func, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import joinedload, selectinload
 
@@ -260,27 +260,49 @@ class CustomerRepository(
         result = await self.session.scalars(stmt)
         return result.first()
 
+    async def get_by_identity(self, key: str, channel: str | None = None) -> Customer | None:
+        """
+        Find a customer by any identity: the messaging contact key (`unified_phone`), the real phone
+        (`phone_e164`) or, for Instagram/Messenger, the platform user id stored per channel.
+        """
+        conds = [Customer.unified_phone == key, Customer.phone_e164 == key]
+        if channel:
+            conds.append(Customer.channel_user_ids[channel].as_string() == key)
+        stmt = select(Customer).where(or_(*conds)).order_by(Customer.created_at).limit(1)
+        return (await self.session.scalars(stmt)).first()
+
     async def get_or_create_by_phone(
         self,
         unified_phone: str,
         tenant_id: uuid.UUID,
+        channel: str | None = None,
     ) -> tuple[Customer, bool]:
         """
-        Fetch an existing Customer by phone or create a new one atomically.
+        Fetch an existing Customer by identity or create a new one.
 
-        Returns:
-            (customer, created) — created=True if a new row was inserted.
+        `unified_phone` is the contact key of the inbound message: an E.164 phone for WhatsApp, the
+        platform user id (PSID / IGSID) for Instagram/Messenger. A new row records which it was
+        (`phone_e164` for real phones, `channel_user_ids[channel]` otherwise) and its `source`.
 
-        This is the primary entry point for the Identity Resolution worker.
-        The caller's session must be inside an active transaction.
+        Returns (customer, created). The caller's session must be inside an active transaction.
         """
-        existing = await self.get_by_phone(unified_phone)
+        from src.shared.services.bulk_import.phone import is_e164
+
+        existing = await self.get_by_identity(unified_phone, channel)
         if existing is not None:
+            if channel and channel != "whatsapp" and not is_e164(unified_phone) \
+                    and (existing.channel_user_ids or {}).get(channel) != unified_phone:
+                existing.channel_user_ids = {**(existing.channel_user_ids or {}), channel: unified_phone}
+                self.session.add(existing)
             return existing, False
 
+        phone_like = is_e164(unified_phone)
         new_customer = Customer(
             tenant_id=tenant_id,
             unified_phone=unified_phone,
+            phone_e164=unified_phone if phone_like else None,
+            source=channel or "whatsapp",
+            channel_user_ids={} if phone_like or not channel else {channel: unified_phone},
         )
         self.session.add(new_customer)
         await self.session.flush()

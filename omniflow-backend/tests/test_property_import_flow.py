@@ -52,7 +52,8 @@ def make_csv(*rows: str) -> bytes:
 def auth_overrides(app, tenant, session_factory=None, role=TenantUserRole.ADMIN):
     user = NS(tenant_id=tenant, user_id=uuid.uuid4(), role=role)
     app.dependency_overrides[deps.get_current_user] = lambda: user
-    app.dependency_overrides[deps.require_property_write_role] = lambda: user
+    if role != TenantUserRole.AUDITOR:                       # the auditor must hit the real (403) role check
+        app.dependency_overrides[deps.require_property_write_role] = lambda: user
     if session_factory:
         from sqlalchemy import text
 

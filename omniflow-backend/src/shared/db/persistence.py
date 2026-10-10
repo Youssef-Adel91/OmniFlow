@@ -90,6 +90,7 @@ async def persist_inbound_message(
         customer, customer_created = await customer_repo.get_or_create_by_phone(
             unified_phone=customer_phone,
             tenant_id=tenant_id,
+            channel=str(channel.value if hasattr(channel, "value") else channel),
         )
 
         # Patch display name if we have a richer one from WhatsApp profile

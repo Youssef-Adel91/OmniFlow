@@ -952,6 +952,15 @@ class BroadcastCampaign(Base, TimestampMixin, TenantScopedMixin):
         nullable=True,
         comment="Set by the broadcast worker when the send finishes",
     )
+    template_language: Mapped[str] = mapped_column(String(10), nullable=False, default="ar", server_default="ar")
+    template_params: Mapped[list] = mapped_column(
+        JSONB, nullable=False, default=list, server_default="[]",
+        comment='Body variables in order ({{1}}, {{2}}…); each may use {name} / {city} per recipient',
+    )
+    send_rate_per_second: Mapped[int] = mapped_column(Integer, nullable=False, default=20, server_default="20")
+    last_error: Mapped[Optional[str]] = mapped_column(Text, nullable=True, comment="Why the campaign failed / was rejected")
+    started_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_by: Mapped[Optional[uuid.UUID]] = mapped_column(UUID(as_uuid=True), nullable=True)
     recipients_count: Mapped[Optional[int]] = mapped_column(
         nullable=True,
         comment=(
@@ -1122,6 +1131,7 @@ class BroadcastDelivery(Base, TimestampMixin, TenantScopedMixin):
         nullable=True,
         comment="When Meta confirmed delivery",
     )
+    read_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True, comment="When Meta reported the read receipt")
     error_detail: Mapped[Optional[str]] = mapped_column(
         Text,
         nullable=True,

@@ -55,6 +55,7 @@ from src.shared.db.models import (
     Customer,
     Message,
     PropertyListing,
+    Tenant,
 )
 from src.shared.db.session import get_system_session
 from src.shared.tasks.vcard_tasks import advance_vcard_states
@@ -616,6 +617,15 @@ async def _broadcast_dispatch_check_async() -> dict[str, Any]:
                     )
                     continue
 
+                tenant_row = await session.scalar(select(Tenant).where(Tenant.tenant_id == campaign.tenant_id))
+                if not (tenant_row and tenant_row.whatsapp_phone_number_id and tenant_row.meta_access_token):
+                    campaign.status = BroadcastCampaignStatus.FAILED
+                    campaign.completed_at = _now()
+                    campaign.last_error = "واتساب غير مربوط وقت الإرسال — لم تُرسل أي رسالة."
+                    rejected.append(str(campaign.campaign_id))
+                    logger.error("broadcast_dispatch_rejected_no_whatsapp", campaign_id=str(campaign.campaign_id))
+                    continue
+
                 await producer.publish(
                     topic=settings.kafka_topic_broadcast_marketing,
                     event=BroadcastEvent(
@@ -625,6 +635,7 @@ async def _broadcast_dispatch_check_async() -> dict[str, Any]:
                     key=str(campaign.campaign_id).encode("utf-8"),
                 )
                 campaign.status = BroadcastCampaignStatus.SENDING
+                campaign.started_at = campaign.started_at or _now()
                 dispatched.append(str(campaign.campaign_id))
                 logger.info("broadcast_dispatch_published", campaign_id=str(campaign.campaign_id))
         finally:

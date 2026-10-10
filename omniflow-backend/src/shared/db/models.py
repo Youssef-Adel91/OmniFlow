@@ -335,6 +335,28 @@ class Customer(Base, TimestampMixin, TenantScopedMixin):
         String(200), nullable=True
     )
 
+    # Identity & CRM (migration 0022). `unified_phone` stays the messaging contact key (a phone for
+    # WhatsApp, the platform user id for Instagram/Messenger); `phone_e164` is the REAL phone only.
+    source: Mapped[str] = mapped_column(
+        String(20), nullable=False, default="whatsapp", server_default="whatsapp",
+        comment="whatsapp | instagram | messenger | manual | import",
+    )
+    channel_user_ids: Mapped[dict] = mapped_column(
+        JSONB, nullable=False, default=dict, server_default="{}",
+        comment='channel -> platform user id, e.g. {"instagram": "1784..."}',
+    )
+    phone_e164: Mapped[Optional[str]] = mapped_column(String(20), nullable=True, comment="real phone number (E.164) or NULL")
+    email: Mapped[Optional[str]] = mapped_column(String(254), nullable=True)
+    city: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
+    tags: Mapped[list] = mapped_column(JSONB, nullable=False, default=list, server_default="[]")
+    notes: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    # PDPL marketing consent: no opt-in, no broadcast. opt_out_at wins over any import/re-import.
+    marketing_opt_in: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default="false")
+    opt_in_source: Mapped[Optional[str]] = mapped_column(String(120), nullable=True)
+    opt_in_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    opt_out_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    archived_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+
     # PDPL / Privacy
     is_processing_restricted: Mapped[bool] = mapped_column(
         Boolean,
@@ -397,6 +419,17 @@ class Customer(Base, TimestampMixin, TenantScopedMixin):
     reports: Mapped[list[CustomerReport]] = relationship(
         "CustomerReport", back_populates="customer", cascade="all, delete-orphan"
     )
+
+    def contact_key_for(self, channel: str | None) -> str:
+        """Recipient id for `channel`: the platform user id for Instagram/Messenger, else `unified_phone`.
+        Needed once two identities were merged into one customer (one `unified_phone`, several channels)."""
+        if channel and channel != "whatsapp":
+            key = (self.channel_user_ids or {}).get(str(channel))
+            if key:
+                return key
+            return self.unified_phone
+        # WhatsApp: the real phone wins (the contact key may be a platform id after an Instagram+WhatsApp merge)
+        return self.phone_e164 or self.unified_phone
 
     def __repr__(self) -> str:
         return f"<Customer id={self.customer_id} phone={self.unified_phone!r}>"

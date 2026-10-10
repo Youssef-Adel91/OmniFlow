@@ -39,9 +39,9 @@ async def publish_pending_messages() -> dict[str, int]:
                     agent_id=message.agent_id,
                     tenant_id=conv.tenant_id,
                     conversation_id=conv.conversation_id,
-                    customer_phone=customer.unified_phone,
+                    customer_phone=customer.contact_key_for(str(conv.channel)),
                     channel=str(conv.channel),
-                    platform_conversation_id=conv.platform_conversation_id or customer.unified_phone,
+                    platform_conversation_id=conv.platform_conversation_id or customer.contact_key_for(str(conv.channel)),
                     text=message.text_content or "",
                     source_event_id=message.message_id,
                     routing_tier_used="HUMAN",
@@ -50,7 +50,7 @@ async def publish_pending_messages() -> dict[str, int]:
                 await producer.publish(
                     topic=get_settings().kafka_topic_messages_outgoing,
                     event=event,
-                    key=OutboundMessage.kafka_key(conv.tenant_id, customer.unified_phone),
+                    key=OutboundMessage.kafka_key(conv.tenant_id, customer.contact_key_for(str(conv.channel))),
                 )
                 message.delivery_status = "QUEUED"
                 count += 1

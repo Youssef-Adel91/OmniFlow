@@ -158,8 +158,8 @@ async def _publish_reminders(
         event = OutboundMessage(
             tenant_id=customer.tenant_id,
             conversation_id=conv.conversation_id,
-            customer_phone=customer.unified_phone,
-            platform_conversation_id=conv.platform_conversation_id or customer.unified_phone,
+            customer_phone=customer.contact_key_for(str(conv.channel)),
+            platform_conversation_id=conv.platform_conversation_id or customer.contact_key_for(str(conv.channel)),
             channel=str(conv.channel),
             text=text,
             message_type="text",
@@ -170,7 +170,7 @@ async def _publish_reminders(
         await producer.publish(
             topic=settings.kafka_topic_messages_outgoing,
             event=event,
-            key=OutboundMessage.kafka_key(customer.tenant_id, customer.unified_phone),
+            key=OutboundMessage.kafka_key(customer.tenant_id, customer.contact_key_for(str(conv.channel))),
         )
 
     missing = len(ids) - len(reminded)

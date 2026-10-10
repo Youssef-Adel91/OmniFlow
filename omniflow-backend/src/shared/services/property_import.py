@@ -358,6 +358,19 @@ async def queue_job(session, job: ImportJob) -> None:
     await session.flush()
 
 
+def _runner(kind: str):
+    """Job runner for a job kind. Other importers (customers) register lazily so a fresh process can resume them."""
+    if kind == REINDEX_KIND:
+        return run_reindex
+    if kind == KIND:
+        return run_job
+    if kind == "customers":
+        from src.shared.services import customer_import
+
+        return customer_import.run_job
+    raise ValueError(f"unknown import job kind: {kind}")
+
+
 def spawn(tenant_id: uuid.UUID, import_id: uuid.UUID, kind: str = KIND) -> None:
     """Start the job on this process's event loop (fire-and-forget; the DB row is the source of truth)."""
     if import_id in _RUNNING:
@@ -366,7 +379,7 @@ def spawn(tenant_id: uuid.UUID, import_id: uuid.UUID, kind: str = KIND) -> None:
 
     async def _go() -> None:
         try:
-            await (run_reindex if kind == REINDEX_KIND else run_job)(tenant_id, import_id)
+            await _runner(kind)(tenant_id, import_id)
         finally:
             _RUNNING.discard(import_id)
 
@@ -377,6 +390,11 @@ def spawn(tenant_id: uuid.UUID, import_id: uuid.UUID, kind: str = KIND) -> None:
 async def start_job(tenant_id: uuid.UUID, import_id: uuid.UUID) -> None:
     """Async entry for Starlette BackgroundTasks (a sync callable would run in a thread, with no event loop)."""
     spawn(tenant_id, import_id)
+
+
+async def spawn_by_kind(tenant_id: uuid.UUID, import_id: uuid.UUID, kind: str) -> None:
+    """BackgroundTasks entry for any job kind (async so it runs on the event loop)."""
+    spawn(tenant_id, import_id, kind)
 
 
 async def start_reindex(tenant_id: uuid.UUID, import_id: uuid.UUID) -> None:

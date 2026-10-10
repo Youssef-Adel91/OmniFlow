@@ -32,6 +32,13 @@ export interface ImportOptions {
   defaults: Partial<Record<"property_type" | "status" | "city" | "district", string>>;
   /** admin only: mark imported listings VERIFIED_ACTIVE (is_verified stays false) and index them now */
   activate?: boolean;
+  // ── customers import only ──
+  /** tags added to every imported customer */
+  tags?: string[];
+  /** the importer declares they hold the customers' consent to be contacted (PDPL); nothing is opted in without it */
+  consent_confirmed?: boolean;
+  /** mark every imported customer without an explicit consent column value as opted in (needs consent_confirmed) */
+  opt_in_all?: boolean;
 }
 
 export interface RowIssue { field: string; message: string; severity: "error" | "warning" }
@@ -39,6 +46,8 @@ export interface PreviewRow { row: number; outcome: "create" | "update" | "skip"
 export interface ValidationCounts {
   total: number; valid: number; with_warnings: number; errors: number; duplicate_in_file: number;
   existing_in_db: number; will_create: number; will_update: number; will_skip: number;
+  /** customers import: rows recorded as marketing opt-in / asked for it but already opted out (ignored) */
+  will_opt_in?: number; opted_out_ignored?: number;
 }
 export interface ValidationSummary {
   counts: ValidationCounts;
@@ -47,6 +56,7 @@ export interface ValidationSummary {
   ignored_columns: string[];
   required_missing: string[];
   extracted_by_llm: boolean;
+  consent?: { asked: boolean; confirmed: boolean; blocked: boolean };
 }
 
 export interface ImportJob {
@@ -55,7 +65,7 @@ export interface ImportJob {
   created: number; updated: number; skipped: number; failed: number; indexed: number;
   index_failed: number; index_error: string | null;
   has_error_report: boolean; error_message: string | null; cancel_requested: boolean;
-  options: ImportOptions | null; mapping: Record<string, string> | null; summary: ValidationSummary | null;
+  options: ImportOptions | null; mapping: Record<string, string> | null; summary: (ValidationSummary & { result?: { opted_in?: number; opted_out?: number } }) | null;
   created_at: string | null; started_at: string | null; finished_at: string | null;
 }
 
@@ -81,50 +91,71 @@ export function indexTotals(job: Pick<ImportJob, "kind" | "created" | "updated" 
 export const ACTIVE_STATUSES: ImportStatus[] = ["queued", "running"];
 export const TERMINAL_STATUSES: ImportStatus[] = ["completed", "failed", "cancelled"];
 
-const BASE = "/properties/import";
-
-export async function uploadImportFile(file: File, onProgress?: (pct: number) => void): Promise<UploadResult> {
-  const form = new FormData();
-  form.append("file", file);
-  const { data } = await apiClient.post<UploadResult>(`${BASE}/upload`, form, {
-    headers: { "Content-Type": "multipart/form-data" },
-    timeout: 180_000,    // PDF/image extraction by the model can take a while
-    onUploadProgress: (e) => e.total && onProgress?.(Math.round((e.loaded / e.total) * 100)),
-  });
-  return data;
+export interface ImportAdapter {
+  kind: "properties" | "customers";
+  upload: (file: File, onProgress?: (pct: number) => void) => Promise<UploadResult>;
+  validate: (importId: string, body: { mapping: Record<string, string | null>; options: ImportOptions; save_template_as?: string }) =>
+    Promise<ValidationSummary & { status: ImportStatus; mapping: Record<string, string>; options: ImportOptions }>;
+  commit: (importId: string) => Promise<ImportJob>;
+  fetch: (importId: string) => Promise<ImportJob>;
+  cancel: (importId: string) => Promise<ImportJob>;
+  listTemplates: () => Promise<MappingTemplate[]>;
+  deleteTemplate: (templateId: string) => Promise<void>;
+  downloadTemplate: () => Promise<void>;
+  downloadErrors: (importId: string) => Promise<void>;
 }
 
-export async function validateImport(
-  importId: string,
-  body: { mapping: Record<string, string | null>; options: ImportOptions; save_template_as?: string },
-): Promise<ValidationSummary & { status: ImportStatus; mapping: Record<string, string>; options: ImportOptions }> {
-  const { data } = await apiClient.post(`${BASE}/${importId}/validate`, body, { timeout: 120_000 });
-  return data;
+/** One client for every importer: same endpoints under a different prefix (backend: services/property_import.py, customer_import.py). */
+export function makeImportAdapter(kind: ImportAdapter["kind"], base: string, templateFile: string): ImportAdapter {
+  return {
+    kind,
+    async upload(file, onProgress) {
+      const form = new FormData();
+      form.append("file", file);
+      const { data } = await apiClient.post<UploadResult>(`${base}/upload`, form, {
+        headers: { "Content-Type": "multipart/form-data" },
+        timeout: 180_000,    // PDF/image extraction by the model can take a while
+        onUploadProgress: (e) => e.total && onProgress?.(Math.round((e.loaded / e.total) * 100)),
+      });
+      return data;
+    },
+    async validate(importId, body) {
+      const { data } = await apiClient.post(`${base}/${importId}/validate`, body, { timeout: 120_000 });
+      return data;
+    },
+    async commit(importId) {
+      const { data } = await apiClient.post<ImportJob>(`${base}/${importId}/commit`);
+      return data;
+    },
+    async fetch(importId) {
+      const { data } = await apiClient.get<ImportJob>(`${base}/${importId}`);
+      return data;
+    },
+    async cancel(importId) {
+      const { data } = await apiClient.post<ImportJob>(`${base}/${importId}/cancel`);
+      return data;
+    },
+    async listTemplates() {
+      const { data } = await apiClient.get<{ items: MappingTemplate[] }>(`${base}/templates`);
+      return data.items;
+    },
+    async deleteTemplate(templateId) {
+      await apiClient.delete(`${base}/templates/${templateId}`);
+    },
+    downloadTemplate: () => download(`${base}/template`, templateFile),
+    downloadErrors: (importId) => download(`${base}/${importId}/errors.csv`, `import-${importId}-errors.csv`),
+  };
 }
 
-export async function commitImport(importId: string): Promise<ImportJob> {
-  const { data } = await apiClient.post<ImportJob>(`${BASE}/${importId}/commit`);
-  return data;
-}
+export const propertiesAdapter = makeImportAdapter("properties", "/properties/import", "omniflow-properties-template.xlsx");
 
-export async function fetchImport(importId: string): Promise<ImportJob> {
-  const { data } = await apiClient.get<ImportJob>(`${BASE}/${importId}`);
-  return data;
-}
-
-export async function cancelImport(importId: string): Promise<ImportJob> {
-  const { data } = await apiClient.post<ImportJob>(`${BASE}/${importId}/cancel`);
-  return data;
-}
-
-export async function listMappingTemplates(): Promise<MappingTemplate[]> {
-  const { data } = await apiClient.get<{ items: MappingTemplate[] }>(`${BASE}/templates`);
-  return data.items;
-}
-
-export async function deleteMappingTemplate(templateId: string): Promise<void> {
-  await apiClient.delete(`${BASE}/templates/${templateId}`);
-}
+export const uploadImportFile = propertiesAdapter.upload;
+export const validateImport = propertiesAdapter.validate;
+export const commitImport = propertiesAdapter.commit;
+export const fetchImport = propertiesAdapter.fetch;
+export const cancelImport = propertiesAdapter.cancel;
+export const listMappingTemplates = propertiesAdapter.listTemplates;
+export const deleteMappingTemplate = propertiesAdapter.deleteTemplate;
 
 async function download(path: string, filename: string): Promise<void> {
   const { data } = await apiClient.get<Blob>(path, { responseType: "blob" });
@@ -142,8 +173,8 @@ export function saveBlob(blob: Blob, filename: string): void {
   URL.revokeObjectURL(url);
 }
 
-export const downloadImportTemplate = () => download(`${BASE}/template`, "omniflow-properties-template.xlsx");
-export const downloadImportErrors = (importId: string) => download(`${BASE}/${importId}/errors.csv`, `import-${importId}-errors.csv`);
+export const downloadImportTemplate = propertiesAdapter.downloadTemplate;
+export const downloadImportErrors = propertiesAdapter.downloadErrors;
 
 /** Arabic message from an axios error (backend sends {detail: {code, message}} or a string). */
 export function importErrorMessage(err: unknown, fallback = "حدث خطأ غير متوقع"): string {

@@ -59,6 +59,7 @@ from src.gateway.routers import properties as properties_router
 from src.gateway.routers import property_import as property_import_router
 from src.gateway.routers import tenants as tenants_router
 from src.gateway.routers import broadcasts as broadcasts_router
+from src.gateway.routers import customer_import as customer_import_router
 from src.gateway.routers import customers as customers_router
 from src.gateway.routers import dashboard as dashboard_router
 from src.gateway.routers import knowledge as knowledge_router
@@ -451,6 +452,7 @@ def _register_routers(app: FastAPI) -> None:
 
     # ── Dashboard API surface ─────────────────────────────────────────────────
     # Each router declares its own /api/v1/... prefix internally.
+    app.include_router(customer_import_router.router)  # /api/v1/customers/import (before /{customer_id})
     app.include_router(customers_router.router)    # /api/v1/customers
     app.include_router(reports_router.router)      # /api/v1/reports
     app.include_router(settings_router.router)     # /api/v1/settings

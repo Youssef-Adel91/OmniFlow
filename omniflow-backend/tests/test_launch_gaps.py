@@ -86,7 +86,7 @@ class LaunchGapsDbTests(unittest.IsolatedAsyncioTestCase):
     async def asyncTearDown(self):
         async with self.Admin() as s:
             for t in self.tenants:
-                for stmt in ("DELETE FROM notification_prefs WHERE tenant_id=:t", "DELETE FROM notifications WHERE tenant_id=:t",
+                for stmt in ("DELETE FROM usage_counters WHERE tenant_id=:t", "DELETE FROM notification_prefs WHERE tenant_id=:t", "DELETE FROM notifications WHERE tenant_id=:t",
                              "DELETE FROM team_invitations WHERE tenant_id=:t", "DELETE FROM support_attachments WHERE tenant_id=:t",
                              "DELETE FROM support_ticket_messages WHERE tenant_id=:t", "DELETE FROM support_tickets WHERE tenant_id=:t",
                              "DELETE FROM messages WHERE conversation_id IN (SELECT conversation_id FROM conversations WHERE tenant_id=:t)",
@@ -428,6 +428,24 @@ class LaunchGapsDbTests(unittest.IsolatedAsyncioTestCase):
         kinds = [r["kind"] for r in await self.rows("SELECT kind FROM notifications WHERE tenant_id=:t ORDER BY created_at", t=t)]
         self.assertEqual(kinds, ["trial_ending", "subscription_suspended"])
         self.assertTrue(all(r["user_id"] == self.users[(0, "admin")] for r in await self.rows("SELECT user_id FROM notifications WHERE tenant_id=:t", t=t)))
+
+    async def test_usage_flush_task_persists_counters_and_notifies_at_80_percent(self):
+        from unittest.mock import AsyncMock
+
+        from src.celery_app import tasks
+        from src.shared.services.billing import service, usage
+        t = self.tenants[0]
+        async with await self.sysdb() as db:
+            await service.ensure_subscription(db, t)                     # economic plan → 1000 messages / month (placeholder limit)
+        key = f"usage:{t}:{usage.period_of()}"
+        from src.shared.redis_client import redis_mgr
+        with patch.object(redis_mgr, "start", AsyncMock()) as start, patch.object(redis_mgr, "stop", AsyncMock()) as stop, \
+                patch.object(redis_mgr, "scan_counters", AsyncMock(return_value={key: 850})):
+            out = await tasks._billing_usage_flush_async()
+        self.assertEqual((out, start.await_count, stop.await_count), ({"alerts": 1}, 1, 1))   # pools are opened and closed per task
+        self.assertEqual((await self.rows("SELECT ai_messages FROM usage_counters WHERE tenant_id=:t", t=t))[0]["ai_messages"], 850)
+        kinds = [r["kind"] for r in await self.rows("SELECT kind FROM notifications WHERE tenant_id=:t", t=t)]
+        self.assertEqual(kinds, ["usage_threshold"])
 
 
 if __name__ == "__main__":

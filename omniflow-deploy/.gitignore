@@ -37,3 +37,7 @@ desktop.ini
 *~
 .idea/
 .vscode/
+monitoring/textfile/*.prom
+backups/
+certbot/
+nginx/htpasswd

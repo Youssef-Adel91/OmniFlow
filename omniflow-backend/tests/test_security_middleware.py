@@ -118,3 +118,16 @@ class WorkerHealthTests(unittest.IsolatedAsyncioTestCase):
         body = r.json()
         self.assertFalse(body["all_ok"])
         self.assertEqual((body["workers"]["SemanticRouterWorker"], body["workers"]["OutboundDispatcherWorker"]), ("ok", "missing"))
+
+
+class HealthcheckCliTests(unittest.TestCase):
+    def test_exit_codes(self):
+        from src.shared.kafka import healthcheck as hc
+
+        self.assertEqual(hc.main(["x"]), 2)
+        with patch.object(hc, "_alive", AsyncMock(return_value=True)):
+            self.assertEqual(hc.main(["x", "LLMInvokerWorker"]), 0)
+        with patch.object(hc, "_alive", AsyncMock(return_value=False)):
+            self.assertEqual(hc.main(["x", "LLMInvokerWorker"]), 1)
+        with patch.object(hc, "_alive", AsyncMock(side_effect=OSError("redis down"))):
+            self.assertEqual(hc.main(["x", "LLMInvokerWorker"]), 1)

@@ -1,0 +1,15 @@
+[Unit]
+Description=OmniFlow backup (PostgreSQL + Qdrant + MinIO, then off-host copy)
+After=docker.service
+Requires=docker.service
+
+[Service]
+Type=oneshot
+# EDIT: path of the deployment directory on the server and the user that is in the `docker` group.
+WorkingDirectory=/opt/omniflow/omniflow-deploy
+ExecStart=/opt/omniflow/omniflow-deploy/backup.sh
+User=omniflow
+Group=docker
+Nice=10
+IOSchedulingClass=idle
+TimeoutStartSec=4h

@@ -1,0 +1,28 @@
+# Alertmanager — SAFE DEFAULT: alerts are evaluated and visible in Prometheus/Grafana, but nothing is sent anywhere
+# until you add a real receiver below (that needs your own credentials, so it is a manual step — see MANUAL_STEPS.md).
+route:
+  receiver: "unconfigured"
+  group_by: ["alertname"]
+  group_wait: 30s
+  group_interval: 5m
+  repeat_interval: 4h
+  routes:
+    - matchers: ['severity="critical"']
+      receiver: "unconfigured"        # ← change to "ops-critical" once you define it
+      repeat_interval: 1h
+receivers:
+  - name: "unconfigured"
+  # Example (uncomment, fill in, and DO NOT commit real credentials — keep this file out of Git or use *_file options):
+  # - name: "ops-critical"
+  #   email_configs:
+  #     - to: "ops@your-domain"
+  #       from: "alerts@your-domain"
+  #       smarthost: "smtp.your-provider:587"
+  #       auth_username: "..."
+  #       auth_password_file: /etc/alertmanager/smtp_password
+  #   webhook_configs:
+  #     - url: "https://hooks.slack.com/services/..."   # or any webhook (Telegram bridge, PagerDuty, etc.)
+inhibit_rules:
+  - source_matchers: ['alertname="ApiNotReady"']
+    target_matchers: ['alertname="WorkersDown"']
+    equal: []

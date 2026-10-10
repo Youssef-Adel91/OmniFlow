@@ -80,12 +80,13 @@ if [ ! -e nginx/htpasswd ]; then
 fi
 
 # ── 4. Domain placeholder check ──────────────────────────────────────────────
-if grep -q 'SERVER_DOMAIN' nginx/prod.conf; then
+if grep -q 'SERVER_DOMAIN' nginx/prod.conf nginx/snippets/security-headers.conf; then
     echo ""
     echo "⚠️ ============================================================="
-    echo "⚠️  nginx/prod.conf still contains the SERVER_DOMAIN placeholder."
-    echo "⚠️  Replace it before serving real traffic:"
-    echo "⚠️      sed -i 's/SERVER_DOMAIN/yourdomain.com/g' nginx/prod.conf"
+    echo "⚠️  nginx/prod.conf (and snippets/security-headers.conf, whose CSP allows Clerk"
+    echo "⚠️  on your domain) still contain the SERVER_DOMAIN placeholder."
+    echo "⚠️  Replace it in BOTH files before serving real traffic:"
+    echo "⚠️      sed -i 's/SERVER_DOMAIN/yourdomain.com/g' nginx/prod.conf nginx/snippets/security-headers.conf"
     echo "⚠️  Deployment continues so you can bootstrap TLS, but HTTPS will"
     echo "⚠️  present a self-signed certificate until this is fixed."
     echo "⚠️ ============================================================="
@@ -219,7 +220,7 @@ echo "  0 3 * * * $DEPLOY_DIR/backup.sh >> /var/log/omniflow-backup.log 2>&1"
 echo ""
 echo "── TLS: issue the REAL certificate ────────────────────"
 echo "1) Point the DNS A/AAAA records of your domain at this server."
-echo "2) Replace the placeholder:  sed -i 's/SERVER_DOMAIN/yourdomain.com/g' nginx/prod.conf"
+echo "2) Replace the placeholder:  sed -i 's/SERVER_DOMAIN/yourdomain.com/g' nginx/prod.conf nginx/snippets/security-headers.conf"
 echo "3) Run certbot (HTTP-01 via the webroot nginx already serves):"
 echo "   docker run --rm \\"
 echo "     -v \"\$(pwd)/certbot/conf:/etc/letsencrypt\" \\"

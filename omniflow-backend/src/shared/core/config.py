@@ -197,6 +197,26 @@ class Settings(BaseSettings):
     support_docs_url: str = ""               # public documentation site
     support_admin_api_key: str = ""          # enables the staff reply endpoint (header X-Support-Key); empty = disabled
 
+    # ── Billing (payments + subscriptions) ───────────────────────────────────
+    # Sandbox vs live is decided ONLY by which keys are supplied (Moyasar: sk_test_… vs sk_live_…).
+    payment_provider: str = "moyasar"
+    moyasar_secret_key: str = ""
+    moyasar_publishable_key: str = ""
+    moyasar_webhook_secret: str = ""         # the `secret_token` configured on the Moyasar webhook; compared in constant time
+    moyasar_base_url: str = "https://api.moyasar.com/v1"
+    billing_gate_enabled: bool = True        # emergency kill-switch: False = never gate on subscription state
+    billing_trial_days: int = 14             # PLACEHOLDER — owner decides
+    billing_grace_days: int = 7              # past_due → suspended after this many days
+    billing_retry_max: int = 3               # token-charge attempts before past_due
+    billing_retry_interval_hours: int = 24
+    billing_vat_rate_bp: int = 1500          # 15.00 % (basis points)
+    billing_seller_name: str = ""            # shown on invoices
+    billing_seller_tax_number: str = ""      # VAT registration number — PLACEHOLDER until the owner supplies it
+    billing_seller_address: str = ""
+    billing_seller_cr_number: str = ""
+    billing_admin_api_key: str = ""          # enables staff manual activation (header X-Billing-Key); empty = disabled
+    billing_enforce_message_limit: bool = False   # True = stop AI replies at 100 % of the plan's monthly messages
+
     # ── Bulk import (properties / customers) ─────────────────────────────────
     import_max_file_mb: int = 20
     import_max_rows: int = 20_000

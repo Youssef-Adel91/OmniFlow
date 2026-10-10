@@ -52,6 +52,8 @@ from src.shared.db.repository import ConversationConflictError
 from src.shared.kafka.producer import kafka_producer
 from src.shared.observability.tracing import setup_opentelemetry, setup_sentry
 from src.shared.redis_client.client import redis_mgr
+from fastapi import Depends
+from src.gateway.dependencies import subscription_write_gate
 from src.gateway.routers import health as health_router
 from src.gateway.routers import conversations as conversations_router
 from src.gateway.routers import auth as auth_router
@@ -67,6 +69,7 @@ from src.gateway.routers import facebook_oauth as facebook_oauth_router
 from src.gateway.routers import reports as reports_router
 from src.gateway.routers import settings as settings_router
 from src.gateway.routers import support as support_router
+from src.gateway.routers import billing as billing_router
 from src.gateway.routers import users as users_router
 from src.channel_adapters.whatsapp import router as whatsapp_router
 from src.channel_adapters.instagram.router import router as meta_webhook_router
@@ -177,6 +180,9 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
 # ══════════════════════════════════════════════════════════════════════════════
 # App Factory
 # ══════════════════════════════════════════════════════════════════════════════
+
+_GATE = [Depends(subscription_write_gate)]   # dashboard is read-only while the subscription is blocked
+
 
 def create_app() -> FastAPI:
     """
@@ -434,7 +440,7 @@ def _register_routers(app: FastAPI) -> None:
     app.include_router(meta_webhook_router, prefix="/api/v1")
 
     # ── Sprint 12: Conversations, Messages & SSE Stream ───────────────────────
-    app.include_router(conversations_router.router)
+    app.include_router(conversations_router.router, dependencies=_GATE)
 
     # ── Auth (DEPRECATED) ─────────────────────────────────────────────────────
     # Clerk is the only supported identity provider. This router now serves
@@ -443,25 +449,27 @@ def _register_routers(app: FastAPI) -> None:
     # rationale. Kept mounted deliberately so old clients get an explicit,
     # actionable 410 instead of a confusing 404.
     app.include_router(auth_router.router, prefix="/api/v1/auth", tags=["Auth"])
-    app.include_router(tenants_router.router)
-    app.include_router(property_import_router.router)   # /api/v1/properties/import (before /{listing_id})
-    app.include_router(properties_router.router)
+    app.include_router(tenants_router.router, dependencies=_GATE)
+    app.include_router(property_import_router.router, dependencies=_GATE)   # /api/v1/properties/import (before /{listing_id})
+    app.include_router(properties_router.router, dependencies=_GATE)
 
     from src.gateway.routers import webhooks
     app.include_router(webhooks.router, prefix="/api/v1", tags=["Webhooks"])
 
     # ── Dashboard API surface ─────────────────────────────────────────────────
     # Each router declares its own /api/v1/... prefix internally.
-    app.include_router(customer_import_router.router)  # /api/v1/customers/import (before /{customer_id})
-    app.include_router(customers_router.router)    # /api/v1/customers
-    app.include_router(reports_router.router)      # /api/v1/reports
-    app.include_router(settings_router.router)     # /api/v1/settings
+    app.include_router(customer_import_router.router, dependencies=_GATE)  # /api/v1/customers/import (before /{customer_id})
+    app.include_router(customers_router.router, dependencies=_GATE)    # /api/v1/customers
+    app.include_router(reports_router.router, dependencies=_GATE)      # /api/v1/reports
+    app.include_router(settings_router.router, dependencies=_GATE)     # /api/v1/settings
     app.include_router(support_router.router)      # /api/v1/support
-    app.include_router(broadcasts_router.router)   # /api/v1/broadcasts
-    app.include_router(users_router.router)        # /api/v1/users
-    app.include_router(dashboard_router.router)    # /api/v1/dashboard
-    app.include_router(knowledge_router.router)    # /api/v1/knowledge
-    app.include_router(facebook_oauth_router.router)  # /api/v1/integrations/facebook
+    app.include_router(billing_router.router)      # /api/v1/billing   (never behind the subscription gate)
+    app.include_router(billing_router.webhook_router)  # /api/v1/webhooks/payments
+    app.include_router(broadcasts_router.router, dependencies=_GATE)   # /api/v1/broadcasts
+    app.include_router(users_router.router, dependencies=_GATE)        # /api/v1/users
+    app.include_router(dashboard_router.router, dependencies=_GATE)    # /api/v1/dashboard
+    app.include_router(knowledge_router.router, dependencies=_GATE)    # /api/v1/knowledge
+    app.include_router(facebook_oauth_router.router, dependencies=_GATE)  # /api/v1/integrations/facebook
 
 
 # ══════════════════════════════════════════════════════════════════════════════

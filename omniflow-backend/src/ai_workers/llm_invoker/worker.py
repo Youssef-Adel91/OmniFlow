@@ -241,6 +241,18 @@ class LLMInvokerWorker(BaseKafkaConsumer):
         tenant_id = decision.tenant_id
         customer_phone = event.customer_phone or event.platform_user_id
         tier = decision.target_tier
+
+        # ── 1b. Subscription gate: a suspended / expired tenant's bot stays silent (messages still land in the inbox) ──
+        from src.shared.services.billing import entitlements
+
+        bot_ok, block_reason = await entitlements.bot_allowed(tenant_id)
+        if not bot_ok:
+            logger.info("llm_invoker_skipped_subscription_blocked", tenant_id=str(tenant_id), reason=block_reason)
+            return
+        if await entitlements.over_message_limit(tenant_id):
+            logger.info("llm_invoker_skipped_message_limit", tenant_id=str(tenant_id))
+            return
+
         if decision.conversation_id:
             state = await load_conversation_state(tenant_id, decision.conversation_id)
             if state["is_human_active"] or state["is_processing_restricted"]:
@@ -554,6 +566,12 @@ class LLMInvokerWorker(BaseKafkaConsumer):
                 "message_type": final_message_type,   # Sprint 14: propagate to dispatcher
             },
         )
+        try:    # monthly AI-message counter (billing usage); never allowed to break the reply path
+            from src.shared.services.billing import usage
+
+            await usage.record_ai_message(decision.tenant_id)
+        except Exception:  # noqa: BLE001
+            logger.warning("billing_usage_record_failed", tenant_id=str(decision.tenant_id))
 
     async def _publish_escalation_event(self, decision: RoutingDecision) -> None:
         """Persist human escalation when LLM times out, then notify the inbox."""

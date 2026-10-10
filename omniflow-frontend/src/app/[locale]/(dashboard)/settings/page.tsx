@@ -21,6 +21,7 @@ import { useAuthReady } from "@/hooks/useAuthReady";
 import { useTenantStore } from "@/store/tenantStore";
 import { fetchPreferences, fetchSettings, settingsErrorMessage, type PreferencesResponse, type TenantSettings } from "@/lib/api/settings";
 import AiSection from "@/components/settings/AiSection";
+import BillingSection from "@/components/settings/BillingSection";
 import ChannelsSection from "@/components/settings/ChannelsSection";
 import ComingSoonSection from "@/components/settings/ComingSoonSection";
 import HoursHandoffSection from "@/components/settings/HoursHandoffSection";
@@ -36,7 +37,7 @@ const SECTIONS: { key: SectionKey; label: string; icon: React.ElementType; soon?
   { key: "ai", label: "الذكاء الاصطناعي", icon: Bot },
   { key: "notifications", label: "الإشعارات", icon: Bell, soon: true },
   { key: "privacy", label: "الخصوصية والامتثال", icon: ShieldCheck, soon: true },
-  { key: "billing", label: "الفوترة والاستهلاك", icon: CreditCard, soon: true },
+  { key: "billing", label: "الفوترة والاستهلاك", icon: CreditCard },
   { key: "developers", label: "المطورون", icon: Code2, soon: true },
   { key: "identity", label: "الهوية", icon: Building2 },
 ];
@@ -156,6 +157,7 @@ export default function SettingsPage() {
             <IdentitySection settings={settings} identity={p?.identity ?? null} currencies={prefs?.currencies ?? []} onSettings={applySettings} onIdentity={(i) => patchPrefs("identity", i)}
               onDirtyName={flag("name")} onDirtyIdentity={flag("identity")} />
           )}
+          {active === "billing" && <BillingSection />}
           {SECTIONS.find((s) => s.key === active)?.soon && <ComingSoonSection sectionKey={active} settings={settings} />}
         </div>
       </div>

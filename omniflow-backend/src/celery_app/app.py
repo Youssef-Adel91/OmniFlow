@@ -104,6 +104,17 @@ app.conf.beat_schedule = {
         "schedule": 60.0,  # every minute
         "options": {"expires": 55},
     },
+    # Billing: renewals + retries + dunning, and the AI-message usage flush.
+    "billing-sweep": {
+        "task": "omniflow.billing_sweep",
+        "schedule": 900.0,  # every 15 minutes
+        "options": {"expires": 840},
+    },
+    "billing-usage-flush": {
+        "task": "omniflow.billing_usage_flush",
+        "schedule": 300.0,  # every 5 minutes
+        "options": {"expires": 280},
+    },
     # VIP re-engagement sweep — 03:00 Riyadh, outside business hours.
     "vip-followup-check": {
         "task": "omniflow.vip_followup_check",

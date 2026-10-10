@@ -1,354 +1,282 @@
 "use client";
 
 /**
- * app/[locale]/(dashboard)/support/page.tsx — VIP support
- *
- * Wired to `lib/api/support.ts`:
- *   GET   /support/tickets       — existing tickets list
- *   POST  /support/tickets       — real form submit (subject, message)
- *   PATCH /support/tickets/{id}  — close a ticket from the list
- *
- * The backend contract only carries `subject` / `message` / `status`, so the
- * request-type + priority selectors are folded into the subject line rather
- * than sent as separate fields.
+ * Support center: instant help-center answers → ticket form (category, priority, attachments) → my tickets with a
+ * real thread. Contact channels (WhatsApp / meeting / docs) are shown only when the operator configured them.
  */
-
-import React, { useCallback, useEffect, useState } from "react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
+import Link from "next/link";
+import { useParams } from "next/navigation";
+import { AlertTriangle, CheckCircle2, ChevronLeft, FileText, Headphones, Inbox, Loader2, MessageCircle, Paperclip, RefreshCw, Search, Send, Video, X } from "lucide-react";
 import {
-  Headphones,
-  Video,
-  MessageCircle,
-  FileText,
-  Send,
-  AlertTriangle,
-  CheckCircle2,
-  RefreshCw,
-  Loader2,
-  Inbox,
-} from "lucide-react";
-import {
-  fetchTickets,
-  createTicket,
-  updateTicket,
-  TICKET_STATUS_LABELS,
-  type SupportTicket,
+  apiErrorMessage, createTicket, fetchMeta, fetchPlatformStatus, fetchTickets, formatBytes, formatTarget, searchKb, TICKET_STATUS_LABELS,
+  uploadAttachment, validateAttachment, type KbArticle, type PlatformStatus, type SupportMeta, type SupportTicket, type TicketStatus,
 } from "@/lib/api/support";
 import { Select } from "@/components/ui/Select";
+import { TicketThread } from "@/components/support/TicketThread";
+import { fieldClass, formatTicketDate, STATUS_TONE } from "@/components/support/common";
 
-const REQUEST_TYPES = [
-  "تعديل شخصية الذكاء الاصطناعي",
-  "ربط مع نظام إدارة أملاك خارجي (API)",
-  "مشكلة في الإرسال التلقائي",
-  "استفسار حول الفوترة",
+const FILTERS: { id: TicketStatus | ""; label: string }[] = [
+  { id: "", label: "الكل" }, { id: "open", label: "مفتوحة" }, { id: "in_progress", label: "قيد المعالجة" }, { id: "closed", label: "مغلقة" },
 ];
-
-const PRIORITIES = [
-  { value: "عالية جداً", label: "عالية جداً (High)" },
-  { value: "متوسطة",     label: "متوسطة (Medium)" },
-  { value: "عادية",      label: "عادية (Low)" },
-];
-
-function formatDate(iso: string | null | undefined): string {
-  if (!iso) return "—";
-  const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return "—";
-  return new Intl.DateTimeFormat("ar-SA", {
-    month: "short",
-    day: "numeric",
-    hour: "2-digit",
-    minute: "2-digit",
-  }).format(d);
-}
 
 export default function SupportPage() {
-  // ── Form state ───────────────────────────────────────────────────────────
-  const [requestType, setRequestType] = useState(REQUEST_TYPES[0]);
-  const [priority, setPriority]       = useState(PRIORITIES[0].value);
-  const [subject, setSubject]         = useState("");
-  const [message, setMessage]         = useState("");
+  const params = useParams();
+  const locale = (Array.isArray(params?.locale) ? params.locale[0] : params?.locale) ?? "ar";
 
-  const [submitting, setSubmitting]     = useState(false);
-  const [submitError, setSubmitError]   = useState<string | null>(null);
-  const [submitSuccess, setSubmitSuccess] = useState(false);
+  const [meta, setMeta] = useState<SupportMeta | null>(null);
+  const [metaError, setMetaError] = useState<string | null>(null);
+  const [platform, setPlatform] = useState<PlatformStatus | null>(null);
 
-  // ── Tickets list ─────────────────────────────────────────────────────────
+  // Help center
+  const [q, setQ] = useState("");
+  const [hits, setHits] = useState<KbArticle[] | null>(null);
+  const [kbError, setKbError] = useState(false);
+  const [openHit, setOpenHit] = useState<string | null>(null);
+
+  // Form
+  const [category, setCategory] = useState("technical");
+  const [priority, setPriority] = useState("normal");
+  const [subject, setSubject] = useState("");
+  const [message, setMessage] = useState("");
+  const [files, setFiles] = useState<File[]>([]);
+  const [fileError, setFileError] = useState<string | null>(null);
+  const [submitting, setSubmitting] = useState(false);
+  const [submitError, setSubmitError] = useState<string | null>(null);
+  const [created, setCreated] = useState<{ reference: string; failedFiles: number } | null>(null);
+  const fileRef = useRef<HTMLInputElement>(null);
+
+  // Tickets
+  const [filter, setFilter] = useState<TicketStatus | "">("");
   const [tickets, setTickets] = useState<SupportTicket[]>([]);
+  const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(true);
   const [listError, setListError] = useState<string | null>(null);
-  const [closingId, setClosingId] = useState<string | null>(null);
+  const [selected, setSelected] = useState<string | null>(null);
 
-  const load = useCallback(async () => {
+  const loadTickets = useCallback(async () => {
     setLoading(true);
     setListError(null);
     try {
-      const result = await fetchTickets({ page: 1, page_size: 20 });
-      setTickets(result.items);
-    } catch (err: any) {
-      const detail = err?.response?.data?.detail ?? err?.message;
-      setListError(typeof detail === "string" ? detail : "فشل تحميل التذاكر");
-    } finally {
-      setLoading(false);
-    }
+      const r = await fetchTickets({ page: 1, page_size: 50, status: filter });
+      setTickets(r.items);
+      setTotal(r.total);
+    } catch (e) { setListError(apiErrorMessage(e, "تعذّر تحميل التذاكر.")); } finally { setLoading(false); }
+  }, [filter]);
+  useEffect(() => { void loadTickets(); }, [loadTickets]);
+
+  useEffect(() => {
+    fetchMeta().then(setMeta).catch((e) => setMetaError(apiErrorMessage(e, "تعذّر تحميل خيارات الدعم.")));
+    fetchPlatformStatus().then(setPlatform).catch(() => setPlatform(null));
   }, []);
 
+  // Debounced help-center search (answers before a ticket is opened).
   useEffect(() => {
-    void load();
-  }, [load]);
+    const term = q.trim();
+    if (term.length < 2) { setHits(null); setKbError(false); return; }
+    const h = setTimeout(() => {
+      searchKb(term).then((r) => { setHits(r); setKbError(false); }).catch(() => setKbError(true));
+    }, 300);
+    return () => clearTimeout(h);
+  }, [q]);
 
-  useEffect(() => {
-    if (!submitSuccess) return;
-    const t = setTimeout(() => setSubmitSuccess(false), 5000);
-    return () => clearTimeout(t);
-  }, [submitSuccess]);
+  const target = meta?.priorities.find((p) => p.id === priority);
 
-  const handleSubmit = async (e: React.FormEvent) => {
+  const addFiles = (list: FileList | null) => {
+    if (!list) return;
+    const next = [...files];
+    for (const f of Array.from(list)) {
+      const bad = validateAttachment(f, next.length, meta?.attachments);
+      if (bad) { setFileError(bad); break; }
+      next.push(f);
+      setFileError(null);
+    }
+    setFiles(next);
+    if (fileRef.current) fileRef.current.value = "";
+  };
+
+  const submit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (submitting) return;
-
-    const trimmedSubject = subject.trim();
-    const trimmedMessage = message.trim();
-    if (!trimmedSubject || !trimmedMessage) {
-      setSubmitError("يرجى تعبئة عنوان الطلب والتفاصيل.");
-      return;
-    }
-
+    if (subject.trim().length < 3 || !message.trim()) { setSubmitError("اكتب عنوانًا (3 أحرف على الأقل) وتفاصيل المشكلة."); return; }
     setSubmitting(true);
     setSubmitError(null);
-    setSubmitSuccess(false);
+    setCreated(null);
     try {
-      // Fold type + priority into the fields the backend actually accepts.
-      const created = await createTicket({
-        subject: `[${requestType}] [${priority}] ${trimmedSubject}`,
-        message: trimmedMessage,
-      });
-      setTickets((prev) => [created, ...prev]);
-      setSubject("");
-      setMessage("");
-      setSubmitSuccess(true);
-    } catch (err: any) {
-      const detail = err?.response?.data?.detail ?? err?.message;
-      setSubmitError(typeof detail === "string" ? detail : "تعذّر إرسال التذكرة");
-    } finally {
-      setSubmitting(false);
-    }
+      const t = await createTicket({ subject: subject.trim(), message: message.trim(), category, priority });
+      let failed = 0;
+      for (const f of files) { try { await uploadAttachment(t.id, f); } catch { failed += 1; } }
+      setCreated({ reference: t.reference, failedFiles: failed });
+      setSubject(""); setMessage(""); setFiles([]);
+      void loadTickets();
+    } catch (err) { setSubmitError(apiErrorMessage(err, "تعذّر إرسال التذكرة. حاول مرة أخرى.")); } finally { setSubmitting(false); }
   };
 
-  const handleClose = async (ticket: SupportTicket) => {
-    setClosingId(ticket.id);
-    try {
-      const updated = await updateTicket(ticket.id, { status: "closed" });
-      setTickets((prev) => prev.map((t) => (t.id === updated.id ? updated : t)));
-    } catch {
-      setListError("تعذّر إغلاق التذكرة.");
-    } finally {
-      setClosingId(null);
-    }
-  };
-
-  const fieldClass =
-    "w-full bg-[#0A0F1C] border border-white/10 rounded-lg py-3 px-4 text-white focus:outline-none focus:border-[#C9A84C]/50";
+  const contacts = meta?.contacts;
+  const channelCards = [
+    contacts?.whatsapp && { href: contacts.whatsapp, icon: MessageCircle, title: "محادثة واتساب مع الدعم", desc: "للاستفسارات العاجلة." },
+    contacts?.zoom && { href: contacts.zoom, icon: Video, title: "جدولة اجتماع", desc: "احجز موعدًا مع فريق الدعم." },
+    contacts?.docs && { href: contacts.docs, icon: FileText, title: "الوثائق", desc: "شروحات وأدلة المنصة." },
+  ].filter(Boolean) as { href: string; icon: React.ElementType; title: string; desc: string }[];
 
   return (
-    <div className="space-y-8" dir="rtl">
-      <div>
-        <h1 className="text-3xl font-bold text-white flex items-center gap-3">
-          <Headphones className="w-8 h-8 text-[#C9A84C]" />
-          الدعم الفني VIP
-        </h1>
-        <p className="text-gray-400 mt-2 text-sm">
-          أولوية الوصول لفريق الهندسة لتخصيص منظومتك.
-        </p>
+    <div className="space-y-6" dir="rtl">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <h1 className="text-2xl md:text-3xl font-bold text-white flex items-center gap-3"><Headphones className="w-7 h-7 text-[#C9A84C]" aria-hidden />مركز الدعم</h1>
+          <p className="text-gray-300 mt-2 text-sm">ابحث أولًا في الأسئلة الشائعة، وإن لم تجد حلًّا افتح تذكرة وسنتابعها معك هنا.</p>
+        </div>
+        {platform && (
+          <div role="status" className={`text-xs rounded-lg border px-3 py-2 ${platform.all_ok ? STATUS_TONE.green : STATUS_TONE.gold}`}>
+            {platform.all_ok ? "كل خدمات المنصة تعمل" : `بعض الخدمات غير متاحة حاليًا: ${Object.entries(platform.checks).filter(([, v]) => v !== "ok").map(([k]) => ({ database: "قاعدة البيانات", redis: "الذاكرة المؤقتة", kafka: "الرسائل" }[k] ?? k)).join("، ")}`}
+          </div>
+        )}
       </div>
+      {metaError && <p role="alert" className="text-sm text-red-300 flex items-center gap-1.5"><AlertTriangle className="w-4 h-4" />{metaError}</p>}
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-        {/* Quick Contact Options */}
-        <div className="space-y-4">
-          {[
-            // Static Tailwind classes (no interpolation) so the JIT compiler keeps them
-            { icon: Video, iconWrap: "bg-blue-500/10", iconColor: "text-blue-400", title: "جدولة اجتماع Zoom", desc: "ناقش التخصيصات المتقدمة وربط الأنظمة مع مهندسينا مباشرة." },
-            { icon: MessageCircle, iconWrap: "bg-green-500/10", iconColor: "text-green-400", title: "محادثة واتساب فورية", desc: "تواصل سريع مع مدير حسابك المخصص للإجابة على أي استفسار عاجل." },
-            { icon: FileText, iconWrap: "bg-purple-500/10", iconColor: "text-purple-400", title: "مركز المساعدة (الوثائق)", desc: "تصفح الشروحات، والأدلة التقنية الخاصة بمنصة OmniFlow." },
-          ].map(({ icon: Icon, iconWrap, iconColor, title, desc }) => (
-            <div
-              key={title}
-              className="bg-[#111827] border border-white/10 rounded-2xl p-6 transition-colors"
-            >
-              <div className={`w-12 h-12 rounded-xl ${iconWrap} flex items-center justify-center mb-4`}>
-                <Icon className={`w-6 h-6 ${iconColor}`} />
-              </div>
-              <h3 className="text-xl font-bold text-white mb-2">{title}</h3>
-              <p className="text-sm text-gray-400">{desc}</p>
-            </div>
-          ))}
+      {/* Help center */}
+      <section aria-labelledby="kb-title" className="bg-[#111827] border border-white/10 rounded-2xl p-5 space-y-3">
+        <h2 id="kb-title" className="text-lg font-bold text-white">ابحث عن إجابتك</h2>
+        <div className="relative">
+          <Search className="w-4 h-4 text-gray-300 absolute top-1/2 -translate-y-1/2 start-3" aria-hidden />
+          <input type="search" value={q} onChange={(e) => setQ(e.target.value)} aria-label="ابحث في مركز المساعدة" placeholder="مثال: البوت ما يرد، استيراد العقارات، الحملة لم تصل…" className={`${fieldClass} ps-9`} />
+        </div>
+        {kbError && <p role="alert" className="text-sm text-red-300">تعذّر البحث الآن.</p>}
+        {hits && hits.length === 0 && !kbError && <p className="text-sm text-gray-300">لا توجد مقالات مطابقة — افتح تذكرة أدناه وسنساعدك.</p>}
+        {hits && hits.length > 0 && (
+          <ul className="space-y-2">
+            {hits.map((a) => (
+              <li key={a.id} className="border border-white/10 rounded-xl">
+                <button type="button" aria-expanded={openHit === a.id} onClick={() => setOpenHit(openHit === a.id ? null : a.id)} className="w-full text-start px-4 py-3 text-sm font-semibold text-gray-100 flex items-center justify-between gap-2">
+                  {a.title}<ChevronLeft className={`w-4 h-4 transition-transform ${openHit === a.id ? "-rotate-90" : ""}`} aria-hidden />
+                </button>
+                {openHit === a.id && (
+                  <div className="px-4 pb-3 text-sm text-gray-200 leading-relaxed">
+                    <p>{a.answer}</p>
+                    {a.link && <Link href={`/${locale}${a.link}`} className="inline-block mt-2 text-[#E6C766] underline">{a.link_label ?? "فتح الصفحة"}</Link>}
+                  </div>
+                )}
+              </li>
+            ))}
+          </ul>
+        )}
+      </section>
+
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        <div className="space-y-4 lg:order-2">
+          {channelCards.length > 0 ? channelCards.map(({ href, icon: Icon, title, desc }) => (
+            <a key={title} href={href} target="_blank" rel="noopener noreferrer" className="block bg-[#111827] border border-white/10 rounded-2xl p-5 hover:border-[#C9A84C]/40 transition-colors">
+              <Icon className="w-6 h-6 text-[#C9A84C] mb-2" aria-hidden /><h3 className="font-bold text-white">{title}</h3><p className="text-sm text-gray-300 mt-1">{desc}</p>
+            </a>
+          )) : (
+            <div className="bg-[#111827] border border-white/10 rounded-2xl p-5 text-sm text-gray-300">قناة الدعم الأساسية هي التذاكر. ستظهر هنا قنوات إضافية (واتساب، اجتماع) عند تفعيلها من إدارة المنصة.</div>
+          )}
         </div>
 
-        {/* Ticket Form + list */}
-        <div className="lg:col-span-2 space-y-8">
-          <div className="bg-[#111827] border border-[#C9A84C]/20 rounded-2xl p-6 md:p-8 shadow-xl">
-            <h2 className="text-2xl font-bold text-white mb-6 border-b border-white/10 pb-4">
-              فتح تذكرة دعم فني مخصصة
-            </h2>
-
-            <form className="space-y-5" onSubmit={handleSubmit}>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
-                <div>
-                  <label className="block text-sm font-medium text-gray-300 mb-2">نوع الطلب</label>
-                  <Select
-                    value={requestType}
-                    onChange={(e) => setRequestType(e.target.value)}
-                    className={fieldClass}
-                  >
-                    {REQUEST_TYPES.map((t) => (
-                      <option key={t} value={t}>{t}</option>
-                    ))}
-                  </Select>
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-300 mb-2">الأولوية</label>
-                  <Select
-                    value={priority}
-                    onChange={(e) => setPriority(e.target.value)}
-                    className={fieldClass}
-                  >
-                    {PRIORITIES.map((p) => (
-                      <option key={p.value} value={p.value}>{p.label}</option>
-                    ))}
-                  </Select>
-                </div>
-              </div>
-
+        <div className="lg:col-span-2 space-y-6 lg:order-1">
+          <form onSubmit={submit} className="bg-[#111827] border border-[#C9A84C]/20 rounded-2xl p-5 md:p-6 space-y-4" aria-labelledby="new-ticket">
+            <h2 id="new-ticket" className="text-xl font-bold text-white border-b border-white/10 pb-3">فتح تذكرة جديدة</h2>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div>
-                <label className="block text-sm font-medium text-gray-300 mb-2">عنوان الطلب</label>
-                <input
-                  type="text"
-                  required
-                  value={subject}
-                  onChange={(e) => setSubject(e.target.value)}
-                  placeholder="مثال: نرغب بربط النظام مع منصة إيجار"
-                  className={fieldClass}
-                />
+                <label htmlFor="t-cat" className="block text-sm font-medium text-gray-100 mb-1.5">نوع الطلب</label>
+                <Select id="t-cat" value={category} onChange={(e) => setCategory(e.target.value)} className="w-full">
+                  {(meta?.categories ?? [{ id: "technical", label: "مشكلة تقنية" }]).map((c) => <option key={c.id} value={c.id}>{c.label}</option>)}
+                </Select>
               </div>
-
               <div>
-                <label className="block text-sm font-medium text-gray-300 mb-2">التفاصيل</label>
-                <textarea
-                  rows={6}
-                  required
-                  value={message}
-                  onChange={(e) => setMessage(e.target.value)}
-                  placeholder="اشرح لنا بالتفصيل ما الذي تحتاجه..."
-                  className={`${fieldClass} resize-none`}
-                />
+                <label htmlFor="t-pri" className="block text-sm font-medium text-gray-100 mb-1.5">الأولوية</label>
+                <Select id="t-pri" value={priority} onChange={(e) => setPriority(e.target.value)} className="w-full">
+                  {(meta?.priorities ?? [{ id: "normal", label: "عادي", target_hours: 24 }]).map((p) => <option key={p.id} value={p.id}>{p.label}</option>)}
+                </Select>
+                {target && <p className="text-xs text-gray-300 mt-1.5">الاستجابة المستهدفة {formatTarget(target.target_hours)} (هدف تشغيلي وليس التزامًا تعاقديًا).</p>}
               </div>
-
-              <div className="pt-4 flex flex-wrap items-center gap-4">
-                <button
-                  type="submit"
-                  disabled={submitting}
-                  className="bg-[#C9A84C] text-[#0A0F1C] px-8 py-3.5 rounded-xl font-bold hover:bg-[#D4B55A] transition-colors flex items-center justify-center gap-2 w-full md:w-auto disabled:opacity-60 disabled:cursor-not-allowed"
-                >
-                  {submitting ? (
-                    <Loader2 className="w-5 h-5 animate-spin" />
-                  ) : (
-                    <Send className="w-5 h-5" />
-                  )}
-                  إرسال التذكرة لفريق الهندسة
-                </button>
-
-                {submitSuccess && (
-                  <span className="text-sm text-green-400 flex items-center gap-1.5">
-                    <CheckCircle2 className="w-4 h-4" /> تم إرسال التذكرة بنجاح
-                  </span>
-                )}
-                {submitError && (
-                  <span role="alert" className="text-sm text-red-400 flex items-center gap-1.5">
-                    <AlertTriangle className="w-4 h-4" /> {submitError}
-                  </span>
-                )}
-              </div>
-            </form>
-          </div>
-
-          {/* Existing tickets */}
-          <div className="bg-[#111827] border border-white/5 rounded-2xl p-6 md:p-8 shadow-xl">
-            <div className="flex items-center justify-between border-b border-white/10 pb-4 mb-4">
-              <h2 className="text-xl font-bold text-white">تذاكري</h2>
-              <button
-                onClick={() => void load()}
-                disabled={loading}
-                className="text-gray-400 hover:text-white transition-colors disabled:opacity-50"
-                aria-label="تحديث قائمة التذاكر"
-              >
-                <RefreshCw className={`w-4 h-4 ${loading ? "animate-spin" : ""}`} />
-              </button>
             </div>
+            <div>
+              <label htmlFor="t-sub" className="block text-sm font-medium text-gray-100 mb-1.5">عنوان الطلب</label>
+              <input id="t-sub" required minLength={3} maxLength={255} value={subject} onChange={(e) => setSubject(e.target.value)} placeholder="مثال: البوت توقف عن الرد على واتساب" className={fieldClass} />
+            </div>
+            <div>
+              <label htmlFor="t-msg" className="block text-sm font-medium text-gray-100 mb-1.5">التفاصيل</label>
+              <textarea id="t-msg" required rows={5} maxLength={10000} value={message} onChange={(e) => setMessage(e.target.value)} placeholder="اشرح ما حدث، ومتى بدأت المشكلة، وما الذي جرّبته." className={`${fieldClass} resize-y`} />
+            </div>
+            <div>
+              <div className="flex flex-wrap items-center gap-2">
+                <input ref={fileRef} id="t-files" type="file" multiple className="sr-only" accept=".png,.jpg,.jpeg,.webp,.pdf,.docx,.xlsx,.csv" onChange={(e) => addFiles(e.target.files)} />
+                <button type="button" onClick={() => fileRef.current?.click()} className="text-gray-100 border border-white/20 rounded-lg px-4 py-2 text-sm inline-flex items-center gap-2 hover:bg-white/10"><Paperclip className="w-4 h-4" aria-hidden />إرفاق لقطة شاشة أو ملف</button>
+                <span className="text-xs text-gray-300">اختياري — حتى {meta?.attachments.max_per_ticket ?? 5} ملفات، 5 ميجابايت للملف.</span>
+              </div>
+              {files.length > 0 && (
+                <ul className="mt-2 space-y-1">
+                  {files.map((f, i) => (
+                    <li key={`${f.name}-${i}`} className="flex items-center gap-2 text-sm text-gray-100 bg-white/5 rounded-lg px-3 py-1.5">
+                      <span className="truncate flex-1" dir="auto">{f.name}</span><span className="text-xs text-gray-300">{formatBytes(f.size)}</span>
+                      <button type="button" aria-label={`إزالة ${f.name}`} onClick={() => setFiles(files.filter((_, j) => j !== i))} className="p-1 rounded hover:bg-white/10"><X className="w-4 h-4" /></button>
+                    </li>
+                  ))}
+                </ul>
+              )}
+              {fileError && <p role="alert" className="text-sm text-red-300 mt-1.5">{fileError}</p>}
+            </div>
+            <div className="flex flex-wrap items-center gap-3 pt-1">
+              <button type="submit" disabled={submitting} className="bg-[#C9A84C] text-[#0A0F1C] px-7 py-3 rounded-xl font-bold hover:bg-[#D4B55A] inline-flex items-center gap-2 disabled:opacity-60 w-full md:w-auto justify-center">
+                {submitting ? <Loader2 className="w-5 h-5 animate-spin" aria-hidden /> : <Send className="w-5 h-5" aria-hidden />}إرسال التذكرة
+              </button>
+              {created && (
+                <span role="status" className="text-sm text-emerald-300 flex items-center gap-1.5">
+                  <CheckCircle2 className="w-4 h-4" aria-hidden />تم الإرسال — رقم التذكرة <span dir="ltr" className="font-mono">{created.reference}</span>
+                  {created.failedFiles > 0 && <span className="text-amber-200"> (تعذّر رفع {created.failedFiles} ملف، أضِفه من داخل التذكرة)</span>}
+                </span>
+              )}
+              {submitError && <span role="alert" className="text-sm text-red-300 flex items-center gap-1.5"><AlertTriangle className="w-4 h-4" aria-hidden />{submitError}</span>}
+            </div>
+          </form>
 
+          <section aria-labelledby="my-tickets" className="bg-[#111827] border border-white/10 rounded-2xl p-5 md:p-6">
+            <div className="flex flex-wrap items-center justify-between gap-3 border-b border-white/10 pb-3 mb-4">
+              <h2 id="my-tickets" className="text-xl font-bold text-white">تذاكري {total > 0 && <span className="text-sm font-normal text-gray-300">({total})</span>}</h2>
+              <div className="flex items-center gap-2">
+                <div role="group" aria-label="تصفية الحالة" className="flex gap-1">
+                  {FILTERS.map((f) => (
+                    <button key={f.id || "all"} aria-pressed={filter === f.id} onClick={() => setFilter(f.id)} className={`px-3 py-1.5 rounded-lg text-xs border ${filter === f.id ? "bg-[#C9A84C] text-[#0A0F1C] border-[#C9A84C] font-bold" : "text-gray-100 border-white/20 hover:bg-white/10"}`}>{f.label}</button>
+                  ))}
+                </div>
+                <button onClick={() => void loadTickets()} disabled={loading} className="p-2 text-gray-200 hover:text-white disabled:opacity-50" aria-label="تحديث قائمة التذاكر"><RefreshCw className={`w-4 h-4 ${loading ? "animate-spin" : ""}`} /></button>
+              </div>
+            </div>
             {listError && (
-              <div
-                role="alert"
-                className="flex items-center gap-2 bg-red-500/10 border border-red-500/40 text-red-300 rounded-xl px-4 py-3 text-sm mb-4"
-              >
-                <AlertTriangle className="w-4 h-4" />
-                {listError}
-              </div>
+              <div role="alert" className="flex items-center gap-2 bg-red-500/10 border border-red-500/40 text-red-200 rounded-xl px-4 py-3 text-sm mb-4"><AlertTriangle className="w-4 h-4 shrink-0" />{listError}
+                <button onClick={() => void loadTickets()} className="underline ms-auto">إعادة المحاولة</button></div>
             )}
-
             {loading ? (
-              <div className="space-y-3">
-                {Array.from({ length: 3 }).map((_, i) => (
-                  <div key={i} className="h-16 rounded-xl bg-white/5 animate-pulse" />
-                ))}
-              </div>
-            ) : tickets.length === 0 ? (
-              <div className="text-center py-12">
-                <Inbox className="w-10 h-10 text-gray-600 mx-auto mb-3" />
-                <p className="text-gray-400 text-sm">لا توجد تذاكر دعم بعد.</p>
-              </div>
+              <div className="space-y-3" aria-busy="true">{[0, 1, 2].map((i) => <div key={i} className="h-16 rounded-xl bg-white/5 animate-pulse" />)}</div>
+            ) : tickets.length === 0 && !listError ? (
+              <div className="text-center py-10"><Inbox className="w-10 h-10 text-gray-400 mx-auto mb-3" aria-hidden /><p className="text-gray-300 text-sm">{filter ? "لا توجد تذاكر بهذه الحالة." : "لا توجد تذاكر بعد — نتمنى ألّا تحتاج إليها."}</p></div>
             ) : (
-              <ul className="space-y-3">
-                {tickets.map((ticket) => {
-                  const meta = TICKET_STATUS_LABELS[ticket.status];
+              <ul className="space-y-2">
+                {tickets.map((t) => {
+                  const m = TICKET_STATUS_LABELS[t.status];
                   return (
-                    <li
-                      key={ticket.id}
-                      className="border border-white/10 rounded-xl p-4 hover:bg-white/[0.02] transition-colors"
-                    >
-                      <div className="flex items-start justify-between gap-3">
-                        <div className="min-w-0">
-                          <p className="font-semibold text-gray-100 truncate">{ticket.subject}</p>
-                          <p className="text-sm text-gray-400 mt-1 line-clamp-2">{ticket.message}</p>
-                          <p className="text-xs text-gray-600 mt-2">{formatDate(ticket.created_at)}</p>
+                    <li key={t.id}>
+                      <button onClick={() => setSelected(t.id)} className="w-full text-start border border-white/10 rounded-xl p-4 hover:bg-white/[0.04] focus-visible:ring-2 focus-visible:ring-[#C9A84C] outline-none">
+                        <div className="flex items-start justify-between gap-3">
+                          <div className="min-w-0">
+                            <p className="font-semibold text-gray-100 truncate">{t.subject}</p>
+                            <p className="text-sm text-gray-300 mt-1 line-clamp-1">{t.message}</p>
+                            <p className="text-xs text-gray-300 mt-2"><span dir="ltr" className="font-mono">{t.reference}</span> · {formatTicketDate(t.created_at)}{t.first_response_at ? " · تم الرد" : ""}</p>
+                          </div>
+                          <span className={`px-2.5 py-1 rounded-md text-xs font-medium border whitespace-nowrap ${STATUS_TONE[m.tone]}`}>{m.ar}</span>
                         </div>
-                        <div className="flex flex-col items-end gap-2 shrink-0">
-                          <span
-                            className="px-2.5 py-1 rounded-md text-xs font-medium border whitespace-nowrap"
-                            style={{
-                              color: meta.color,
-                              background: `${meta.color}18`,
-                              borderColor: `${meta.color}40`,
-                            }}
-                          >
-                            {meta.ar}
-                          </span>
-                          {ticket.status !== "closed" && (
-                            <button
-                              onClick={() => void handleClose(ticket)}
-                              disabled={closingId === ticket.id}
-                              className="text-xs text-gray-400 hover:text-white transition-colors disabled:opacity-50"
-                            >
-                              {closingId === ticket.id ? "جارٍ الإغلاق..." : "إغلاق التذكرة"}
-                            </button>
-                          )}
-                        </div>
-                      </div>
+                      </button>
                     </li>
                   );
                 })}
               </ul>
             )}
-          </div>
+          </section>
         </div>
       </div>
+
+      {selected && <TicketThread ticketId={selected} meta={meta} onClose={() => setSelected(null)} onChanged={() => void loadTickets()} />}
     </div>
   );
 }

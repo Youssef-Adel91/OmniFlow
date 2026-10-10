@@ -213,7 +213,7 @@ function RevenueChart({
         <div className="h-52 flex flex-col items-center justify-center text-center">
           <BarChart3 className="w-10 h-10 text-gray-600 mb-3" />
           <p className="text-sm text-gray-400">لا توجد إيرادات مسجّلة بعد.</p>
-          <p className="text-xs text-gray-600 mt-1">
+          <p className="text-xs text-gray-400 mt-1">
             سيظهر الرسم البياني بمجرد بيع أول تقرير مدفوع.
           </p>
         </div>
@@ -236,7 +236,7 @@ function RevenueChart({
                   className="w-full rounded-t-lg bg-gradient-to-t from-[#C9A84C]/40 to-[#C9A84C] transition-all duration-300 hover:from-[#C9A84C]/60 hover:to-[#E0C46A]"
                   style={{ height: `${heightPct}%` }}
                 />
-                <span className="text-[10px] text-gray-500 mt-2 whitespace-nowrap truncate max-w-full">
+                <span className="text-[10px] text-gray-400 mt-2 whitespace-nowrap truncate max-w-full">
                   {formatMonthLabel(point.month)}
                 </span>
               </div>
@@ -257,7 +257,7 @@ function RevenueChart({
                     <span>{REPORT_TYPE_LABELS[t.report_type] ?? t.report_type}</span>
                     <span>
                       <strong className="text-[#E0C46A]">{formatPrice(t.total_revenue)}</strong>
-                      <span className="text-gray-500 ms-2">({t.count} تقرير)</span>
+                      <span className="text-gray-400 ms-2">({t.count} تقرير)</span>
                     </span>
                   </div>
                   <div className="h-2 rounded-full bg-white/5">
@@ -580,7 +580,7 @@ export default function ReportsPage() {
       {/* Filters */}
       <div className="flex items-end gap-4 flex-wrap bg-[#111827] border border-white/10 rounded-2xl p-4">
         <div className="min-w-[220px] flex-1">
-          <label htmlFor="reports-search" className="block text-xs text-gray-500 mb-1.5">بحث</label>
+          <label htmlFor="reports-search" className="block text-xs text-gray-400 mb-1.5">بحث</label>
           <input
             id="reports-search"
             type="search"
@@ -588,12 +588,12 @@ export default function ReportsPage() {
             onChange={(e) => setSearchInput(e.target.value)}
             placeholder="اسم العميل أو رقمه أو مرجع الدفع"
             maxLength={100}
-            className="w-full bg-[#0A0F1C] border border-white/10 rounded-lg py-2 px-4 text-white text-sm placeholder:text-gray-500 focus:outline-none focus:border-[#C9A84C]/50"
+            className="w-full bg-[#0A0F1C] border border-white/10 rounded-lg py-2 px-4 text-white text-sm placeholder:text-gray-400 focus:outline-none focus:border-[#C9A84C]/50"
           />
         </div>
 
         <div>
-          <label className="block text-xs text-gray-500 mb-1.5">نوع التقرير</label>
+          <label className="block text-xs text-gray-400 mb-1.5">نوع التقرير</label>
           <Select
             value={typeFilter}
             onChange={(e) => {
@@ -612,7 +612,7 @@ export default function ReportsPage() {
         </div>
 
         <div>
-          <label className="text-xs text-gray-500 mb-1.5 flex items-center gap-1">
+          <label className="text-xs text-gray-400 mb-1.5 flex items-center gap-1">
             <Calendar className="w-3 h-3" /> من تاريخ
           </label>
           <input
@@ -629,7 +629,7 @@ export default function ReportsPage() {
         </div>
 
         <div>
-          <label className="text-xs text-gray-500 mb-1.5 flex items-center gap-1">
+          <label className="text-xs text-gray-400 mb-1.5 flex items-center gap-1">
             <Calendar className="w-3 h-3" /> إلى تاريخ
           </label>
           <input
@@ -722,7 +722,7 @@ export default function ReportsPage() {
                     <h3 className="text-lg font-semibold text-gray-200 mb-1">
                       لا توجد تقارير بعد
                     </h3>
-                    <p className="text-sm text-gray-500">
+                    <p className="text-sm text-gray-400">
                       ستظهر التقارير هنا بمجرد أن يطلب أحد عملائك تقريراً مدفوعاً.
                     </p>
                   </td>
@@ -744,7 +744,7 @@ export default function ReportsPage() {
                           {REPORT_TYPE_LABELS[report.report_type] ?? report.report_type}
                         </span>
                         {report.title && (
-                          <span className="block text-xs text-gray-500 mt-0.5 truncate max-w-[220px]">
+                          <span className="block text-xs text-gray-400 mt-0.5 truncate max-w-[220px]">
                             {report.title}
                           </span>
                         )}

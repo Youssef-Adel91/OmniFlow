@@ -172,6 +172,7 @@ class Settings(BaseSettings):
     # Private bucket for bulk-import uploads (property/customer sheets) and their
     # error reports. Created on first use if missing; NEVER anonymous-readable.
     s3_imports_bucket: str = "omniflow-imports"
+    s3_support_bucket: str = "omniflow-support"      # private bucket for support-ticket attachments
     s3_endpoint_url: str | None = None        # Set for MinIO in dev
     s3_use_path_style: bool = True
     vault_presigned_url_ttl_seconds: int = 900
@@ -189,6 +190,12 @@ class Settings(BaseSettings):
     minio_access_key: str = ""        # MinIO root user (minioadmin in dev)
     minio_secret_key: str = ""        # MinIO root password
     minio_bucket_name: str = "omniflow-media"   # Bucket for TTS audio + media
+
+    # ── Support (all optional: an empty value hides/disables the feature; never a made-up default) ──
+    support_whatsapp_number: str = ""        # E.164 of the real support WhatsApp line
+    support_zoom_url: str = ""               # real scheduling link (Calendly/Zoom)
+    support_docs_url: str = ""               # public documentation site
+    support_admin_api_key: str = ""          # enables the staff reply endpoint (header X-Support-Key); empty = disabled
 
     # ── Bulk import (properties / customers) ─────────────────────────────────
     import_max_file_mb: int = 20

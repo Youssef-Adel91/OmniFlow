@@ -101,7 +101,7 @@ function SectionCard({
           <Icon className="w-5 h-5 text-[#C9A84C]" />
           {title}
         </h2>
-        {hint && <p className="text-xs text-gray-500 mt-1.5 leading-relaxed">{hint}</p>}
+        {hint && <p className="text-xs text-gray-400 mt-1.5 leading-relaxed">{hint}</p>}
       </div>
       {children}
     </section>
@@ -121,7 +121,7 @@ function Field({
     <div>
       <label className="block text-sm font-medium text-gray-300 mb-2">{label}</label>
       {children}
-      {hint && <p className="text-xs text-gray-600 mt-1.5">{hint}</p>}
+      {hint && <p className="text-xs text-gray-400 mt-1.5">{hint}</p>}
     </div>
   );
 }
@@ -674,7 +674,7 @@ export default function KnowledgePage() {
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   {SOCIAL_PLATFORMS.map((platform) => (
                     <div key={platform.key}>
-                      <label className="block text-xs text-gray-500 mb-1.5">
+                      <label className="block text-xs text-gray-400 mb-1.5">
                         {platform.label}
                       </label>
                       <input
@@ -710,7 +710,7 @@ export default function KnowledgePage() {
                 <div className="text-center py-8 border border-dashed border-white/10 rounded-xl">
                   <HelpCircle className="w-8 h-8 text-gray-600 mx-auto mb-2" />
                   <p className="text-sm text-gray-400">لم تُضف أي سؤال شائع بعد.</p>
-                  <p className="text-xs text-gray-600 mt-1">
+                  <p className="text-xs text-gray-400 mt-1">
                     ابدأ بأكثر 5 أسئلة يسألها عملاؤك يومياً.
                   </p>
                 </div>
@@ -729,7 +729,7 @@ export default function KnowledgePage() {
                       type="button"
                       onClick={() => removeFaq(index)}
                       aria-label={`حذف السؤال ${index + 1}`}
-                      className="text-gray-500 hover:text-red-400 transition-colors flex items-center gap-1 text-xs"
+                      className="text-gray-400 hover:text-red-400 transition-colors flex items-center gap-1 text-xs"
                     >
                       <Trash2 className="w-3.5 h-3.5" />
                       حذف
@@ -767,7 +767,7 @@ export default function KnowledgePage() {
         {/* ── Save bar ───────────────────────────────────────────────────── */}
         <div className="sticky bottom-4 z-10">
           <div className="bg-[#111827]/95 backdrop-blur border border-white/10 rounded-2xl px-5 py-4 shadow-2xl flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-            <div className="text-xs text-gray-500">
+            <div className="text-xs text-gray-400">
               {profile.updated_at
                 ? `آخر تحديث: ${new Intl.DateTimeFormat("ar-SA", {
                     dateStyle: "medium",
@@ -855,7 +855,7 @@ export default function KnowledgePage() {
               <p className="text-sm text-gray-200 font-medium">
                 اسحب الملفات هنا أو اضغط للاختيار
               </p>
-              <p className="text-xs text-gray-600 mt-1.5">
+              <p className="text-xs text-gray-400 mt-1.5">
                 PDF، Word، Excel، أو نص عادي — يمكنك رفع أكثر من ملف دفعة واحدة.
               </p>
             </>
@@ -898,7 +898,7 @@ export default function KnowledgePage() {
             <div className="text-center py-12">
               <FileText className="w-10 h-10 text-gray-600 mx-auto mb-3" />
               <p className="text-gray-400 text-sm">لا توجد مستندات مرفوعة بعد.</p>
-              <p className="text-gray-600 text-xs mt-1">
+              <p className="text-gray-400 text-xs mt-1">
                 ابدأ برفع كتالوج مشاريعك أو ملف الأسئلة الشائعة.
               </p>
             </div>
@@ -918,7 +918,7 @@ export default function KnowledgePage() {
                         <p className="font-semibold text-gray-100 truncate">
                           {doc.title || doc.original_filename || "مستند بدون اسم"}
                         </p>
-                        <div className="flex items-center gap-3 mt-1.5 text-xs text-gray-500 flex-wrap">
+                        <div className="flex items-center gap-3 mt-1.5 text-xs text-gray-400 flex-wrap">
                           {doc.original_filename && doc.title && (
                             <span className="truncate max-w-[220px]">
                               {doc.original_filename}

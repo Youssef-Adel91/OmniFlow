@@ -83,7 +83,7 @@ function ToastContainer({
 function CharCounter({ value, limit }: { value: string; limit: number }) {
   const over = value.length > limit;
   return (
-    <span className={`text-xs ${over ? "text-red-400" : "text-gray-500"}`}>
+    <span className={`text-xs ${over ? "text-red-400" : "text-gray-400"}`}>
       {value.length.toLocaleString("ar")} / {limit.toLocaleString("ar")}
     </span>
   );
@@ -466,7 +466,7 @@ export default function OnboardingPage() {
               <div className="flex items-center justify-between mb-2">
                 <label className="block text-sm font-medium text-gray-300">
                   سياسات الشركة والأسئلة الشائعة{" "}
-                  <span className="text-gray-500 font-normal">(معلومات حقيقية عن عملك)</span>
+                  <span className="text-gray-400 font-normal">(معلومات حقيقية عن عملك)</span>
                 </label>
                 <CharCounter
                   value={businessProfile.detailedInstructions}
@@ -482,7 +482,7 @@ export default function OnboardingPage() {
                 placeholder="مثال: سياسة الاستبدال والاسترجاع خلال 14 يوم، مواعيد الشحن (2-5 أيام عمل)، أسعار المنتجات، كيفية الرد على استفسارات الضمان..."
                 className="w-full bg-[#0A0F1C] border border-white/10 rounded-lg py-3 px-4 text-white placeholder-gray-600 focus:outline-none focus:ring-2 focus:ring-[#C9A84C] focus:border-transparent transition-all resize-none"
               />
-              <p className="text-xs text-gray-500 mt-1.5">
+              <p className="text-xs text-gray-400 mt-1.5">
                 هذه المعلومات "الحقائق" — ما هو صحيح عن شركتك. لتحديد كيف يتحدث المساعد ويتعامل مع العملاء، استخدم الحقل التالي.
               </p>
             </div>
@@ -490,7 +490,7 @@ export default function OnboardingPage() {
               <div className="flex items-center justify-between mb-2">
                 <label className="block text-sm font-medium text-gray-300">
                   تعليمات خاصة لسلوك المساعد الذكي مع العملاء{" "}
-                  <span className="text-gray-500 font-normal">(اختياري)</span>
+                  <span className="text-gray-400 font-normal">(اختياري)</span>
                 </label>
                 <CharCounter
                   value={businessProfile.aiInstructions}
@@ -508,7 +508,7 @@ export default function OnboardingPage() {
                 }
                 className="w-full bg-[#0A0F1C] border border-white/10 rounded-lg py-3 px-4 text-white placeholder-gray-600 focus:outline-none focus:ring-2 focus:ring-[#C9A84C] focus:border-transparent transition-all resize-none"
               />
-              <p className="text-xs text-gray-500 mt-1.5">
+              <p className="text-xs text-gray-400 mt-1.5">
                 نغمة الحديث، كيفية التعامل مع تردد العميل أو اعتراضه على السعر، وكيفية توجيه المحادثة لإتمام عملية الشراء. هذا يغيّر فعلياً طريقة رد المساعد الذكي على عملائك — يمكنك تعديله في أي وقت من الإعدادات لاحقاً.
               </p>
             </div>
@@ -524,7 +524,7 @@ export default function OnboardingPage() {
                 className="w-full bg-[#0A0F1C] border border-white/10 rounded-lg py-3 px-4 text-gray-300 file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:bg-[#C9A84C]/10 file:text-[#C9A84C] file:cursor-pointer hover:file:bg-[#C9A84C]/20"
               />
               {knowledgeFiles.length > 0 && (
-                <p className="text-xs text-gray-500 mt-2">
+                <p className="text-xs text-gray-400 mt-2">
                   {knowledgeFiles.length} ملف جاهز للرفع — سيُرفع تلقائيًا بعد إتمام الربط، ويُعالج من قاعدة المعرفة (استخراج → تقسيم → فهرسة).
                 </p>
               )}
@@ -586,7 +586,7 @@ export default function OnboardingPage() {
               )}
             </button>
 
-            <p className="text-center text-xs text-gray-600 mt-4">
+            <p className="text-center text-xs text-gray-400 mt-4">
               سيتم التواصل معك خلال 24 ساعة عمل
             </p>
           </div>
@@ -618,7 +618,7 @@ export default function OnboardingPage() {
                   </p>
                 )}
                 {!facebookConnected.instagramUsername && (
-                  <p className="text-xs text-gray-500 mr-7 mt-1">
+                  <p className="text-xs text-gray-400 mr-7 mt-1">
                     لا يوجد حساب إنستجرام تجاري مرتبط بهذه الصفحة حاليًا — يمكنك
                     ربطه لاحقًا من إعدادات صفحتك على فيسبوك ثم إعادة الربط هنا.
                   </p>
@@ -642,7 +642,7 @@ export default function OnboardingPage() {
                       <span>
                         <span className="block font-medium text-white">{page.page_name}</span>
                         {page.instagram_username && (
-                          <span className="block text-xs text-gray-500">
+                          <span className="block text-xs text-gray-400">
                             @{page.instagram_username}
                           </span>
                         )}
@@ -687,7 +687,7 @@ export default function OnboardingPage() {
                 className={`w-4 h-4 transition-transform ${showManualWhatsappForm ? "rotate-180" : ""}`}
               />
             </button>
-            <p className="text-xs text-gray-600 mb-4">
+            <p className="text-xs text-gray-400 mb-4">
               واتساب لسه محتاج ربط يدوي حاليًا (Embedded Signup زي فيسبوك قريبًا).
             </p>
 
@@ -697,7 +697,7 @@ export default function OnboardingPage() {
               إذا كان لديك حساب Meta Business Manager موثق وأرقام جاهزة، يمكنك
               إدخال المفاتيح مباشرة للبدء فوراً.
             </p>
-            <p className="text-gray-500 text-sm leading-relaxed mb-6">
+            <p className="text-gray-400 text-sm leading-relaxed mb-6">
               القيم الثلاثة دي كلها بتلاقيها في نفس الصفحة:{" "}
               <a
                 href="https://developers.facebook.com/docs/whatsapp/cloud-api/get-started"
@@ -734,7 +734,7 @@ export default function OnboardingPage() {
                     dir="ltr"
                   />
                 </div>
-                <p className="text-xs text-gray-500 mt-1.5">
+                <p className="text-xs text-gray-400 mt-1.5">
                   توكن الوصول (Access Token) من نفس صفحة API Setup — توكن
                   مؤقت صالح 24 ساعة للتجربة، أو توكن دائم لو عندك System User
                   على Business Manager.
@@ -759,7 +759,7 @@ export default function OnboardingPage() {
                   }`}
                   dir="ltr"
                 />
-                <p className="text-xs text-gray-500 mt-1.5">
+                <p className="text-xs text-gray-400 mt-1.5">
                   معرّف تقني من ميتا لرقم واتساب الخاص بك — مش رقم التليفون
                   نفسه. موجود تحت "From" في صفحة API Setup.
                 </p>
@@ -783,7 +783,7 @@ export default function OnboardingPage() {
                   }`}
                   dir="ltr"
                 />
-                <p className="text-xs text-gray-500 mt-1.5">
+                <p className="text-xs text-gray-400 mt-1.5">
                   معرّف حساب الواتساب التجاري نفسه (WABA) — مختلف عن Phone
                   Number ID أعلاه. تلاقيه في نفس صفحة API Setup تحت اسم حسابك.
                 </p>

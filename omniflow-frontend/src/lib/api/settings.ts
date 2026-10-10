@@ -128,3 +128,153 @@ export const TIER_LABELS: Record<string, string> = {
   professional: "الباقة الاحترافية",
   enterprise:   "باقة المؤسسات",
 };
+
+// ══════════════════════════════════════════════════════════════════════════════
+// Preferences (business hours · human handoff · AI behaviour · identity)
+//   GET /settings/preferences            PUT /settings/preferences/{section}   (admin)
+// Channels
+//   GET /settings/channels   POST /settings/channels/{whatsapp|facebook}/check   POST /settings/channels/facebook/disconnect
+// Bot test
+//   POST /settings/ai/test
+// ══════════════════════════════════════════════════════════════════════════════
+
+export type DayKey = "sun" | "mon" | "tue" | "wed" | "thu" | "fri" | "sat";
+export const DAY_KEYS: DayKey[] = ["sun", "mon", "tue", "wed", "thu", "fri", "sat"];
+export const DAY_LABELS: Record<DayKey, string> = { sun: "الأحد", mon: "الإثنين", tue: "الثلاثاء", wed: "الأربعاء", thu: "الخميس", fri: "الجمعة", sat: "السبت" };
+
+export interface BusinessHours {
+  enabled: boolean;
+  timezone: string;
+  days: Partial<Record<DayKey, [string, string][]>>;
+  out_of_hours_message: string;
+}
+export interface HandoffPrefs {
+  auto_escalate: boolean;
+  keywords: string[];
+  on_low_confidence: boolean;
+  round_robin: boolean;
+  handoff_message: string;
+  sla_minutes: number;
+}
+export interface AiConstraints { no_price_without_inventory: boolean; no_legal_or_financial_advice: boolean; no_competitor_mentions: boolean; ask_budget_early: boolean }
+export interface AiBehavior {
+  tone: "formal" | "friendly" | "concise" | "persuasive";
+  dialect: "msa" | "saudi" | "gulf" | "egyptian";
+  language: "ar" | "en" | "auto";
+  welcome_message: string;
+  quick_replies: string[];
+  constraints: AiConstraints;
+}
+export interface IdentityPrefs { language: "ar" | "en"; timezone: string; currency: string }
+
+export type PrefSection = "business_hours" | "handoff" | "ai_behavior" | "identity";
+export interface PreferencesResponse {
+  preferences: { business_hours: BusinessHours; handoff: HandoffPrefs; ai_behavior: AiBehavior; identity: IdentityPrefs };
+  configured: Record<PrefSection, boolean>;
+  currencies: string[];
+  updated_at: string | null;
+}
+
+export const TONE_OPTIONS: { value: AiBehavior["tone"]; label: string }[] = [
+  { value: "friendly", label: "ودود وقريب" }, { value: "formal", label: "رسمي ومهذّب" },
+  { value: "concise", label: "مختصر ومباشر" }, { value: "persuasive", label: "مقنع (دون ضغط)" },
+];
+export const DIALECT_OPTIONS: { value: AiBehavior["dialect"]; label: string }[] = [
+  { value: "saudi", label: "سعودية بيضاء" }, { value: "gulf", label: "خليجية" }, { value: "msa", label: "فصحى مبسّطة" }, { value: "egyptian", label: "مصرية" },
+];
+export const LANGUAGE_OPTIONS: { value: AiBehavior["language"]; label: string }[] = [
+  { value: "ar", label: "العربية دائمًا" }, { value: "en", label: "الإنجليزية دائمًا" }, { value: "auto", label: "بلغة العميل" },
+];
+export const TIMEZONES: { value: string; label: string }[] = [
+  { value: "Asia/Riyadh", label: "الرياض (UTC+3)" }, { value: "Asia/Dubai", label: "دبي (UTC+4)" }, { value: "Asia/Kuwait", label: "الكويت (UTC+3)" },
+  { value: "Asia/Qatar", label: "الدوحة (UTC+3)" }, { value: "Asia/Bahrain", label: "المنامة (UTC+3)" }, { value: "Africa/Cairo", label: "القاهرة" },
+  { value: "Europe/London", label: "لندن" }, { value: "UTC", label: "UTC" },
+];
+export const CURRENCY_LABELS: Record<string, string> = {
+  SAR: "ريال سعودي (SAR)", AED: "درهم إماراتي (AED)", KWD: "دينار كويتي (KWD)", QAR: "ريال قطري (QAR)", BHD: "دينار بحريني (BHD)",
+  OMR: "ريال عُماني (OMR)", EGP: "جنيه مصري (EGP)", USD: "دولار أمريكي (USD)", EUR: "يورو (EUR)",
+};
+
+export async function fetchPreferences(): Promise<PreferencesResponse> {
+  const { data } = await apiClient.get<PreferencesResponse>("/settings/preferences");
+  return data;
+}
+
+export async function savePreferences<S extends PrefSection>(section: S, value: PreferencesResponse["preferences"][S]): Promise<PreferencesResponse["preferences"][S]> {
+  const { data } = await apiClient.put<{ section: S; value: PreferencesResponse["preferences"][S] }>(`/settings/preferences/${section}`, value);
+  return data.value;
+}
+
+export interface WhatsappChannel {
+  connected: boolean; phone_number_id: string | null; waba_id: string | null; display_phone_number: string | null; token: string | null;
+  templates_ready: boolean; last_inbound_at: string | null; issues: string[];
+}
+export interface FacebookChannel {
+  connected: boolean; page_id: string | null; instagram_account_id: string | null; messenger: boolean; instagram: boolean;
+  last_inbound_at: string | null; issues: string[];
+}
+export interface ChannelsStatus { whatsapp: WhatsappChannel; facebook: FacebookChannel }
+export interface ChannelCheck { ok: boolean; detail: string; checked_at: string; needs_reconnect?: boolean; info?: Record<string, string> }
+
+export async function fetchChannels(): Promise<ChannelsStatus> {
+  const { data } = await apiClient.get<ChannelsStatus>("/settings/channels");
+  return data;
+}
+export async function checkChannel(channel: "whatsapp" | "facebook"): Promise<ChannelCheck> {
+  const { data } = await apiClient.post<ChannelCheck>(`/settings/channels/${channel}/check`, undefined, { timeout: 20_000 });
+  return data;
+}
+export async function disconnectFacebook(): Promise<{ connected: boolean; note: string }> {
+  const { data } = await apiClient.post<{ connected: boolean; note: string }>("/settings/channels/facebook/disconnect");
+  return data;
+}
+export async function testBot(message: string): Promise<{ reply: string; model: string | null; latency_ms: number; note: string }> {
+  const { data } = await apiClient.post("/settings/ai/test", { message }, { timeout: 60_000 });
+  return data;
+}
+
+// ── Pure helpers (unit-tested) ──────────────────────────────────────────────
+
+export const sameJson = (a: unknown, b: unknown): boolean => JSON.stringify(a) === JSON.stringify(b);
+
+/** Client-side mirror of the server rules, so the form can explain the problem before saving. Returns Arabic messages. */
+export function validateHours(h: BusinessHours): string[] {
+  const errors: string[] = [];
+  let anyOpen = false;
+  for (const day of DAY_KEYS) {
+    const rows = [...(h.days[day] ?? [])].sort((a, b) => a[0].localeCompare(b[0]));
+    rows.forEach(([s, e]) => {
+      anyOpen = true;
+      if (!/^([01]\d|2[0-3]):[0-5]\d$/.test(s) || !/^([01]\d|2[0-3]):[0-5]\d$/.test(e)) errors.push(`${DAY_LABELS[day]}: صيغة الوقت غير صحيحة`);
+      else if (s >= e) errors.push(`${DAY_LABELS[day]}: نهاية الفترة (${e}) يجب أن تكون بعد بدايتها (${s})`);
+    });
+    for (let i = 1; i < rows.length; i++) if (rows[i][0] < rows[i - 1][1]) errors.push(`${DAY_LABELS[day]}: فترات متداخلة`);
+  }
+  if (h.enabled && !anyOpen) errors.push("فعّلت ساعات العمل لكن كل الأيام مغلقة");
+  return errors;
+}
+
+/** "الأحد–الخميس 09:00–17:00 · الجمعة مغلق" style summary used under the hours editor. */
+export function summarizeHours(h: BusinessHours): string {
+  if (!h.enabled) return "ساعات العمل غير مفعّلة: يعتبر النظام أنكم متاحون دائمًا.";
+  const parts = DAY_KEYS.map((d) => ({ d, key: (h.days[d] ?? []).map(([s, e]) => `${s}–${e}`).join("، ") }));
+  const groups: { days: DayKey[]; key: string }[] = [];
+  for (const p of parts) {
+    const last = groups[groups.length - 1];
+    if (last && last.key === p.key) last.days.push(p.d); else groups.push({ days: [p.d], key: p.key });
+  }
+  return groups.map((g) => `${g.days.length > 1 ? `${DAY_LABELS[g.days[0]]}–${DAY_LABELS[g.days[g.days.length - 1]]}` : DAY_LABELS[g.days[0]]} ${g.key || "مغلق"}`).join(" · ");
+}
+
+export function parseKeywords(raw: string): string[] {
+  return Array.from(new Set(raw.split(/[\n,،;]+/).map((k) => k.trim()).filter(Boolean)));
+}
+
+/** Arabic message from the backend's structured errors ({detail: {code, message}} / string / validation list). */
+export function settingsErrorMessage(err: unknown, fallback = "حدث خطأ غير متوقع"): string {
+  const detail = (err as { response?: { data?: { detail?: unknown } } })?.response?.data?.detail;
+  if (typeof detail === "string") return detail;
+  if (detail && typeof detail === "object" && !Array.isArray(detail) && "message" in detail) return String((detail as { message: unknown }).message);
+  if (Array.isArray(detail) && detail[0]?.msg) return String(detail[0].msg);
+  return (err as Error)?.message || fallback;
+}

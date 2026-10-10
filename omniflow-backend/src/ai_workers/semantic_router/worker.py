@@ -327,6 +327,19 @@ class SemanticRouterWorker(BaseKafkaConsumer):
             logger.debug("semantic_router_human_active", event_id=str(event.event_id))
             return base
 
+        # ── Rule 2b: tenant-configured handoff keywords ("أبغى أكلم موظف") ────────
+        from src.shared.services import tenant_prefs as _prefs
+
+        tenant_prefs = await _prefs.get_prefs(tenant_id)
+        kw = _prefs.match_handoff_keyword(event.text_content, tenant_prefs["handoff"]["keywords"]) \
+            if tenant_prefs["handoff"]["auto_escalate"] else None
+        if kw:
+            base.target_tier = RoutingTier.HUMAN_ESCALATION
+            base.route_reason = f"tenant_handoff_keyword:{kw}"[:200]
+            base.skip_llm = True
+            logger.info("semantic_router_handoff_keyword", tenant_id=str(tenant_id), keyword=kw)
+            return base
+
         # ── Rules 3-7: SemanticClassifier ─────────────────────────────────────
         # Fetch recent history for context-aware classification
         history: list[dict] = []
@@ -385,7 +398,9 @@ class SemanticRouterWorker(BaseKafkaConsumer):
         base.skip_llm = classification.skip_llm
 
         # ── Rule 8: Escalate if confidence is below threshold ─────────────────
-        if classification.escalate_to_human:
+        if classification.escalate_to_human and not tenant_prefs["handoff"]["on_low_confidence"]:
+            logger.info("semantic_router_low_confidence_escalation_disabled", tenant_id=str(tenant_id))
+        elif classification.escalate_to_human:
             base.target_tier = RoutingTier.HUMAN_ESCALATION
             base.route_reason = f"low_confidence_escalation ({classification.confidence:.2f})"
             base.skip_llm = True

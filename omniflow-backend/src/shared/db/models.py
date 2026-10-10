@@ -1489,6 +1489,23 @@ class ImportJob(Base, TimestampMixin, TenantScopedMixin):
     finished_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
 
 
+class TenantPreferences(Base):
+    """Per-tenant operating preferences (one row per tenant; sections are validated JSON, defaults live in code).
+    business_hours / handoff / ai_behavior / identity -- see shared/services/tenant_prefs.py. Tenant RLS."""
+    __tablename__ = "tenant_preferences"
+
+    tenant_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("tenants.tenant_id", ondelete="CASCADE"), primary_key=True,
+        comment="RLS partition key — must match app.current_tenant_id",
+    )
+    business_hours: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict, server_default="{}")
+    handoff: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict, server_default="{}")
+    ai_behavior: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict, server_default="{}")
+    identity: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict, server_default="{}")
+    updated_by: Mapped[Optional[uuid.UUID]] = mapped_column(UUID(as_uuid=True), nullable=True)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+
 class AuditLog(Base, TenantScopedMixin):
     """Append-only record of sensitive actions (who, what, how many, when). Tenant RLS."""
     __tablename__ = "audit_logs"

@@ -260,8 +260,23 @@ class LLMInvokerWorker(BaseKafkaConsumer):
         # ── 2. Non-LLM fast paths ─────────────────────────────────────────────
         if tier == RoutingTier.HUMAN_ESCALATION or (decision.skip_llm and tier != RoutingTier.L0_SEMANTIC_CACHE):
             log.info("llm_invoker_skipped_human_route", reason=decision.route_reason)
-            # Human routing — do NOT call LLM, do NOT publish to outgoing.
-            # The Human Takeover service handles this (Sprint 8).
+            # Human routing — do NOT call LLM. The conversation is handed to a person per the tenant's handoff
+            # preferences (status -> ESCALATED, round-robin assignment, handoff / out-of-hours message). Previously
+            # this was a bare `return`: the conversation stayed AI_ACTIVE and the customer got no reply at all.
+            if decision.target_tier == RoutingTier.HUMAN_ESCALATION and decision.conversation_id:
+                try:
+                    from src.shared.services.handoff import perform_handoff
+
+                    result = await perform_handoff(tenant_id, decision.conversation_id, reason=decision.route_reason or "")
+                    if result.applied:
+                        await redis_mgr.publish_sse(
+                            tenant_id=tenant_id, event_type="conversation_update",
+                            data={"id": str(decision.conversation_id), "status": ConversationStatus.ESCALATED.value, "is_ai_active": False,
+                                  "assigned_agent_id": str(result.agent_id) if result.agent_id else None})
+                        if result.text:
+                            await self._publish_outbound(decision=decision, text=result.text, llm_response=None, latency_ms=0)
+                except Exception as exc:  # noqa: BLE001 - a handoff problem must not poison the Kafka message
+                    log.error("llm_invoker_handoff_failed", error=str(exc)[:200])
             return
 
         if tier == RoutingTier.L0_SEMANTIC_CACHE:

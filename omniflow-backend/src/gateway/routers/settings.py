@@ -412,3 +412,192 @@ async def upload_logo_endpoint(
         size_bytes=len(file_bytes),
     )
     return LogoUploadResponse(logo_url=logo_url)
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# Preferences: business hours / handoff / AI behaviour / identity
+#     GET /api/v1/settings/preferences            → all four sections merged over defaults (+ `configured` flags)
+#     PUT /api/v1/settings/preferences/{section}  → replace one section (admin only, validated, audit-logged)
+# ══════════════════════════════════════════════════════════════════════════════
+from datetime import datetime, timezone  # noqa: E402
+from typing import Any  # noqa: E402
+
+from sqlalchemy import func  # noqa: E402
+
+from src.shared.db.models import AuditLog, Conversation, Message, TenantPreferences  # noqa: E402
+from src.shared.services import tenant_prefs as prefs_svc  # noqa: E402
+
+
+@router.get("/preferences", summary="Business hours, handoff, AI behaviour and identity preferences")
+async def get_preferences(user: CurrentUser, session: AuthTenantSession) -> dict[str, Any]:
+    row = await session.scalar(select(TenantPreferences).where(TenantPreferences.tenant_id == user.tenant_id))
+    return {
+        "preferences": {s: prefs_svc.with_defaults(s, getattr(row, s) if row else None) for s in prefs_svc.SECTIONS},
+        "configured": {s: bool(row and getattr(row, s)) for s in prefs_svc.SECTIONS},
+        "defaults": prefs_svc.all_defaults(),
+        "days": [{"key": d, "label": prefs_svc.DAY_LABELS_AR[d]} for d in prefs_svc.DAYS],
+        "currencies": list(prefs_svc.CURRENCIES),
+        "updated_at": row.updated_at.isoformat() if row and row.updated_at else None,
+    }
+
+
+@router.put("/preferences/{section}", summary="Replace one preferences section (admin only)")
+async def put_preferences(user: CurrentUser, session: AuthTenantSession, section: str, body: dict[str, Any]) -> dict[str, Any]:
+    _require_admin(user)
+    if section not in prefs_svc.SECTIONS:
+        raise HTTPException(status_code=404, detail={"code": "NOT_FOUND", "message": f"قسم غير معروف: {section}"})
+    try:
+        clean = prefs_svc.validate_section(section, body)
+    except ValueError as exc:                              # pydantic.ValidationError is a ValueError
+        msgs = [str(e.get("msg", "")).removeprefix("Value error, ") for e in getattr(exc, "errors", lambda: [])()] or [str(exc)]
+        raise HTTPException(status_code=422, detail={"code": "INVALID_PREFERENCES", "message": "؛ ".join(m for m in msgs if m)[:500]}) from exc
+    row = await session.scalar(select(TenantPreferences).where(TenantPreferences.tenant_id == user.tenant_id))
+    if row is None:
+        row = TenantPreferences(tenant_id=user.tenant_id)
+        session.add(row)
+    setattr(row, section, clean)
+    row.updated_by = getattr(user, "user_id", None)
+    row.updated_at = datetime.now(timezone.utc)
+    session.add(AuditLog(tenant_id=user.tenant_id, actor_user_id=getattr(user, "user_id", None), action=f"settings.{section}_updated",
+                         entity_type="tenant_preferences", entity_id=str(user.tenant_id), details={"fields": sorted(clean)}))
+    await session.flush()
+    prefs_svc.invalidate(user.tenant_id)
+    invalidate_company_context(user.tenant_id)             # the persona embeds the AI-behaviour block
+    logger.info("tenant_preferences_updated", tenant_id=str(user.tenant_id), section=section)
+    return {"section": section, "value": clean}
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# Channels: status, live health check, disconnect Facebook/Instagram
+#     GET  /api/v1/settings/channels
+#     POST /api/v1/settings/channels/{whatsapp|facebook}/check
+#     POST /api/v1/settings/channels/facebook/disconnect   (admin)
+# ══════════════════════════════════════════════════════════════════════════════
+import httpx  # noqa: E402
+
+_GRAPH = "https://graph.facebook.com"
+
+
+def _page_token(tenant: Tenant) -> str | None:
+    from src.shared.security.crypto import decrypt_secret
+
+    raw = tenant.instagram_page_access_token
+    if not raw:
+        return None
+    try:
+        dec = decrypt_secret(raw)
+    except Exception:  # noqa: BLE001
+        dec = None
+    return dec if dec is not None else raw
+
+
+async def _last_inbound(session, channels: tuple[str, ...]) -> Optional[str]:
+    ts = await session.scalar(
+        select(func.max(Message.created_at)).select_from(Message).join(Conversation, Conversation.conversation_id == Message.conversation_id)
+        .where(Message.sender_type == "customer", Conversation.channel.in_(channels)))
+    return ts.isoformat() if ts else None
+
+
+@router.get("/channels", summary="Connection status of every channel")
+async def channels_status(user: CurrentUser, session: AuthTenantSession) -> dict[str, Any]:
+    t = await _load_tenant(session, user.tenant_id)
+    wa_connected = bool(t.whatsapp_phone_number_id and t.meta_access_token)
+    fb_connected = bool(t.instagram_page_id and t.instagram_page_access_token)
+    return {
+        "whatsapp": {
+            "connected": wa_connected, "phone_number_id": t.whatsapp_phone_number_id, "waba_id": t.whatsapp_waba_id,
+            "display_phone_number": t.whatsapp_display_phone_number, "token": _mask_secret(t.meta_access_token),
+            "templates_ready": bool(wa_connected and t.whatsapp_waba_id),
+            "last_inbound_at": await _last_inbound(session, ("whatsapp",)),
+            "issues": [m for ok, m in ((wa_connected, "لم يُربط رقم واتساب (معرّف الرقم + رمز الوصول)."),
+                                       (not wa_connected or bool(t.whatsapp_waba_id), "معرّف حساب واتساب للأعمال (WABA ID) غير مُدخل — لا تظهر قوالب الحملات."),
+                                       (not wa_connected or bool(t.whatsapp_display_phone_number), "رقم العرض (لبطاقة التواصل) غير مُدخل.")) if not ok],
+        },
+        "facebook": {
+            "connected": fb_connected, "page_id": t.instagram_page_id, "instagram_account_id": t.instagram_account_id,
+            "messenger": fb_connected, "instagram": bool(fb_connected and t.instagram_account_id),
+            "last_inbound_at": await _last_inbound(session, ("instagram", "messenger")),
+            "issues": [m for ok, m in ((fb_connected, "لم تُربط صفحة فيسبوك (ماسنجر/إنستجرام)."),
+                                       (not fb_connected or bool(t.instagram_account_id), "الصفحة غير مرتبطة بحساب إنستجرام احترافي — رسائل إنستجرام لن تصل.")) if not ok],
+        },
+    }
+
+
+@router.post("/channels/{channel}/check", summary="Live connection check against Meta")
+async def check_channel(user: CurrentUser, session: AuthTenantSession, channel: str) -> dict[str, Any]:
+    t = await _load_tenant(session, user.tenant_id)
+    if channel == "whatsapp":
+        if not (t.whatsapp_phone_number_id and t.meta_access_token):
+            return {"ok": False, "detail": "واتساب غير مربوط.", "checked_at": datetime.now(timezone.utc).isoformat()}
+        url, token, fields = f"{_GRAPH}/{_settings.meta_graph_api_version}/{t.whatsapp_phone_number_id}", t.meta_access_token, "display_phone_number,verified_name,quality_rating"
+    elif channel == "facebook":
+        token = _page_token(t)
+        if not (t.instagram_page_id and token):
+            return {"ok": False, "detail": "صفحة فيسبوك غير مربوطة.", "checked_at": datetime.now(timezone.utc).isoformat()}
+        url, fields = f"{_GRAPH}/{_settings.meta_graph_api_version}/{t.instagram_page_id}", "name"
+    else:
+        raise HTTPException(status_code=404, detail={"code": "NOT_FOUND", "message": "قناة غير معروفة"})
+    try:
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            resp = await client.get(url, params={"fields": fields}, headers={"Authorization": f"Bearer {token}"})
+    except httpx.HTTPError as exc:
+        return {"ok": False, "detail": f"تعذّر الاتصال بـ Meta ({type(exc).__name__}).", "checked_at": datetime.now(timezone.utc).isoformat()}
+    now = datetime.now(timezone.utc).isoformat()
+    if resp.status_code == 200:
+        data = resp.json()
+        return {"ok": True, "detail": "الاتصال سليم.", "checked_at": now,
+                "info": {k: data.get(k) for k in ("display_phone_number", "verified_name", "quality_rating", "name") if data.get(k)}}
+    try:
+        err = resp.json().get("error", {})
+    except Exception:  # noqa: BLE001
+        err = {}
+    expired = err.get("code") in (190, 102) or resp.status_code == 401
+    return {"ok": False, "checked_at": now, "needs_reconnect": expired,
+            "detail": ("انتهت صلاحية رمز الوصول — أعد الربط." if expired else f"رفضت Meta الطلب ({resp.status_code}): {str(err.get('message', ''))[:160]}")}
+
+
+@router.post("/channels/facebook/disconnect", summary="Disconnect the Facebook page (Messenger + Instagram) from this workspace")
+async def disconnect_facebook(user: CurrentUser, session: AuthTenantSession) -> dict[str, Any]:
+    _require_admin(user)
+    t = await _load_tenant(session, user.tenant_id)
+    had = bool(t.instagram_page_id)
+    t.instagram_page_id = t.instagram_page_access_token = t.instagram_account_id = None
+    session.add(AuditLog(tenant_id=user.tenant_id, actor_user_id=getattr(user, "user_id", None), action="channel.facebook_disconnected",
+                         entity_type="tenant", entity_id=str(user.tenant_id), details={"had_connection": had}))
+    await session.flush()
+    logger.info("facebook_channel_disconnected", tenant_id=str(user.tenant_id))
+    return {"connected": False, "note": "فُصل الربط عن OmniFlow. لإيقاف تسليم Meta بالكامل أزل التطبيق من إعدادات الصفحة في فيسبوك."}
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# POST /api/v1/settings/ai/test — try the bot with the tenant's real persona (no customer is contacted)
+# ══════════════════════════════════════════════════════════════════════════════
+
+class AiTestBody(BaseModel):
+    message: str = Field(..., min_length=1, max_length=1000)
+
+
+@router.post("/ai/test", summary="Ask the bot a question with this workspace's persona + company profile (admin/agent)")
+async def ai_test(user: CurrentUser, session: AuthTenantSession, body: AiTestBody) -> dict[str, Any]:
+    if user.role == TenantUserRole.AUDITOR:
+        raise HTTPException(status_code=403, detail={"code": "FORBIDDEN", "message": "المدقق لا يستطيع تجربة البوت."})
+    from src.ai_engine.company_context import compose_system_prompt, get_company_context, get_tenant_persona
+    from src.shared.core.enums import RoutingTier
+
+    persona = (await get_tenant_persona(user.tenant_id)) or "أنت مساعد مبيعات عقارية محترف."
+    system_prompt = compose_system_prompt(persona, await get_company_context(user.tenant_id))
+    try:
+        from src.ai_workers.llm_invoker.client import gemini_client
+
+        if not getattr(gemini_client, "_configured", False):
+            gemini_client.configure()
+        started = datetime.now(timezone.utc)
+        resp = await gemini_client.generate_response(
+            messages=[{"role": "user", "parts": [body.message.strip()]}], tier=RoutingTier.L1_TRIAGE,
+            system_prompt=system_prompt, tenant_context={}, rag_context=None)
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("ai_test_failed", tenant_id=str(user.tenant_id), error=str(exc)[:200])
+        raise HTTPException(status_code=502, detail={"code": "AI_UNAVAILABLE", "message": "تعذّر الوصول لمزوّد الذكاء الاصطناعي. تحقق من إعداد المفتاح ثم أعد المحاولة."}) from exc
+    return {"reply": resp.text, "model": getattr(resp, "model_used", None),
+            "latency_ms": int((datetime.now(timezone.utc) - started).total_seconds() * 1000),
+            "note": "تجربة داخلية: لا تُرسل لأي عميل ولا تُحفظ، ولا تتضمن بحث العقارات (RAG)."}

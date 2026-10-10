@@ -36,7 +36,7 @@ from __future__ import annotations
 
 import asyncio
 import uuid
-from typing import Any
+from typing import Any, NamedTuple
 
 import structlog
 
@@ -114,7 +114,7 @@ async def _embed_text(text: str) -> list[float]:
     from src.ai_workers.rag_engine.embedder import embedder
 
     if not embedder.is_configured:
-        embedder.configure()
+        await asyncio.to_thread(embedder.configure)   # may download/load a local model: keep it off the loop
 
     vector = await embedder.embed_query(text)
     logger.debug(
@@ -227,26 +227,10 @@ async def sync_listing_to_qdrant(
         vector = await _embed_text(text)
 
         # ── Step 3: Build Qdrant payload ────────────────────────────────────
-        payload: dict[str, Any] = {
-            "tenant_id":      str(tenant_id),
-            "listing_id":     listing_id_str,
-            "rega_ad_number": listing.rega_ad_number,
-            "property_type":  str(listing.property_type),
-            "price_sar":      float(listing.price) if listing.price is not None else None,
-            "area_sqm":       float(listing.area_sqm) if listing.area_sqm is not None else None,
-            "bedrooms":       listing.bedrooms,
-            "bathrooms":      listing.bathrooms,
-            "city":           listing.city,
-            "district":       listing.district,
-            "latitude":       listing.latitude,
-            "longitude":      listing.longitude,
-            "status":         str(listing.status),
-            "summary":        text[:500],  # First 500 chars — injected into LLM prompts
-        }
+        payload = _listing_payload(listing, tenant_id, text)
 
         # ── Step 4: Upsert to Qdrant ────────────────────────────────────────
-        # QdrantManager.start() must already be called at app startup.
-        # It calls _ensure_collection_exists() so the first upsert is safe.
+        await qdrant_mgr.ensure_started()
         await qdrant_mgr.upsert_property_listing(
             tenant_id=tenant_id,
             listing_id=listing_id_str,
@@ -276,6 +260,76 @@ async def sync_listing_to_qdrant(
         )
 
 
+def _listing_payload(listing: PropertyListing, tenant_id: uuid.UUID, text: str) -> dict[str, Any]:
+    return {
+        "tenant_id":      str(tenant_id),
+        "listing_id":     str(listing.listing_id),
+        "rega_ad_number": listing.rega_ad_number,
+        "property_type":  str(listing.property_type),
+        "price_sar":      float(listing.price) if listing.price is not None else None,
+        "area_sqm":       float(listing.area_sqm) if listing.area_sqm is not None else None,
+        "bedrooms":       listing.bedrooms,
+        "bathrooms":      listing.bathrooms,
+        "city":           listing.city,
+        "district":       listing.district,
+        "latitude":       listing.latitude,
+        "longitude":      listing.longitude,
+        "status":         str(listing.status),
+        "summary":        text[:500],
+    }
+
+
+class IndexResult(NamedTuple):
+    """Outcome of a batch index: the listing ids that made it into Qdrant, and why the rest did not."""
+    ids: list[str]
+    error: str | None = None
+
+
+def describe_index_error(exc: BaseException) -> str:
+    """The real cause, as text the UI can show ("RuntimeError: QdrantManager not started ...")."""
+    msg = str(exc).strip()
+    return (f"{type(exc).__name__}: {msg}" if msg else type(exc).__name__)[:300]
+
+
+async def sync_listings_batch(listings: list[PropertyListing], tenant_id: uuid.UUID) -> IndexResult:
+    """
+    Embed and upsert many listings at once (bulk import / re-index). Never raises: an outage must not
+    fail the caller. The failure is NOT swallowed silently any more -- it is logged and returned in
+    `IndexResult.error` so it reaches the job row and the UI whatever the cause is.
+    """
+    if not listings:
+        return IndexResult([])
+    try:
+        from src.ai_workers.rag_engine.embedder import embedder
+
+        if not embedder.is_configured:
+            await asyncio.to_thread(embedder.configure)
+        texts = [_build_listing_text(item) for item in listings]
+        vectors = await embedder.embed_batch(texts)
+        if len(vectors) != len(listings):
+            raise RuntimeError(f"embedder returned {len(vectors)} vectors for {len(listings)} listings")
+        points = [
+            (str(item.listing_id), vec, _listing_payload(item, tenant_id, text))
+            for item, vec, text in zip(listings, vectors, texts)
+        ]
+        await qdrant_mgr.ensure_started()
+        await qdrant_mgr.upsert_property_listings(tenant_id, points)
+        return IndexResult([p[0] for p in points])
+    except Exception as exc:  # noqa: BLE001
+        logger.error("vector_sync_batch_failed", tenant_id=str(tenant_id), count=len(listings),
+                     error=str(exc), exc_type=type(exc).__name__)
+        return IndexResult([], describe_index_error(exc))
+
+
+async def delete_listings_from_qdrant(listing_ids: list[str], tenant_id: uuid.UUID) -> None:
+    """Remove many listing vectors (bulk delete). Never raises (same contract as the single delete)."""
+    try:
+        await qdrant_mgr.ensure_started()
+        await qdrant_mgr.delete_property_listings(tenant_id, listing_ids)
+    except Exception as exc:  # noqa: BLE001
+        logger.error("vector_delete_batch_failed", tenant_id=str(tenant_id), count=len(listing_ids), error=str(exc))
+
+
 async def delete_listing_from_qdrant(
     listing_id: str,
     tenant_id: uuid.UUID,
@@ -286,6 +340,7 @@ async def delete_listing_from_qdrant(
     Also fire-and-forget safe — errors are logged, not propagated.
     """
     try:
+        await qdrant_mgr.ensure_started()
         await qdrant_mgr.delete_property_listing(
             tenant_id=tenant_id,
             listing_id=listing_id,

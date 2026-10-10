@@ -320,6 +320,27 @@ async def require_property_write_role(user: CurrentUser) -> TenantUser:
 PropertyWriteUser = Annotated[TenantUser, Depends(require_property_write_role)]
 
 
+def can_activate_listings(user: TenantUser) -> bool:
+    """
+    Marking listings VERIFIED_ACTIVE without REGA verification is the highest-trust property action.
+    The role model has admin > agent > auditor and no separate "owner" (the first user of a tenant is
+    its admin), so the highest role -- admin -- is the only one allowed.
+    """
+    return user.role == TenantUserRole.ADMIN
+
+
+def require_listing_activation_role(user: Annotated[TenantUser, Depends(require_property_write_role)]) -> TenantUser:
+    if not can_activate_listings(user):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail={"code": "FORBIDDEN", "message": "تفعيل العقارات دون تحقق الهيئة متاح للمدير (admin) فقط."},
+        )
+    return user
+
+
+PropertyActivateUser = Annotated[TenantUser, Depends(require_listing_activation_role)]
+
+
 # ══════════════════════════════════════════════════════════════════════════════
 # 6. PropertyListing Repository Provider
 #

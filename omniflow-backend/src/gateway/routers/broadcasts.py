@@ -28,7 +28,7 @@ from typing import Annotated, Any, Optional
 
 import structlog
 from fastapi import APIRouter, HTTPException, Path, Query, status
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 from sqlalchemy import func, select
 
 from src.gateway.dependencies import AuthTenantSession, CurrentUser, MarketingWriteUser
@@ -75,6 +75,12 @@ class CampaignItem(BaseModel):
     last_error: Optional[str] = None
     created_at: datetime
     updated_at: datetime
+
+    @field_validator("target_audience", mode="before")
+    @classmethod
+    def _legacy_audience(cls, v: Any) -> Any:
+        """Rows written by the old composer hold a bare string ("all_vip"); show them instead of failing the whole list."""
+        return {"segment": v} if isinstance(v, str) else v
 
 
 class AudiencePreview(BaseModel):

@@ -199,6 +199,17 @@ class BroadcastDbTests(unittest.IsolatedAsyncioTestCase):
             moved = await c.post(f"{BASE}/{cid}/schedule", json={"confirmed_recipients": 2, "scheduled_at": (datetime.now(timezone.utc) + timedelta(days=2)).isoformat()})
             self.assertEqual((moved.status_code, moved.json()["status"]), (200, "scheduled"))                    # a scheduled campaign may be moved
 
+    async def test_legacy_string_audience_rows_do_not_break_the_list_and_cannot_be_sent(self):
+        async with self.Admin() as s:
+            await s.execute(self.text("INSERT INTO broadcast_campaigns (campaign_id,tenant_id,title,message_template,target_audience,status,template_language,template_params,send_rate_per_second,created_at,updated_at) "
+                                      "VALUES (:i,:t,'قديمة','x',CAST('\"villa_seekers\"' AS jsonb),'draft','ar','[]',20,now(),now())"), {"i": uuid.uuid4(), "t": self.tenants[0]})
+            await s.commit()
+        await self.connect_whatsapp()
+        async with client_for(self.app) as c:
+            r = await c.get(BASE)
+            self.assertEqual((r.status_code, r.json()["items"][0]["target_audience"]), (200, {"segment": "villa_seekers"}))
+            self.assertEqual((await c.post(f"{BASE}/{r.json()['items'][0]['campaign_id']}/schedule", json={})).status_code, 422)   # template/audience gates
+
     async def test_cancel_and_audit_trail(self):
         await self.seed_audience()
         await self.connect_whatsapp()

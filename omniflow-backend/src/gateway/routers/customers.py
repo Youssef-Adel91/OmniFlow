@@ -514,6 +514,10 @@ async def update_customer(
             await svc.audit(session, tenant_id=user.tenant_id, actor_id=actor, customer_id=customer_id,
                             action="customer.archived" if archived else "customer.restored")
     for field, value in updates.items():
+        if field in ("tags", "is_vip", "is_processing_restricted") and value is None:
+            continue                                         # NOT NULL columns: null means "leave as is"
+        if field in ("display_name", "email", "city", "notes") and isinstance(value, str):
+            value = value.strip() or None                    # an emptied field is stored as NULL, not ''
         setattr(customer, field, value)
 
     await session.flush()

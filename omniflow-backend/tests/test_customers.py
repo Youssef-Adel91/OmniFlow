@@ -67,6 +67,8 @@ class PhoneAndSchemaTests(unittest.TestCase):
         self.assertEqual((c.contact_key_for("whatsapp"), c.contact_key_for("instagram"), c.contact_key_for("messenger"),
                           c.contact_key_for("tiktok"), c.contact_key_for(None)),
                          ("+966501234567", "1784", "99", "+966501234567", "+966501234567"))
+        merged = Customer(unified_phone="1784", phone_e164="+966501234567", channel_user_ids={"instagram": "1784"})
+        self.assertEqual((merged.contact_key_for("whatsapp"), merged.contact_key_for("instagram")), ("+966501234567", "1784"))
 
     def test_options_validation(self):
         o = cimp.normalize_options(None)
@@ -165,7 +167,7 @@ class CustomersDbTests(unittest.IsolatedAsyncioTestCase):
             ok = await c.post(f"{BASE}", json={"phone": "0555555555", "marketing_opt_in": True})
             self.assertEqual((ok.json()["marketing_opt_in"], ok.json()["opt_in_source"]), (True, "manual"))
             self.assertIsNotNone(ok.json()["opt_in_at"])
-        actions = [a["action"] for a in await self.audit()]
+        actions = sorted(a["action"] for a in await self.audit())          # same-transaction rows share a timestamp
         self.assertEqual(actions, ["customer.created", "customer.created", "customer.opt_in_granted"])
 
     async def test_roles_agent_writes_auditor_reads_only_delete_is_admin_only(self):
@@ -215,6 +217,8 @@ class CustomersDbTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual((r.status_code, r.json()["detail"]["existing_customer_id"]), (409, str(wa)))
             r = await c.patch(f"{BASE}/{ig}", json={"phone": "0599999999"})
             self.assertEqual((r.status_code, r.json()["phone_e164"], r.json()["unified_phone"]), (200, "+966599999999", "1784000000001"))
+            r = await c.patch(f"{BASE}/{wa}", json={"email": "", "city": "  ", "notes": "", "display_name": " ", "tags": None})
+            self.assertEqual((r.status_code, r.json()["email"], r.json()["city"], r.json()["notes"], r.json()["tags"]), (200, None, None, None, []))
             r = await c.patch(f"{BASE}/{wa}", json={"marketing_opt_in": True})
             self.assertTrue(r.json()["marketing_opt_in"])
             r = await c.patch(f"{BASE}/{wa}", json={"marketing_opt_in": False})

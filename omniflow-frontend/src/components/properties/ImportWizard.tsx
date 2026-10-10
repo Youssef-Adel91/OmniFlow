@@ -8,6 +8,10 @@
  *                 defaults for blank cells, and what to do with duplicate REGA numbers
  *   3. preview    dry run: counts, first 50 rows, issues -- nothing is written yet
  *   4. progress   background import with live counters, cancel, and the error report
+ *
+ * One wizard for every importer: pass an `adapter` (lib/api/propertyImport.ts `makeImportAdapter`).
+ * Properties (default) and customers differ only in the option panels and the preview/progress extras,
+ * which are switched on `adapter.kind`.
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -17,9 +21,8 @@ import {
 import { Select } from "@/components/ui/Select";
 import { LISTING_STATUS_LABELS, PROPERTY_TYPE_LABELS, reindexProperties } from "@/lib/api/properties";
 import {
-  ACTIVATE_WARNING, ACTIVE_STATUSES, PENDING_WARNING, TERMINAL_STATUSES, indexTotals, showPendingWarning, cancelImport, commitImport, deleteMappingTemplate, downloadImportErrors,
-  downloadImportTemplate, fetchImport, importErrorMessage, listMappingTemplates, uploadImportFile, validateImport,
-  type ImportJob, type ImportOptions, type MappingSuggestion, type MappingTemplate, type OnDuplicate,
+  ACTIVATE_WARNING, ACTIVE_STATUSES, PENDING_WARNING, TERMINAL_STATUSES, importErrorMessage, indexTotals, propertiesAdapter,
+  showPendingWarning, type ImportAdapter, type ImportJob, type ImportOptions, type MappingSuggestion, type MappingTemplate, type OnDuplicate,
   type UploadResult, type ValidationSummary,
 } from "@/lib/api/propertyImport";
 
@@ -44,7 +47,11 @@ const OUTCOME: Record<string, { label: string; cls: string }> = {
 
 const fmt = (n: number | null | undefined) => new Intl.NumberFormat("ar-SA-u-ca-gregory").format(n ?? 0);
 
-export default function ImportWizard({ open, onClose, onDone }: { open: boolean; onClose: () => void; onDone: () => void }) {
+export default function ImportWizard({ open, onClose, onDone, adapter = propertiesAdapter }: {
+  open: boolean; onClose: () => void; onDone: () => void; adapter?: ImportAdapter;
+}) {
+  const isCustomers = adapter.kind === "customers";
+  const noun = isCustomers ? "عملاء" : "عقارات";
   const [step, setStep] = useState<Step>("upload");
   const [upload, setUpload] = useState<UploadResult | null>(null);
   const [mapping, setMapping] = useState<Record<string, string>>({});
@@ -87,7 +94,7 @@ export default function ImportWizard({ open, onClose, onDone }: { open: boolean;
   }, [open, close]);
 
   useEffect(() => {
-    if (open) listMappingTemplates().then(setTemplates).catch(() => setTemplates([]));
+    if (open) adapter.listTemplates().then(setTemplates).catch(() => setTemplates([]));
   }, [open]);
 
   // Poll the background job.
@@ -96,7 +103,7 @@ export default function ImportWizard({ open, onClose, onDone }: { open: boolean;
     const id = job.import_id;
     const t = setInterval(async () => {
       try {
-        setJob(await fetchImport(id));
+        setJob(await adapter.fetch(id));
       } catch { /* transient: keep polling */ }
     }, POLL_MS);
     return () => clearInterval(t);
@@ -107,7 +114,7 @@ export default function ImportWizard({ open, onClose, onDone }: { open: boolean;
     if (!reindexJob || TERMINAL_STATUSES.includes(reindexJob.status)) return;
     const id = reindexJob.import_id;
     const t = setInterval(async () => {
-      try { setReindexJob(await fetchImport(id)); } catch { /* keep polling */ }
+      try { setReindexJob(await adapter.fetch(id)); } catch { /* keep polling */ }
     }, POLL_MS);
     return () => clearInterval(t);
   }, [reindexJob]);
@@ -133,7 +140,7 @@ export default function ImportWizard({ open, onClose, onDone }: { open: boolean;
     setError(null);
     setBusy("upload"); setUploadPct(0);
     try {
-      const res = await uploadImportFile(file, setUploadPct);
+      const res = await adapter.upload(file, setUploadPct);
       setUpload(res);
       const m: Record<string, string> = {}; const src: Record<string, MappingSuggestion["source"]> = {};
       res.suggested_mapping.forEach((s) => { if (s.header) { m[s.field] = s.header; src[s.field] = s.source; } });
@@ -170,11 +177,11 @@ export default function ImportWizard({ open, onClose, onDone }: { open: boolean;
     if (!upload) return;
     setBusy("validate"); setError(null);
     try {
-      const res = await validateImport(upload.import_id, {
+      const res = await adapter.validate(upload.import_id, {
         mapping, options, save_template_as: templateName.trim() || undefined,
       });
       setSummary(res);
-      if (templateName.trim()) listMappingTemplates().then(setTemplates).catch(() => undefined);
+      if (templateName.trim()) adapter.listTemplates().then(setTemplates).catch(() => undefined);
       setStep("preview");
     } catch (e) {
       setError(importErrorMessage(e, "تعذّر التحقق من الملف"));
@@ -187,7 +194,7 @@ export default function ImportWizard({ open, onClose, onDone }: { open: boolean;
     if (!upload) return;
     setBusy("commit"); setError(null);
     try {
-      setJob(await commitImport(upload.import_id));
+      setJob(await adapter.commit(upload.import_id));
       setStep("progress");
     } catch (e) {
       setError(importErrorMessage(e, "تعذّر بدء الاستيراد"));
@@ -198,7 +205,7 @@ export default function ImportWizard({ open, onClose, onDone }: { open: boolean;
 
   const runCancel = async () => {
     if (!job) return;
-    try { setJob(await cancelImport(job.import_id)); } catch (e) { setError(importErrorMessage(e)); }
+    try { setJob(await adapter.cancel(job.import_id)); } catch (e) { setError(importErrorMessage(e)); }
   };
 
   if (!open) return null;
@@ -215,7 +222,7 @@ export default function ImportWizard({ open, onClose, onDone }: { open: boolean;
       >
         <header className="flex items-center justify-between gap-3 px-5 py-4 border-b border-[var(--border)]">
           <h2 id="import-title" className="text-base font-bold flex items-center gap-2">
-            <FileSpreadsheet className="w-5 h-5 text-[var(--chart-1)]" aria-hidden />استيراد عقارات
+            <FileSpreadsheet className="w-5 h-5 text-[var(--chart-1)]" aria-hidden />استيراد {noun}
           </h2>
           <button onClick={close} disabled={!closable} aria-label="إغلاق" className="p-1.5 rounded-lg hover:bg-[var(--menu-hover)] disabled:opacity-40">
             <X className="w-4 h-4" />
@@ -264,7 +271,7 @@ export default function ImportWizard({ open, onClose, onDone }: { open: boolean;
                   </>
                 )}
               </div>
-              <button onClick={() => void downloadImportTemplate().catch((e) => setError(importErrorMessage(e)))}
+              <button onClick={() => void adapter.downloadTemplate().catch((e) => setError(importErrorMessage(e)))}
                 className="text-sm text-[var(--menu-selected-fg)] underline flex items-center gap-1.5">
                 <Download className="w-4 h-4" aria-hidden />تنزيل قالب Excel جاهز (بعناوين عربية وصف مثال)
               </button>
@@ -290,7 +297,7 @@ export default function ImportWizard({ open, onClose, onDone }: { open: boolean;
                     <span key={t.template_id} className="inline-flex items-center rounded-full border border-[var(--border)] overflow-hidden">
                       <button onClick={() => applyTemplate(t)} className="px-3 py-1 hover:bg-[var(--menu-hover)]">{t.name}</button>
                       <button aria-label={`حذف القالب ${t.name}`} className="px-2 py-1 hover:bg-[var(--menu-hover)] text-[var(--muted-foreground)]"
-                        onClick={() => void deleteMappingTemplate(t.template_id).then(() => setTemplates((p) => p.filter((x) => x.template_id !== t.template_id)))}>×</button>
+                        onClick={() => void adapter.deleteTemplate(t.template_id).then(() => setTemplates((p) => p.filter((x) => x.template_id !== t.template_id)))}>×</button>
                     </span>
                   ))}
                 </div>
@@ -332,6 +339,8 @@ export default function ImportWizard({ open, onClose, onDone }: { open: boolean;
                 </table>
               </div>
 
+              {!isCustomers && (
+              <>
               <fieldset className="rounded-xl border border-[var(--border)] p-3">
                 <legend className="px-2 text-xs font-semibold">قيم افتراضية للخلايا الفارغة (اختياري)</legend>
                 <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-xs">
@@ -378,11 +387,52 @@ export default function ImportWizard({ open, onClose, onDone }: { open: boolean;
                   )}
                 </fieldset>
               )}
+              </>
+              )}
+              {isCustomers && (
+              <>
+              <fieldset className="rounded-xl border border-[var(--border)] p-3 space-y-3">
+                <legend className="px-2 text-xs font-semibold">إعدادات إضافية (اختياري)</legend>
+                <div className="grid md:grid-cols-2 gap-3 text-xs">
+                  <label className="flex flex-col gap-1">مدينة افتراضية للخلايا الفارغة
+                    <input value={options.defaults.city ?? ""} maxLength={100}
+                      onChange={(e) => setOptions((o) => ({ ...o, defaults: { ...o.defaults, city: e.target.value || undefined } }))}
+                      className="rounded-[10px] border border-[var(--border)] bg-[var(--menu-bg)] px-3 py-2 text-sm" />
+                  </label>
+                  <label className="flex flex-col gap-1">وسوم تُضاف لكل العملاء المستوردين (افصل بفاصلة)
+                    <input value={(options.tags ?? []).join("، ")} maxLength={300} placeholder="مثال: معرض-أكتوبر، مستثمر"
+                      onChange={(e) => setOptions((o) => ({ ...o, tags: e.target.value.split(/[,،;]+/).map((t) => t.trim()).filter(Boolean) }))}
+                      className="rounded-[10px] border border-[var(--border)] bg-[var(--menu-bg)] px-3 py-2 text-sm" />
+                  </label>
+                </div>
+              </fieldset>
+
+              <fieldset className="rounded-xl border border-[var(--chart-4)] p-3 space-y-2" data-testid="consent-panel">
+                <legend className="px-2 text-xs font-semibold">الموافقة على التواصل التسويقي (PDPL)</legend>
+                <p className="text-xs text-[var(--muted-foreground)]">
+                  لا يُسجَّل أي عميل مستورد كـ«موافق على الرسائل التسويقية» ما لم تُقرّ أدناه. العملاء الذين ألغوا اشتراكهم سابقًا لا تُعاد موافقتهم أبدًا، ولن تصلهم الحملات.
+                </p>
+                <label className="flex items-start gap-2 text-xs cursor-pointer">
+                  <input type="checkbox" className="mt-0.5" checked={!!options.consent_confirmed}
+                    onChange={(e) => setOptions((o) => ({ ...o, consent_confirmed: e.target.checked, opt_in_all: e.target.checked ? o.opt_in_all : false }))} />
+                  <span><strong className="block">أقرّ بأنني أملك موافقة هؤلاء العملاء على التواصل معهم</strong>
+                    <span className="text-[var(--muted-foreground)]">يُسجَّل هذا الإقرار باسمك ووقته وعدد العملاء في سجل التدقيق.</span></span>
+                </label>
+                {options.consent_confirmed && (
+                  <label className="flex items-start gap-2 text-xs cursor-pointer ps-6">
+                    <input type="checkbox" className="mt-0.5" checked={!!options.opt_in_all}
+                      onChange={(e) => setOptions((o) => ({ ...o, opt_in_all: e.target.checked }))} />
+                    <span>اعتبر كل العملاء المستوردين موافقين (وإلا تُستخدم قيمة عمود «موافقة التواصل» فقط، والفارغ يبقى غير موافق).</span>
+                  </label>
+                )}
+              </fieldset>
+              </>
+              )}
 
               <fieldset className="rounded-xl border border-[var(--border)] p-3">
-                <legend className="px-2 text-xs font-semibold">إذا كان رقم الإعلان (REGA) موجودًا مسبقًا</legend>
-                <div className="grid md:grid-cols-3 gap-2">
-                  {DUPLICATE_CHOICES.map((c) => (
+                <legend className="px-2 text-xs font-semibold">{isCustomers ? "إذا كان رقم الجوال موجودًا مسبقًا" : "إذا كان رقم الإعلان (REGA) موجودًا مسبقًا"}</legend>
+                <div className={`grid gap-2 ${isCustomers ? "md:grid-cols-2" : "md:grid-cols-3"}`}>
+                  {DUPLICATE_CHOICES.filter((c) => !isCustomers || c.value !== "create_new").map((c) => (
                     <label key={c.value} className={`flex items-start gap-2 rounded-lg border p-2 cursor-pointer text-xs ${options.on_duplicate === c.value ? "border-[var(--chart-1)] bg-[var(--menu-selected-bg)]" : "border-[var(--border)]"}`}>
                       <input type="radio" name="on_duplicate" checked={options.on_duplicate === c.value} onChange={() => setOptions((o) => ({ ...o, on_duplicate: c.value }))} className="mt-0.5" />
                       <span><strong className="block">{c.label}</strong><span className="text-[var(--muted-foreground)]">{c.hint}</span></span>
@@ -416,6 +466,7 @@ export default function ImportWizard({ open, onClose, onDone }: { open: boolean;
                   ["سيُحدَّث", counts.will_update, ""],
                   ["سيُتخطّى", counts.will_skip, ""],
                   ["مكرر داخل الملف", counts.duplicate_in_file, counts.duplicate_in_file ? "text-[var(--chart-down)]" : ""],
+                  ...(isCustomers ? [["سيُسجَّل موافقًا تسويقيًا", counts.will_opt_in ?? 0, ""], ["ملغون اشتراكهم (يُتجاهلون)", counts.opted_out_ignored ?? 0, counts.opted_out_ignored ? "text-[var(--chart-4)]" : ""]] : []),
                 ].map(([label, value, cls]) => (
                   <div key={String(label)} className="rounded-xl border border-[var(--border)] p-3">
                     <div className={`text-xl font-bold ${cls}`}>{fmt(value as number)}</div>
@@ -424,7 +475,10 @@ export default function ImportWizard({ open, onClose, onDone }: { open: boolean;
                 ))}
               </div>
               {summary.required_missing.length > 0 && (
-                <p role="alert" className="text-sm text-[var(--chart-down)]">حقول مطلوبة غير مربوطة: {summary.required_missing.join("، ")}.</p>
+                <p role="alert" className="text-sm text-[var(--chart-down)]">
+                  {summary.consent?.blocked ? "لا يمكن المتابعة قبل إقرار الموافقة على التواصل (ارجع للربط وفعّل الإقرار) أو إزالة عمود الموافقة. " : ""}
+                  {summary.required_missing.filter((m) => !m.startsWith("إقرار")).length > 0 ? `حقول مطلوبة غير مربوطة: ${summary.required_missing.filter((m) => !m.startsWith("إقرار")).join("، ")}.` : ""}
+                </p>
               )}
               {summary.ignored_columns.length > 0 && (
                 <p className="text-xs text-[var(--muted-foreground)]">أعمدة لن تُستورد: {summary.ignored_columns.join("، ")}</p>
@@ -434,19 +488,33 @@ export default function ImportWizard({ open, onClose, onDone }: { open: boolean;
                 <table className="w-full text-xs">
                   <caption className="sr-only">معاينة أول {summary.preview.length} صفًا</caption>
                   <thead className="bg-[var(--menu-hover)] text-[var(--muted-foreground)]">
-                    <tr><th className="p-2 text-start">#</th><th className="p-2 text-start">النتيجة</th><th className="p-2 text-start">النوع</th><th className="p-2 text-start">المدينة / الحي</th><th className="p-2 text-start">السعر</th><th className="p-2 text-start">REGA</th><th className="p-2 text-start">ملاحظات</th></tr>
+                    {isCustomers
+                      ? <tr><th className="p-2 text-start">#</th><th className="p-2 text-start">النتيجة</th><th className="p-2 text-start">الاسم</th><th className="p-2 text-start">الجوال</th><th className="p-2 text-start">المدينة</th><th className="p-2 text-start">الوسوم</th><th className="p-2 text-start">موافقة</th><th className="p-2 text-start">ملاحظات</th></tr>
+                      : <tr><th className="p-2 text-start">#</th><th className="p-2 text-start">النتيجة</th><th className="p-2 text-start">النوع</th><th className="p-2 text-start">المدينة / الحي</th><th className="p-2 text-start">السعر</th><th className="p-2 text-start">REGA</th><th className="p-2 text-start">ملاحظات</th></tr>}
                   </thead>
                   <tbody>
                     {summary.preview.map((r) => {
-                      const v = r.values as Record<string, string | number | undefined>;
+                      const v = r.values as Record<string, string | number | boolean | undefined>;
                       return (
                         <tr key={r.row} className="border-t border-[var(--border)] align-top">
                           <td className="p-2">{fmt(r.row)}</td>
                           <td className={`p-2 font-semibold ${OUTCOME[r.outcome].cls}`}>{OUTCOME[r.outcome].label}</td>
-                          <td className="p-2">{v.property_type ? PROPERTY_TYPE_LABELS[v.property_type as keyof typeof PROPERTY_TYPE_LABELS]?.ar : "—"}</td>
-                          <td className="p-2">{[v.city, v.district].filter(Boolean).join(" / ") || "—"}</td>
-                          <td className="p-2">{v.price != null ? fmt(Number(v.price)) : "—"}</td>
-                          <td className="p-2" dir="ltr">{v.rega_ad_number ?? "—"}</td>
+                          {isCustomers ? (
+                            <>
+                              <td className="p-2">{v.display_name ?? "—"}</td>
+                              <td className="p-2" dir="ltr">{v.phone ?? "—"}</td>
+                              <td className="p-2">{v.city ?? "—"}</td>
+                              <td className="p-2">{Array.isArray(v.tags) ? (v.tags as unknown as string[]).join("، ") : "—"}</td>
+                              <td className="p-2">{v.marketing_opt_in === true ? "نعم" : v.marketing_opt_in === false ? "لا" : "—"}</td>
+                            </>
+                          ) : (
+                            <>
+                              <td className="p-2">{v.property_type ? PROPERTY_TYPE_LABELS[v.property_type as keyof typeof PROPERTY_TYPE_LABELS]?.ar : "—"}</td>
+                              <td className="p-2">{[v.city, v.district].filter(Boolean).join(" / ") || "—"}</td>
+                              <td className="p-2">{v.price != null ? fmt(Number(v.price)) : "—"}</td>
+                              <td className="p-2" dir="ltr">{v.rega_ad_number ?? "—"}</td>
+                            </>
+                          )}
                           <td className="p-2 text-[var(--chart-down)]">{r.issues.map((i) => i.message).join("؛ ")}</td>
                         </tr>
                       );
@@ -463,7 +531,7 @@ export default function ImportWizard({ open, onClose, onDone }: { open: boolean;
                 </details>
               )}
               <p className="text-xs text-[var(--muted-foreground)]">
-                الصفوف التي بها أخطاء لن تُستورد، وستجدها مع سبب كل صف في تقرير الأخطاء بعد الانتهاء. العقارات المستوردة تُنشأ بحالة «قيد التحقق» ما لم تحدد الحالة في الملف.
+                الصفوف التي بها أخطاء لن تُستورد، وستجدها مع سبب كل صف في تقرير الأخطاء بعد الانتهاء. {isCustomers ? "العملاء الموجودون (بنفس رقم الجوال) يُدمجون ولا يتكررون." : "العقارات المستوردة تُنشأ بحالة «قيد التحقق» ما لم تحدد الحالة في الملف."}
               </p>
             </div>
           )}
@@ -488,12 +556,19 @@ export default function ImportWizard({ open, onClose, onDone }: { open: boolean;
                     <div className="text-xl font-bold">{fmt(v as number)}</div><div className="text-xs text-[var(--muted-foreground)]">{l}</div>
                   </div>
                 ))}
-                <div className="rounded-xl border border-[var(--border)] p-3" data-testid="index-counter">
-                  <div className="text-xl font-bold">{fmt(indexTotals(job).indexed)} / {fmt(indexTotals(job).expected)}</div>
-                  <div className="text-xs text-[var(--muted-foreground)]">فُهرس للبحث</div>
-                </div>
+                {isCustomers ? (
+                  <div className="rounded-xl border border-[var(--border)] p-3" data-testid="optin-counter">
+                    <div className="text-xl font-bold">{fmt(job.summary?.result?.opted_in ?? 0)}</div>
+                    <div className="text-xs text-[var(--muted-foreground)]">سُجّلوا موافقين</div>
+                  </div>
+                ) : (
+                  <div className="rounded-xl border border-[var(--border)] p-3" data-testid="index-counter">
+                    <div className="text-xl font-bold">{fmt(indexTotals(job).indexed)} / {fmt(indexTotals(job).expected)}</div>
+                    <div className="text-xs text-[var(--muted-foreground)]">فُهرس للبحث</div>
+                  </div>
+                )}
               </div>
-              {(job.index_failed > 0 || (job.status === "completed" && indexTotals(job).missing > 0)) && (
+              {!isCustomers && (job.index_failed > 0 || (job.status === "completed" && indexTotals(job).missing > 0)) && (
                 <div role="alert" data-testid="index-error" className="rounded-xl border border-[var(--chart-down)] p-3 space-y-2 text-sm">
                   <p className="font-semibold">تعذّرت فهرسة {fmt(Math.max(job.index_failed, indexTotals(job).missing))} عقارًا — لن يجدها المساعد حتى تُفهرس.</p>
                   {job.index_error && <p className="text-xs break-words" dir="ltr">{job.index_error}</p>}
@@ -512,7 +587,7 @@ export default function ImportWizard({ open, onClose, onDone }: { open: boolean;
               )}
               {job.error_message && <p role="alert" className="text-sm text-[var(--chart-down)]">{job.error_message}</p>}
               {job.has_error_report && (
-                <button onClick={() => void downloadImportErrors(job.import_id).catch((e) => setError(importErrorMessage(e)))} className="btn btn-outline h-9 px-3 text-sm gap-1.5">
+                <button onClick={() => void adapter.downloadErrors(job.import_id).catch((e) => setError(importErrorMessage(e)))} className="btn btn-outline h-9 px-3 text-sm gap-1.5">
                   <Download className="w-4 h-4" aria-hidden />تنزيل تقرير الصفوف الفاشلة/المتخطّاة (CSV)
                 </button>
               )}

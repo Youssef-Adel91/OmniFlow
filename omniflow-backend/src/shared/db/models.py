@@ -427,7 +427,9 @@ class Customer(Base, TimestampMixin, TenantScopedMixin):
             key = (self.channel_user_ids or {}).get(str(channel))
             if key:
                 return key
-        return self.unified_phone
+            return self.unified_phone
+        # WhatsApp: the real phone wins (the contact key may be a platform id after an Instagram+WhatsApp merge)
+        return self.phone_e164 or self.unified_phone
 
     def __repr__(self) -> str:
         return f"<Customer id={self.customer_id} phone={self.unified_phone!r}>"

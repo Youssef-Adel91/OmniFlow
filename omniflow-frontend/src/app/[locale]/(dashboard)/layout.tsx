@@ -11,6 +11,7 @@ import { Sidebar }    from "@/components/layout/Sidebar";
 import { TopNav }     from "@/components/layout/TopNav";
 import { AuthSyncer } from "@/components/auth/AuthSyncer";
 import { DashboardAuth } from "@/components/auth/DashboardAuth";
+import { BillingBanner } from "@/components/billing/BillingBanner";
 import { cn }         from "@/lib/utils";
 
 // ── Metadata ──────────────────────────────────────────────────────────────────
@@ -83,6 +84,8 @@ function DashboardShell({
           id="main-content"
           role="main"
         >
+          {/* Subscription state (trial ending / payment overdue / suspended) */}
+          <BillingBanner locale={locale} />
           {children}
         </main>
       </div>

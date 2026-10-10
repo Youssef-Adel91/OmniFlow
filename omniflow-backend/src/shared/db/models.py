@@ -1578,3 +1578,133 @@ class ImportMappingTemplate(Base, TimestampMixin, TenantScopedMixin):
     kind: Mapped[str] = mapped_column(String(30), nullable=False)
     name: Mapped[str] = mapped_column(String(100), nullable=False)
     mapping: Mapped[dict] = mapped_column(JSONB, nullable=False)
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# Billing (migration 0026) — plans are a global catalogue; the rest are tenant RLS
+# ══════════════════════════════════════════════════════════════════════════════
+
+class Plan(Base):
+    """Sellable plan. Prices are VAT-exclusive halalas. `is_placeholder` = the owner has not decided the real price yet."""
+    __tablename__ = "plans"
+
+    plan_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    code: Mapped[str] = mapped_column(String(30), nullable=False, unique=True)
+    name_ar: Mapped[str] = mapped_column(String(100), nullable=False)
+    description_ar: Mapped[Optional[str]] = mapped_column(Text)
+    price_monthly_halalas: Mapped[int] = mapped_column(Integer, nullable=False)
+    price_yearly_halalas: Mapped[int] = mapped_column(Integer, nullable=False)
+    currency: Mapped[str] = mapped_column(String(3), nullable=False, default="SAR")
+    limits: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict)
+    is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    is_placeholder: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    sort_order: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+
+class Subscription(Base):
+    """One per tenant. The single source of truth for access; `tenants.status` is kept as a mirror."""
+    __tablename__ = "subscriptions"
+
+    subscription_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    tenant_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("tenants.tenant_id", ondelete="RESTRICT"), nullable=False, unique=True,
+                                                 comment="RLS partition key — must match app.current_tenant_id")
+    plan_code: Mapped[str] = mapped_column(String(30), nullable=False, default="economic")
+    billing_interval: Mapped[str] = mapped_column(String(10), nullable=False, default="monthly")
+    status: Mapped[str] = mapped_column(String(20), nullable=False, default="trial")
+    is_exempt: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    trial_ends_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
+    current_period_start: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
+    current_period_end: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
+    cancel_at_period_end: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    cancelled_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
+    grace_ends_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
+    retry_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    next_retry_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
+    last_payment_error: Mapped[Optional[str]] = mapped_column(Text)
+    pending_plan_code: Mapped[Optional[str]] = mapped_column(String(30))
+    pending_interval: Mapped[Optional[str]] = mapped_column(String(10))
+    provider: Mapped[Optional[str]] = mapped_column(String(20))
+    payment_token: Mapped[Optional[str]] = mapped_column(Text, comment="Fernet-encrypted provider token; never a card number")
+    card_brand: Mapped[Optional[str]] = mapped_column(String(20))
+    card_last4: Mapped[Optional[str]] = mapped_column(String(4))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+
+class PaymentTransaction(Base):
+    __tablename__ = "transactions"
+
+    transaction_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    tenant_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("tenants.tenant_id", ondelete="RESTRICT"), nullable=False,
+                                                 comment="RLS partition key — must match app.current_tenant_id")
+    subscription_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("subscriptions.subscription_id", ondelete="RESTRICT"), nullable=False)
+    kind: Mapped[str] = mapped_column(String(20), nullable=False)
+    plan_code: Mapped[str] = mapped_column(String(30), nullable=False)
+    billing_interval: Mapped[str] = mapped_column(String(10), nullable=False)
+    subtotal_halalas: Mapped[int] = mapped_column(Integer, nullable=False)
+    vat_halalas: Mapped[int] = mapped_column(Integer, nullable=False)
+    amount_halalas: Mapped[int] = mapped_column(Integer, nullable=False)
+    currency: Mapped[str] = mapped_column(String(3), nullable=False, default="SAR")
+    status: Mapped[str] = mapped_column(String(20), nullable=False, default="pending")
+    provider: Mapped[str] = mapped_column(String(20), nullable=False)
+    provider_payment_id: Mapped[Optional[str]] = mapped_column(String(100))
+    provider_invoice_id: Mapped[Optional[str]] = mapped_column(String(100))
+    checkout_url: Mapped[Optional[str]] = mapped_column(Text)
+    failure_reason: Mapped[Optional[str]] = mapped_column(Text)
+    attempt: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+    period_start: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
+    period_end: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    paid_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+
+class BillingInvoice(Base):
+    __tablename__ = "invoices"
+
+    invoice_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    tenant_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("tenants.tenant_id", ondelete="RESTRICT"), nullable=False,
+                                                 comment="RLS partition key — must match app.current_tenant_id")
+    transaction_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("transactions.transaction_id", ondelete="RESTRICT"), nullable=False, unique=True)
+    invoice_number: Mapped[str] = mapped_column(String(30), nullable=False, unique=True)
+    status: Mapped[str] = mapped_column(String(10), nullable=False, default="issued")
+    issued_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    subtotal_halalas: Mapped[int] = mapped_column(Integer, nullable=False)
+    vat_halalas: Mapped[int] = mapped_column(Integer, nullable=False)
+    total_halalas: Mapped[int] = mapped_column(Integer, nullable=False)
+    vat_rate_bp: Mapped[int] = mapped_column(Integer, nullable=False)
+    currency: Mapped[str] = mapped_column(String(3), nullable=False, default="SAR")
+    description: Mapped[str] = mapped_column(Text, nullable=False)
+    period_start: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
+    period_end: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
+    seller: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict)
+    buyer: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict)
+
+
+class PaymentEvent(Base):
+    """Every provider webhook delivery, keyed for idempotency (provider + event_key)."""
+    __tablename__ = "payment_events"
+    __table_args__ = (UniqueConstraint("provider", "event_key", name="uq_payment_events_provider_key"),)
+
+    event_pk: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    provider: Mapped[str] = mapped_column(String(20), nullable=False)
+    event_key: Mapped[str] = mapped_column(String(120), nullable=False)
+    tenant_id: Mapped[Optional[uuid.UUID]] = mapped_column(UUID(as_uuid=True), ForeignKey("tenants.tenant_id", ondelete="RESTRICT"))
+    event_type: Mapped[str] = mapped_column(String(60), nullable=False)
+    outcome: Mapped[str] = mapped_column(String(30), nullable=False)
+    payload: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict)
+    received_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+
+class UsageCounter(Base):
+    __tablename__ = "usage_counters"
+
+    tenant_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("tenants.tenant_id", ondelete="RESTRICT"), primary_key=True,
+                                                 comment="RLS partition key — must match app.current_tenant_id")
+    period: Mapped[str] = mapped_column(String(7), primary_key=True)
+    ai_messages: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    alerted_80_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
+    alerted_100_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)

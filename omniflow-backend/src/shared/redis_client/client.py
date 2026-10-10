@@ -448,6 +448,30 @@ class RedisClientManager:
         except Exception as exc:
             logger.warning("redis_delete_raw_error", key=key, error=str(exc))
 
+    async def incr_counter(self, key: str, *, ttl: int) -> int | None:
+        """Atomically INCR a counter in the cache DB (DB 5) and (re)arm its TTL. None if Redis is unavailable."""
+        try:
+            pipe = self._cache.pipeline()
+            pipe.incr(key)
+            pipe.expire(key, ttl)
+            value, _ = await pipe.execute()
+            return int(value)
+        except Exception as exc:
+            logger.warning("redis_incr_counter_error", key=key, error=str(exc))
+            return None
+
+    async def scan_counters(self, pattern: str) -> dict[str, int]:
+        """Return {key: int(value)} for keys matching `pattern` in the cache DB (used by the usage flush job)."""
+        out: dict[str, int] = {}
+        try:
+            async for key in self._cache.scan_iter(match=pattern, count=500):
+                raw = await self._cache.get(key)
+                if raw is not None and str(raw).isdigit():
+                    out[key if isinstance(key, str) else key.decode()] = int(raw)
+        except Exception as exc:
+            logger.warning("redis_scan_counters_error", pattern=pattern, error=str(exc))
+        return out
+
     async def set_idempotency_key(self, key: str, ttl: int) -> bool:
         """
         Atomic SET NX (set-if-not-exists) on the idempotency DB (DB 2).

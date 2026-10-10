@@ -697,3 +697,45 @@ __all__ = [
     "broadcast_dispatch_check",
     "media_cleanup_check",
 ]
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# Billing — renewals/dunning sweep (every 15 min) and usage flush (every 5 min)
+# ══════════════════════════════════════════════════════════════════════════════
+
+@app.task(name="omniflow.billing_sweep", bind=True, max_retries=2)
+def billing_sweep(self) -> dict[str, Any]:  # noqa: ANN001
+    """Trial expiry, token renewals with retries, scheduled cancellations, past_due → suspended, stale pending checkouts."""
+    return _run(_billing_sweep_async)
+
+
+async def _billing_sweep_async() -> dict[str, Any]:
+    from src.shared.services.billing import entitlements, service
+
+    async with get_system_session() as session:
+        result = await service.run_sweep(session, service.default_urls())
+    if any(result.values()):
+        logger.info("billing_sweep", **result)
+        # State changed for some tenants: drop every cached entitlement snapshot quickly (60 s TTL would also catch up).
+    return result
+
+
+@app.task(name="omniflow.billing_usage_flush", bind=True, max_retries=2)
+def billing_usage_flush(self) -> dict[str, Any]:  # noqa: ANN001
+    """Persist the Redis AI-message counters and stamp the 80 % / 100 % alert times (delivery of the alert lands with notifications)."""
+    return _run(_billing_usage_flush_async)
+
+
+async def _billing_usage_flush_async() -> dict[str, Any]:
+    from sqlalchemy import select as _select
+
+    from src.shared.db.models import Plan, Subscription
+    from src.shared.services.billing import usage
+
+    async with get_system_session() as session:
+        plans = {p.code: (p.limits or {}).get("messages_per_month") for p in (await session.execute(_select(Plan))).scalars()}
+        limits = {s.tenant_id: plans.get(s.plan_code) for s in (await session.execute(_select(Subscription))).scalars()}
+        alerts = await usage.flush(session, limits)
+    for a in alerts:
+        logger.warning("billing_usage_threshold", tenant_id=str(a["tenant_id"]), period=a["period"], level=a["level"], used=a["used"])
+    return {"alerts": len(alerts)}

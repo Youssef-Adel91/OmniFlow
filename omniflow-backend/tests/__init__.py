@@ -15,6 +15,7 @@ os.environ.update({
     "GOOGLE_AI_API_KEY": "mock",
     "GEMINI_API_KEY": "",
     "CLERK_ISSUER_URL": "https://test.clerk.accounts.dev",
+    "BILLING_GATE_ENABLED": "false",      # billing tests switch the gate on explicitly
 })
 
 from src.shared.core.config import Settings, get_settings

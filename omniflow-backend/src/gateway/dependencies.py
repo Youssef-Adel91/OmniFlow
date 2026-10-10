@@ -27,7 +27,7 @@ import uuid
 from collections.abc import AsyncGenerator
 from typing import Annotated
 
-from fastapi import Depends, HTTPException, Security, status
+from fastapi import Depends, HTTPException, Request, Security, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from jose import JWTError
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -277,6 +277,29 @@ def get_conversation_repo(
 # ── Annotated shorthands for cleaner endpoint signatures ─────────────────────
 CustomerRepo = Annotated[CustomerRepository, Depends(get_customer_repo)]
 ConversationRepo = Annotated[ConversationRepository, Depends(get_conversation_repo)]
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# 4b. Subscription write gate — a suspended / expired tenant's dashboard is read-only
+# ══════════════════════════════════════════════════════════════════════════════
+
+async def subscription_write_gate(request: Request, user: CurrentUser) -> None:
+    """
+    Router-level dependency for every dashboard router EXCEPT billing, support, auth, health and webhooks (a blocked
+    tenant must still be able to pay and ask for help). Reads always pass; writes get HTTP 402 when the subscription
+    state is blocked (trial expired, past-due beyond grace, suspended, cancelled).
+    """
+    if request.method in ("GET", "HEAD", "OPTIONS"):
+        return
+    from src.shared.services.billing import entitlements
+
+    allowed, reason = await entitlements.writes_allowed(uuid.UUID(str(user.tenant_id)))
+    if not allowed:
+        raise HTTPException(
+            status_code=status.HTTP_402_PAYMENT_REQUIRED,
+            detail={"code": "SUBSCRIPTION_INACTIVE", "reason": reason,
+                    "message": "اشتراكك غير فعّال حاليًا، فالحساب في وضع القراءة فقط. جدّد الاشتراك من صفحة الفوترة للمتابعة."},
+        )
 
 
 # ══════════════════════════════════════════════════════════════════════════════

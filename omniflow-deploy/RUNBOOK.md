@@ -10,6 +10,7 @@ C="docker compose --env-file .env.prod -f docker-compose.prod.yml"
 $C ps                                             # أي خدمة Exited/unhealthy؟
 curl -fsS https://DOMAIN/health/ready             # قاعدة البيانات + Redis + Kafka
 docker exec prod-fastapi python -c "import urllib.request;print(urllib.request.urlopen('http://127.0.0.1:8000/health/workers').read().decode())"
+docker exec prod-fastapi python -c "import urllib.request;print(urllib.request.urlopen('http://127.0.0.1:8000/health/lag').read().decode())"   # تأخّر Kafka + رسائل DLQ + رسائل صادرة عالقة > 5 دقائق (warn/critical؛ للتنبيه فقط)
 ./backup-status.sh                                # هل آخر نسخة احتياطية حديثة؟ وهل لها نسخة خارج الخادم؟
 ```
 تنبيهات Prometheus (إن شُغّلت المراقبة): `ssh -L 9091:127.0.0.1:9091 user@server` ثم افتح `localhost:9091/alerts`.
@@ -101,7 +102,7 @@ systemctl list-timers 'omniflow-certbot*'; journalctl -u omniflow-certbot.servic
 5. إن كان المفتاح قد وصل إلى Git: التدوير وحده كافٍ؛ لا تعدّل التاريخ دون قرار صريح من المالك.
 
 ## 12) الاسترجاع من نسخة احتياطية
-**PostgreSQL** (لا يوجد سكربت؛ الإجراء الآمن: استرجع إلى قاعدة *جديدة* وافحصها قبل أي استبدال):
+**PostgreSQL** — الأمر الجاهز: `./restore.sh postgres backups/postgres/omniflow_<ts>.dump omniflow_restore` (ينشئ قاعدة *جديدة* ويرفض الكتابة فوق قاعدة موجودة أو الحية، ثم يطبع فحصًا سريعًا). وللتحقق دون Docker: `python -m scripts.pg_restore_drill --source postgresql://…` من مجلد الـbackend. الخطوات اليدوية المكافئة (الإجراء الآمن: استرجع إلى قاعدة *جديدة* وافحصها قبل أي استبدال):
 ```bash
 set -a; . ./.env.prod; set +a
 ls backups/postgres | tail                                              # اختر ملف .dump

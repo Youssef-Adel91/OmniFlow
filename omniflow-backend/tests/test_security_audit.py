@@ -35,10 +35,11 @@ PUBLIC = {
     ("GET", "/health"): "liveness probe (no secrets)",
     ("GET", "/health/ready"): "readiness probe (ok/unavailable only)",
     ("GET", "/health/workers"): "worker heartbeat summary (names + ok/stale only)",
+    ("GET", "/health/lag"): "backlog warnings (aggregate counts only, no tenant data)",
 }
 SELF_REFUSING = {"/api/v1/auth/login", "/api/v1/auth/refresh", "/api/v1/auth/register"}                                  # answer 410
 ALWAYS_OK = {"/api/v1/auth/logout"}                                                                                    # by design never refuses
-PROBES = {"/health", "/health/ready", "/health/workers", "/api/v1/integrations/facebook/callback"}
+PROBES = {"/health", "/health/ready", "/health/workers", "/health/lag", "/api/v1/integrations/facebook/callback"}
 AUTH_DEPS = {"get_current_user", "api_principal"}                                                              # Clerk session | read-only API key
 DOC_PATHS = {"/openapi.json", "/docs", "/docs/oauth2-redirect", "/redoc"}                                          # only mounted in development
 
@@ -154,7 +155,7 @@ class RouteAuthAudit(unittest.IsolatedAsyncioTestCase):
 
     async def test_probes_do_not_leak_internals(self):
         async with httpx.AsyncClient(transport=httpx.ASGITransport(app=self.app), base_url="http://t") as c:
-            for path in ("/health", "/health/ready", "/health/workers"):
+            for path in ("/health", "/health/ready", "/health/workers", "/health/lag"):
                 text = (await c.get(path)).text.lower()
                 for needle in ("password", "secret", "postgresql://", "traceback", "redis://", "sk_"):
                     self.assertNotIn(needle, text, (path, needle))

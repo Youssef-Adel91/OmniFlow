@@ -4,13 +4,12 @@
 # for both but only documented the restore steps as comments — never as
 # runnable code, and never drilled. This is the real, tested counterpart.)
 #
-# PostgreSQL restore is intentionally NOT here: it is a single well-known
-# `pg_restore`/`psql` invocation, already documented as a comment in
-# backup.sh, and RELEASE_CHECKLIST.md already records a real local restore
-# drill for it. Qdrant/MinIO restore had no code and no drill at all, which
-# is the actual gap this script closes.
+# PostgreSQL: `postgres` restores a backup.sh dump into a NEW database (it
+# refuses to overwrite an existing one, so a live database can never be
+# clobbered by a typo). Swap it in for the live one deliberately afterwards.
 #
 # Usage:
+#   ./restore.sh postgres <dump-file> <new-database-name>
 #   ./restore.sh qdrant <collection> <snapshot-file>
 #   ./restore.sh minio  <source-bucket-or-prefix> <destination-bucket>
 #
@@ -29,6 +28,7 @@ if [ -f "$ENV_FILE" ]; then
     set +a
 fi
 
+PG_CONTAINER="${PG_CONTAINER:-prod-postgres}"
 QDRANT_CONTAINER="${QDRANT_CONTAINER:-prod-qdrant}"
 MINIO_CONTAINER="${MINIO_CONTAINER:-prod-minio}"
 # `minio/mc` no longer exists on Docker Hub. Bitnami's archived MinIO image bundles
@@ -84,6 +84,29 @@ restore_qdrant() {
     log "Restore complete: collection '${collection}'"
 }
 
+restore_postgres() {
+    local dump="$1" newdb="$2"
+    [ -f "$dump" ] || fail "Dump file not found: $dump"
+    [[ "$newdb" =~ ^[A-Za-z0-9_]+$ ]] || fail "Database name must be letters, digits and underscores only"
+    local pg_user="${POSTGRES_USER:-omniflow}" live_db="${POSTGRES_DB:-omniflow_db}"
+    [ "$newdb" != "$live_db" ] || fail "Refusing to restore over the live database '$live_db' — choose a new name (e.g. ${live_db}_restored)"
+
+    if docker exec "$PG_CONTAINER" psql -U "$pg_user" -d postgres -Atc "SELECT 1 FROM pg_database WHERE datname='${newdb}'" | grep -q 1; then
+        fail "Database '$newdb' already exists — refusing to overwrite it"
+    fi
+    log "Creating database ${newdb}"
+    docker exec "$PG_CONTAINER" createdb -U "$pg_user" "$newdb" || fail "createdb failed"
+    log "Copying dump into $PG_CONTAINER and restoring"
+    docker cp "$dump" "${PG_CONTAINER}:/tmp/restore.dump" || fail "docker cp into container failed"
+    docker exec "$PG_CONTAINER" pg_restore -U "$pg_user" -d "$newdb" --no-owner --no-privileges /tmp/restore.dump \
+        || { docker exec "$PG_CONTAINER" rm -f /tmp/restore.dump; fail "pg_restore reported errors (database '$newdb' left in place for inspection)"; }
+    docker exec "$PG_CONTAINER" rm -f /tmp/restore.dump
+    log "Sanity check:"
+    docker exec "$PG_CONTAINER" psql -U "$pg_user" -d "$newdb" -Atc "SELECT 'alembic', version_num FROM alembic_version; SELECT 'tenants', count(*) FROM tenants; SELECT 'rls_policies', count(*) FROM pg_policies WHERE schemaname='public';" \
+        || fail "sanity query failed"
+    log "Restore complete: database '${newdb}'. Point the app at it only after you have checked the numbers above."
+}
+
 restore_minio() {
     local source="$1" destination="$2"
 
@@ -101,6 +124,10 @@ restore_minio() {
 }
 
 case "${1:-}" in
+    postgres)
+        [ $# -eq 3 ] || fail "Usage: $0 postgres <dump-file> <new-database-name>"
+        restore_postgres "$2" "$3"
+        ;;
     qdrant)
         [ $# -eq 3 ] || fail "Usage: $0 qdrant <collection> <snapshot-file>"
         restore_qdrant "$2" "$3"
@@ -110,6 +137,6 @@ case "${1:-}" in
         restore_minio "$2" "$3"
         ;;
     *)
-        fail "Usage: $0 {qdrant|minio} ..."
+        fail "Usage: $0 {postgres|qdrant|minio} ..."
         ;;
 esac

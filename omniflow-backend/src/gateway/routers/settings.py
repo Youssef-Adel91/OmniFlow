@@ -438,6 +438,7 @@ async def get_preferences(user: CurrentUser, session: AuthTenantSession) -> dict
         "defaults": prefs_svc.all_defaults(),
         "days": [{"key": d, "label": prefs_svc.DAY_LABELS_AR[d]} for d in prefs_svc.DAYS],
         "currencies": list(prefs_svc.CURRENCIES),
+        "features": {"social_comment_replies": bool(_settings.feature_social_comment_replies)},
         "updated_at": row.updated_at.isoformat() if row and row.updated_at else None,
     }
 

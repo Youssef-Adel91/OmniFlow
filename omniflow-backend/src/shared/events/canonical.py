@@ -168,7 +168,7 @@ class CanonicalInboundEvent(BaseModel):
             "If True, route to human_agent outbound topic instead of AI."
         ),
     )
-    reply_target_type: Literal["dm", "comment", "instagram_comment"] = Field(
+    reply_target_type: Literal["dm", "comment", "instagram_comment", "comment_private"] = Field(
         default="dm",
         description=(
             "'dm' for a normal 1-to-1 thread (WhatsApp, Messenger/Instagram "
@@ -181,9 +181,17 @@ class CanonicalInboundEvent(BaseModel):
             "idea, but the Instagram Graph API replies with "
             "POST /{comment_id}/replies. Set by the channel adapter at "
             "ingestion and carried through RoutingDecision to OutboundMessage "
-            "unchanged."
+            "unchanged. 'comment_private' (Facebook or Instagram) answers a "
+            "comment with a PRIVATE message (Messenger Platform private reply: "
+            "recipient.comment_id) instead of a public reply; platform_conversation_id "
+            "holds the comment_id."
         ),
     )
+    source_post_url: str | None = Field(
+        default=None,
+        description="Permalink of the post a comment was made on, when known (Facebook only; Instagram needs a Graph lookup).",
+    )
+    source_post_id: str | None = Field(default=None, description="Facebook post id or Instagram media id a comment belongs to.")
 
     # ── Tracing (OpenTelemetry W3C Trace Context) ─────────────────────────────
     trace_id: str | None = Field(

@@ -26,7 +26,7 @@ from pydantic import BaseModel, Field, field_validator, model_validator
 
 from src.shared.services.bulk_import.text import norm_text
 
-SECTIONS = ("business_hours", "handoff", "ai_behavior", "identity")
+SECTIONS = ("business_hours", "handoff", "ai_behavior", "identity", "social_comments")
 DAYS = ("sun", "mon", "tue", "wed", "thu", "fri", "sat")
 DAY_LABELS_AR = {"sun": "الأحد", "mon": "الإثنين", "tue": "الثلاثاء", "wed": "الأربعاء", "thu": "الخميس", "fri": "الجمعة", "sat": "السبت"}
 CURRENCIES = ("SAR", "AED", "KWD", "QAR", "BHD", "OMR", "EGP", "USD", "EUR")
@@ -137,7 +137,13 @@ class Identity(BaseModel):
         return v
 
 
-MODELS: dict[str, type[BaseModel]] = {"business_hours": BusinessHours, "handoff": Handoff, "ai_behavior": AiBehavior, "identity": Identity}
+class SocialComments(BaseModel):
+    """What to do when someone comments on the Page / Instagram post. Takes effect only while the platform flag FEATURE_SOCIAL_COMMENT_REPLIES is on."""
+    enabled: bool = False
+    mode: Literal["public_reply", "private_dm"] = "public_reply"       # reply under the comment, or send the commenter a private message
+
+
+MODELS: dict[str, type[BaseModel]] = {"business_hours": BusinessHours, "handoff": Handoff, "ai_behavior": AiBehavior, "identity": Identity, "social_comments": SocialComments}
 
 
 def validate_section(section: str, payload: dict[str, Any]) -> dict[str, Any]:

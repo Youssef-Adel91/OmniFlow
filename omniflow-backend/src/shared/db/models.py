@@ -1515,6 +1515,7 @@ class TenantPreferences(Base):
     handoff: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict, server_default="{}")
     ai_behavior: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict, server_default="{}")
     identity: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict, server_default="{}")
+    social_comments: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict, server_default="{}")
     updated_by: Mapped[Optional[uuid.UUID]] = mapped_column(UUID(as_uuid=True), nullable=True)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
 

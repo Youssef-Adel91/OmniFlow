@@ -14,6 +14,7 @@ from sqlalchemy.dialects import postgresql
 
 from src.ai_workers.outbound_dispatcher import worker as dispatcher
 from src.channel_adapters.instagram import client as ig_client
+from src.channel_adapters.instagram import comment_policy
 from src.channel_adapters.instagram import router as meta
 from src.shared.core.config import get_settings
 from src.shared.events.outbound import OutboundMessage
@@ -65,6 +66,25 @@ def feed_comment_payload(page_id=PAGE_ID, comment_id="123_456", sender=CUSTOMER_
     }]}]}
 
 
+def comment_patches(mode="public_reply", enabled=True, flag=True, counters=None):
+    """Turn comment replies ON (platform flag + tenant switch) with in-memory dedupe/rate counters. Returns started-by-caller patchers."""
+    counters = {} if counters is None else counters
+
+    async def incr(key, *, ttl):
+        counters[key] = counters.get(key, 0) + 1
+        return counters[key]
+
+    async def prefs(_tenant):
+        return {"social_comments": {"enabled": enabled, "mode": mode}}
+
+    return [
+        patch.object(get_settings(), "feature_social_comment_replies", flag),
+        patch.object(comment_policy.redis_mgr, "incr_counter", incr),
+        patch.object(comment_policy.tenant_prefs, "get_prefs", prefs),
+        patch.object(meta, "_own_account_ids", AsyncMock(return_value={PAGE_ID, IG_ACCOUNT_ID})),
+    ]
+
+
 class WebhookIngestionTests(unittest.IsolatedAsyncioTestCase):
     def setUp(self):
         self.tenant_id = uuid.uuid4()
@@ -76,6 +96,7 @@ class WebhookIngestionTests(unittest.IsolatedAsyncioTestCase):
             patch.object(meta, "_resolve_tenant_id", self.resolve),
             patch.object(meta, "persist_inbound_message", AsyncMock(return_value=(uuid.uuid4(), uuid.uuid4(), True))),
             patch.object(meta.kafka_producer, "publish", self.publish),
+            *comment_patches(),
         ):
             p.start()
             self.addCleanup(p.stop)
@@ -372,6 +393,10 @@ class WebhookToGraphChainTests(unittest.IsolatedAsyncioTestCase):
             store[key] = value
 
         body = json.dumps(payload).encode()
+        patchers = comment_patches()
+        for pt in patchers:
+            pt.start()
+        self.addCleanup(lambda: [pt.stop() for pt in patchers])
         with patch.object(meta, "_resolve_tenant_id", AsyncMock(return_value=tenant_id)), \
                 patch.object(meta, "persist_inbound_message", AsyncMock(return_value=(uuid.uuid4(), uuid.uuid4(), True))), \
                 patch.object(meta.kafka_producer, "publish", publish):

@@ -58,6 +58,7 @@ from pydantic import BaseModel, Field, ValidationError
 
 from sqlalchemy import or_, select
 
+from src.channel_adapters.instagram import comment_policy
 from src.shared.core.config import get_settings
 from src.shared.core.enums import Channel, MessageType
 from src.shared.db.models import Tenant
@@ -528,13 +529,18 @@ async def _process_comment_event(
             logger.warning("meta_comment_missing_from_id", value=value.model_dump())
             return
 
-        # Our own reply to a comment comes back as a new feed event authored
-        # by the Page itself -- replying to it would loop forever.
-        if sender_id == page_id:
-            logger.info("meta_comment_self_authored_skipped", page_id=page_id, comment_id=comment_id)
+        if not comment_policy.enabled():
+            logger.info("meta_comment_ignored", reason="feature_off", comment_id=comment_id)
             return
 
         tenant_id = await _resolve_tenant_id(page_id)
+        decision = await comment_policy.decide(
+            tenant_id=tenant_id, comment_id=comment_id, sender_id=sender_id, own_ids=await _own_account_ids(tenant_id, page_id),
+            thread_reply=comment_policy.is_thread_reply(parent_id=getattr(value, "parent_id", None), post_id=value.post_id), text=comment_text)
+        if not decision.replies:
+            logger.info("meta_comment_ignored", reason=decision.reason, page_id=page_id, comment_id=comment_id)
+            return
+        post_url = comment_policy.facebook_post_url(value.post_id)
 
         logger.info(
             "meta_comment_received",
@@ -558,7 +564,9 @@ async def _process_comment_event(
             event_timestamp=event_ts,
             message_type=MessageType.TEXT,
             text_content=comment_text or None,
-            reply_target_type="comment",
+            reply_target_type="comment_private" if decision.action == "private_dm" else "comment",
+            source_post_id=value.post_id,
+            source_post_url=post_url,
         )
 
         await _persist_and_publish(
@@ -566,6 +574,7 @@ async def _process_comment_event(
             tenant_id=tenant_id,
             platform_msg_id=comment_id,
             log_label="meta_comment",
+            display_prefix=_post_prefix(post_url, value.post_id, "facebook"),
         )
     except Exception as exc:
         safe_exc = repr(exc).encode("ascii", "backslashreplace").decode("ascii")
@@ -613,17 +622,17 @@ async def _process_instagram_comment_event(
         if not comment_id or not sender_id:
             log.warning("ig_comment_missing_ids")
             return
-        if sender_id == account_id:
-            log.info("ig_comment_self_authored_skipped")
-            return
-        if value.parent_id:
-            log.info("ig_comment_reply_skipped", parent_id=value.parent_id)
-            return
-        if not text:
-            log.info("ig_comment_empty_skipped")
+        if not comment_policy.enabled():
+            log.info("ig_comment_ignored", reason="feature_off")
             return
 
         tenant_id = await _resolve_tenant_id(account_id)
+        decision = await comment_policy.decide(
+            tenant_id=tenant_id, comment_id=comment_id, sender_id=sender_id, own_ids=await _own_account_ids(tenant_id, account_id),
+            thread_reply=comment_policy.is_thread_reply(parent_id=value.parent_id), text=text)
+        if not decision.replies:
+            log.info("ig_comment_ignored", reason=decision.reason)
+            return
         log.info(
             "ig_comment_received",
             tenant_id=str(tenant_id),
@@ -641,7 +650,8 @@ async def _process_instagram_comment_event(
             event_timestamp=datetime.now(tz=timezone.utc),
             message_type=MessageType.TEXT,
             text_content=text,
-            reply_target_type="instagram_comment",
+            reply_target_type="comment_private" if decision.action == "private_dm" else "instagram_comment",
+            source_post_id=media_id,
         )
 
         await _persist_and_publish(
@@ -649,6 +659,7 @@ async def _process_instagram_comment_event(
             tenant_id=tenant_id,
             platform_msg_id=comment_id,
             log_label="meta_ig_comment",
+            display_prefix=_post_prefix(None, media_id, "instagram"),
         )
     except Exception as exc:
         safe_exc = repr(exc).encode("ascii", "backslashreplace").decode("ascii")
@@ -791,6 +802,7 @@ async def _persist_and_publish(
     tenant_id: uuid.UUID,
     platform_msg_id: str,
     log_label: str,
+    display_prefix: str = "",
 ) -> None:
     """
     Persist the event to the DB and publish to Kafka.
@@ -808,7 +820,7 @@ async def _persist_and_publish(
             platform_conversation_id=canonical.platform_conversation_id,
             platform_message_id=canonical.platform_message_id,
             message_type=canonical.message_type,
-            text_content=canonical.text_content,
+            text_content=(display_prefix + canonical.text_content) if display_prefix and canonical.text_content else canonical.text_content,
             s3_media_url=canonical.media_url,
         )
     except Exception as exc:
@@ -905,6 +917,28 @@ async def _resolve_tenant_id(entry_id: str) -> uuid.UUID:
         return uuid.UUID("00000000-0000-0000-0000-000000000000")
 
     raise ValueError(f"No tenant found for Meta webhook entry.id={entry_id!r}")
+
+
+async def _own_account_ids(tenant_id: uuid.UUID, entry_id: str) -> set[str]:
+    """Ids that identify the tenant's own Page / Instagram account (a comment from any of them is ours, never a customer)."""
+    ids = {entry_id}
+    try:
+        async with get_system_session() as session:
+            row = (await session.execute(select(Tenant.instagram_page_id, Tenant.instagram_account_id).where(Tenant.tenant_id == tenant_id))).first()
+        if row:
+            ids |= {i for i in row if i}
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("meta_own_ids_lookup_failed", error=type(exc).__name__)
+    return ids
+
+
+def _post_prefix(url: str | None, post_id: str | None, platform: str) -> str:
+    """One line shown in the inbox above the comment so the agent knows which post it is about."""
+    if url:
+        return f"💬 تعليق على منشور: {url}\n"
+    if post_id:
+        return f"💬 تعليق على منشور {'إنستجرام' if platform == 'instagram' else 'فيسبوك'} (المعرّف {post_id})\n"
+    return "💬 تعليق على منشور\n"
 
 
 def _safe_preview(text: str | None, limit: int) -> str:

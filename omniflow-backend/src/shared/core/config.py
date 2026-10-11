@@ -451,6 +451,8 @@ class Settings(BaseSettings):
     feature_vcard_gatekeeper: bool = True
     feature_vip_broadcast: bool = True
     feature_human_takeover: bool = True
+    feature_social_comment_replies: bool = False   # OFF: Facebook/Instagram post comments are ignored until this is on AND the tenant enables it
+    social_comment_rate_per_minute: int = 30       # max comment replies per tenant per minute (public or private)
     feature_rega_verification: bool = True
     feature_clickhouse_analytics: bool = True
     feature_semantic_cache: bool = True

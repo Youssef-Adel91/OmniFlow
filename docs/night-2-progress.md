@@ -18,6 +18,6 @@ Branch chain (each branch is built on the previous one; migrations are linear 00
 | 7 | Retention & erasure job | `feat/n2-retention` (on item 6) | #29 | done — no migration; job OFF + dry-run by default; 12 tests (real Postgres/RLS, fake object store); anonymize now deletes files first; docs/retention.md; periods are placeholders pending legal review |
 | 8 | Reliability & ops scripts | `feat/n2-ops-reliability` (on item 7) | #30 | done — PG restore drill RAN for real on local PG (46 tables, 78 RLS policies, identical); restore.sh postgres (guards tested, docker path not run); /health/lag; dev_up.py (10048 + ngrok/Meta URL checks, logic tested); locust files (never run); Kafka/DLQ drill = existing script, steps in morning-verification.md |
 | 9 | UI quality pass | `feat/n2-ui-quality` (on item 8) | #31 | done — found+fixed invisible public headings (1.18:1 contrast), robots/sitemap redirect, Clerk handshake on public pages; error/404/loading pages; first-load JS public -152 KB, properties -148 KB; 38 Playwright+axe tests RAN green on public pages; signed-in flows spec written, NOT run; docs/ui-quality.md |
-| 10 | Documentation | | | pending |
+| 10 | Documentation | `feat/n2-docs` (on item 9) | (pending) | done — README, architecture, env-reference, go-live checklist, night-2-report, morning-verification, runbook, .env.prod.example |
 
 Local verification environment used overnight: PostgreSQL 16 (owner + non-superuser `app_user`), Redis with the test password, no Docker.

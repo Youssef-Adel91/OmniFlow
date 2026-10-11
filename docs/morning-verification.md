@@ -15,7 +15,7 @@ Conventions: run from the repository root unless stated; `$BACKEND = omniflow-ba
 | 6 | #27 | `feat/n2-developers` | read-only API keys + signed webhooks — 0034 |
 | 7 | #28 | `feat/n2-social-comments` | comment replies (flag off) — 0035 |
 | 8 | #29 | `feat/n2-retention` | retention & erasure job (off, dry-run) |
-| 9 | (item 8) | `feat/n2-ops-reliability` | ops scripts, `/health/lag`, load-test files |
+| 9 | #30 | `feat/n2-ops-reliability` | ops scripts, `/health/lag`, load-test files |
 
 ```bash
 git fetch origin && git checkout feat/n2-ops-reliability   # the tip contains everything above

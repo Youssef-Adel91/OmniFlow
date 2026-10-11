@@ -99,6 +99,7 @@ class Tenant(Base, TimestampMixin):
         index=True,
         comment="FAL license number — verified via REGA Broker Verification API",
     )
+    facebook_user_id: Mapped[Optional[str]] = mapped_column(String(64), index=True, comment="Facebook user who connected the Page (for Meta data-deletion requests)")
     vat_number: Mapped[Optional[str]] = mapped_column(String(15), comment="Buyer VAT number for B2B e-invoices; empty = simplified (B2C) invoice")
     cr_number: Mapped[Optional[str]] = mapped_column(String(20))
     billing_address: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict, comment="street / building / district / city / postal_zone")
@@ -1866,6 +1867,20 @@ class EInvoiceDocument(Base):
     issued_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     submitted_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+
+class DataDeletionRequest(Base):
+    """A Meta "Data Deletion Request Callback" we received. The Facebook user id is stored only as a hash."""
+    __tablename__ = "data_deletion_requests"
+
+    request_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    confirmation_code: Mapped[str] = mapped_column(String(32), nullable=False, unique=True)
+    source: Mapped[str] = mapped_column(String(12), nullable=False, default="meta")
+    fb_user_hash: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    status: Mapped[str] = mapped_column(String(12), nullable=False, default="received")
+    tenants_affected: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    completed_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
 
 
 class PaymentEvent(Base):

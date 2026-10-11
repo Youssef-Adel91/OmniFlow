@@ -34,6 +34,7 @@ class FacebookOAuthTests(unittest.IsolatedAsyncioTestCase):
         self.tenant_id = uuid.uuid4()
         self.redis = FakeRedis()
         self.saved = []
+        self.saved_fb_users = []
         self.subscribed = []
 
         self.app = FastAPI()
@@ -41,8 +42,9 @@ class FacebookOAuthTests(unittest.IsolatedAsyncioTestCase):
         self.app.include_router(fo.callback_router)
         self.app.dependency_overrides[fo.get_current_user] = lambda: SimpleNamespace(tenant_id=self.tenant_id)
 
-        async def save(tenant_id, page_id, token, instagram_account_id=None):
+        async def save(tenant_id, page_id, token, instagram_account_id=None, facebook_user_id=None):
             self.saved.append((tenant_id, page_id, token, instagram_account_id))
+            self.saved_fb_users.append(facebook_user_id)
 
         async def graph_post(client, path, params):
             self.subscribed.append(path)
@@ -70,6 +72,8 @@ class FacebookOAuthTests(unittest.IsolatedAsyncioTestCase):
                 return {"access_token": token}
             if path == "me/accounts":
                 return {"data": pages}
+            if path == "me":
+                return {"id": "fb-user-77"}
             return {"instagram_business_account": instagram[path]} if path in instagram else {}
 
         return patch.object(fo, "_graph_get", graph_get)
@@ -101,6 +105,7 @@ class FacebookOAuthTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn('"status": "success"', response.text)
         self.assertIn("shop_ig", response.text)
         self.assertEqual(self.saved, [(self.tenant_id, "p1", "page-token", "ig1")])
+        self.assertEqual(self.saved_fb_users, ["fb-user-77"])               # remembered so a Meta data-deletion request for this user can find it
         self.assertEqual(self.subscribed, ["p1/subscribed_apps"])
         # "comments" is not a valid Page subscription field (Meta answers 500).
         self.assertEqual(self.subscribed_params["subscribed_fields"], "messages,messaging_postbacks,feed")

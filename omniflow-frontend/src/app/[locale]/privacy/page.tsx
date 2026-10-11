@@ -1,22 +1,19 @@
 import type { Metadata } from "next";
-import { H2, LegalPage } from "@/components/legal/LegalPage";
+import { Doc } from "@/components/public/Doc";
+import { PublicShell } from "@/components/public/PublicShell";
+import { copyFor } from "@/lib/public/copy";
+import { pageMetadata } from "@/lib/public/meta";
+import { asLocale } from "@/lib/public/site";
 
-export const metadata: Metadata = { title: "سياسة الخصوصية" };
+export async function generateMetadata({ params }: { params: Promise<{ locale: string }> }): Promise<Metadata> {
+  const locale = asLocale((await params).locale);
+  const c = copyFor(locale).privacy;
+  return pageMetadata(locale, "/privacy", c.metaTitle, c.title);
+}
 
-export default function PrivacyPage() {
-  return (
-    <LegalPage title="سياسة الخصوصية">
-      <p>توضح هذه السياسة كيف تتعامل منصة OmniFlow مع البيانات الشخصية وفق نظام حماية البيانات الشخصية في المملكة العربية السعودية (PDPL).</p>
-      <H2>البيانات التي نعالجها</H2>
-      <p>بيانات حساب المنشأة وموظفيها، وبيانات عملاء المنشأة التي ترد عبر قنوات التواصل (الاسم، رقم الجوال، محتوى المحادثات)، وبيانات الفوترة. لا نحفظ بيانات البطاقات المصرفية؛ تُعالَج لدى مزوّد الدفع.</p>
-      <H2>الأدوار</H2>
-      <p>المنشأة العميلة هي «المتحكم» في بيانات عملائها، وOmniFlow «معالِج» يعمل بتعليماتها.</p>
-      <H2>حقوق أصحاب البيانات</H2>
-      <p>يستطيع مدير الحساب من الإعدادات ← الخصوصية والامتثال الاطلاع على موافقات العميل وتصدير بياناته ومحو هويته. تُسجَّل هذه الإجراءات في سجل التدقيق.</p>
-      <H2>الاحتفاظ بالبيانات</H2>
-      <p>[يُحدَّد من الجهة القانونية: مدد الاحتفاظ لكل فئة من البيانات.]</p>
-      <H2>التواصل</H2>
-      <p>[بيانات التواصل مع مسؤول حماية البيانات — تُستكمل قبل الإطلاق.]</p>
-    </LegalPage>
-  );
+export default async function Page({ params }: { params: Promise<{ locale: string }> }) {
+  const locale = asLocale((await params).locale);
+  const copy = copyFor(locale);
+  const c = copy.privacy;
+  return <PublicShell locale={locale}><Doc title={c.title} draft={copy.legalDraft} sections={c.sections} /></PublicShell>;
 }

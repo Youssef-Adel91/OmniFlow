@@ -146,11 +146,14 @@ async def get_current_user(
                     session.add(new_tenant)
                     await session.flush()
 
+                    # Dev only. One throw-away workspace per unknown Clerk user; the e-mail is unique per Clerk id (it used to be a
+                    # constant dev@example.com, which made every dev workspace's user look identical in a superuser/RLS-bypassing DB).
+                    claim_email = payload.get("email") if isinstance(payload.get("email"), str) and "@" in payload.get("email", "") else None
                     user = TenantUser(
                         clerk_id=clerk_id,
                         tenant_id=new_tenant.tenant_id,
-                        full_name="Local Dev User",
-                        email="dev@example.com",
+                        full_name=str(payload.get("name") or payload.get("full_name") or f"Local Dev User ({clerk_id[-6:]})")[:200],
+                        email=claim_email or f"dev+{clerk_id[-12:].lower()}@example.com",
                         role=TenantUserRole.ADMIN,
                         hashed_password="clerk_managed",
                     )

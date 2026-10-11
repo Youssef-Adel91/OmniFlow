@@ -50,8 +50,11 @@ def _inv(i: TeamInvitation) -> dict:
 @router.get("", summary="Members, pending invitations and seats")
 async def team(user: CurrentUser, session: AuthTenantSession) -> dict:
     _reader(user)
-    members = (await session.execute(select(TenantUser).order_by(TenantUser.created_at))).scalars().all()
-    invs = (await session.execute(select(TeamInvitation).where(TeamInvitation.status == "pending").order_by(TeamInvitation.created_at.desc()))).scalars().all()
+    # Explicit tenant filter on top of RLS: a dev database whose role is a superuser (the docker default) bypasses RLS, and this page
+    # must never list another workspace's people either way.
+    members = (await session.execute(select(TenantUser).where(TenantUser.tenant_id == user.tenant_id).order_by(TenantUser.created_at))).scalars().all()
+    invs = (await session.execute(select(TeamInvitation).where(TeamInvitation.tenant_id == user.tenant_id, TeamInvitation.status == "pending")
+                                  .order_by(TeamInvitation.created_at.desc()))).scalars().all()
     return {"members": [_member(m) for m in members], "invitations": [_inv(i) for i in invs], "seats": await svc.seat_usage(session, user.tenant_id),
             "me": str(user.user_id), "can_edit": user.role == TenantUserRole.ADMIN}
 

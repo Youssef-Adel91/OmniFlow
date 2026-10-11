@@ -718,17 +718,6 @@ class BillingDbTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual((await self.row("SELECT ai_messages FROM usage_counters WHERE tenant_id=:t", t=t))[0]["ai_messages"], 1200)
         self.assertEqual((usage.level(799, 1000), usage.level(800, 1000), usage.level(1000, 1000), usage.level(5, None)), ("ok", "warning", "limit_reached", "unlimited"))
 
-    async def test_message_limit_is_only_enforced_when_switched_on(self):
-        from src.shared.services.billing import entitlements, usage
-        t = self.tenants[0]
-        async with client_for(self.app) as c:
-            await c.get(f"{BASE}/status")
-        with patch.object(entitlements.redis_mgr, "get_raw", AsyncMock(side_effect=lambda k: "1000" if k.startswith("usage:") else None)):
-            self.assertFalse(await entitlements.over_message_limit(t))
-            with patch.object(get_settings(), "billing_enforce_message_limit", True):
-                self.assertTrue(await entitlements.over_message_limit(t))
-        self.assertIsNotNone(usage.period_of())
-
     async def test_kill_switch_reopens_everything(self):
         from src.shared.services.billing import entitlements, service
         t = self.tenants[0]

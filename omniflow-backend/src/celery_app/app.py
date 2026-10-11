@@ -119,6 +119,17 @@ app.conf.beat_schedule = {
         "schedule": 300.0,  # every 5 minutes
         "options": {"expires": 280},
     },
+    # AI top-up credits: drain the Redis consumption counters into the ledger; roll raw AI cost rows up per day.
+    "billing-credits-flush": {
+        "task": "omniflow.billing_credits_flush",
+        "schedule": 300.0,
+        "options": {"expires": 280},
+    },
+    "billing-llm-rollup": {
+        "task": "omniflow.billing_llm_rollup",
+        "schedule": 3600.0,
+        "options": {"expires": 3500},
+    },
     # VIP re-engagement sweep — 03:00 Riyadh, outside business hours.
     "vip-followup-check": {
         "task": "omniflow.vip_followup_check",

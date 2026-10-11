@@ -460,6 +460,36 @@ class RedisClientManager:
             logger.warning("redis_incr_counter_error", key=key, error=str(exc))
             return None
 
+    async def eval_script(self, script: str, keys: list[str], args: list) -> object:
+        """Run a Lua script atomically on the cache DB (DB 5). Raises on Redis failure — callers choose fail-open / fail-closed."""
+        return await self._cache.eval(script, len(keys), *keys, *args)
+
+    async def incr_by(self, key: str, amount: int, *, ttl: int | None = None) -> int | None:
+        try:
+            value = await self._cache.incrby(key, amount)
+            if ttl:
+                await self._cache.expire(key, ttl)
+            return int(value)
+        except Exception as exc:
+            logger.warning("redis_incr_by_error", key=key, error=str(exc))
+            return None
+
+    async def set_if_absent(self, key: str, value: str, *, ttl: int) -> bool:
+        """SET NX EX on the cache DB; True = we set it (first caller wins). Redis failure = False (caller skips)."""
+        try:
+            return bool(await self._cache.set(key, value, nx=True, ex=ttl))
+        except Exception as exc:
+            logger.warning("redis_set_if_absent_error", key=key, error=str(exc))
+            return False
+
+    async def getdel_raw(self, key: str) -> str | None:
+        """Atomically read-and-remove a key (cache DB)."""
+        try:
+            return await self._cache.getdel(key)
+        except Exception as exc:
+            logger.warning("redis_getdel_error", key=key, error=str(exc))
+            return None
+
     async def scan_counters(self, pattern: str) -> dict[str, int]:
         """Return {key: int(value)} for keys matching `pattern` in the cache DB (used by the usage flush job)."""
         out: dict[str, int] = {}

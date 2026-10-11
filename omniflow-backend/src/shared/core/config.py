@@ -216,7 +216,17 @@ class Settings(BaseSettings):
     billing_seller_cr_number: str = ""
     billing_admin_api_key: str = ""          # enables staff manual activation (header X-Billing-Key); empty = disabled
     billing_enforce_message_limit: bool = True    # hard cap: no LLM call once the plan quota + top-up credits are spent (exempt tenants: never)
+    billing_auto_topup_max_per_month: int = 3     # safety: automatic recharges per tenant per calendar month
     billing_enforce_limits: bool = True           # seats / properties / contacts / campaigns / channels (exempt tenants: never)
+
+    # ── AI cost control (P10-C) ───────────────────────────────────────────────
+    llm_default_cost_sar_per_reply: float = 0.02  # used for the margin view when a reply has no measured tokens / no price entry
+    llm_prices_json: str = ""                     # {"model-name": {"in_per_1k": SAR, "out_per_1k": SAR}} — owner-maintained; empty = default cost
+    llm_max_output_tokens: int = 1024             # hard ceiling on every reply (tier caps are lower or equal)
+    llm_history_max_messages: int = 12            # conversation turns sent to the model (was a fixed 20)
+    llm_rag_max_chars: int = 6000                 # retrieved context injected into the prompt
+    llm_l3_max_share_pct: int = 15                # most expensive tier: max share of a tenant's monthly AI replies
+    ai_margin_alert_pct: int = 40                 # platform alert when a tenant's AI cost exceeds this % of its revenue
 
     # ── Email (all optional: with no provider configured, email notifications are simply off) ──
     email_provider: str = ""                 # "resend" | "smtp" | "" (disabled)

@@ -21,16 +21,17 @@ import uuid
 from typing import Annotated, Optional
 
 import structlog
-from fastapi import APIRouter, Header, HTTPException, Path, Request, Response, status
+from fastapi import APIRouter, Header, HTTPException, Path, Query, Request, Response, status
 from pydantic import BaseModel, Field
 from sqlalchemy import func, select
 
 from src.gateway.dependencies import AuthTenantSession, CurrentUser
+from src.gateway.routers.support import StaffUser
 from src.shared.core.config import get_settings
 from src.shared.core.enums import TenantUserRole
 from src.shared.db.models import BillingInvoice, PaymentTransaction, Plan
 from src.shared.db.session import get_system_session
-from src.shared.services.billing import catalog, entitlements, pricing, quotas, service, usage
+from src.shared.services.billing import catalog, credits, entitlements, llm_cost, pricing, quotas, service, usage
 from src.shared.services.billing.invoice_pdf import build_invoice_pdf
 from src.shared.services.billing.providers import get_provider
 from src.shared.services.billing.providers.base import ProviderError, WebhookRejected
@@ -118,6 +119,9 @@ async def subscription(user: CurrentUser, session: AuthTenantSession) -> dict:
         "card": {"brand": sub.card_brand, "last4": sub.card_last4} if sub.card_last4 else None, "auto_renew": bool(sub.payment_token),
         "last_payment_error": sub.last_payment_error, "retry_count": sub.retry_count,
         "usage": {"ai_messages": used, "limit": msg_limit, "level": usage.level(used, msg_limit)},
+        "credits": await credits.balance(session, user.tenant_id),
+        "quota_settings": {"quota_exhausted_action": sub.quota_exhausted_action, "auto_topup_enabled": sub.auto_topup_enabled,
+                           "auto_topup_pack": sub.auto_topup_pack},
         "limits": limits, "quotas": await quotas.snapshot(session, user.tenant_id),
         "addons": {"seats": sub.addon_seats, "whatsapp_numbers": sub.addon_whatsapp_numbers},
         "pending_checkout": _txn_json(pending) if pending else None,
@@ -189,6 +193,95 @@ async def checkout(user: CurrentUser, session: AuthTenantSession, body: Checkout
     return {"action": "checkout", "transaction": _txn_json(t), "checkout_url": t.checkout_url}
 
 
+# ── top-up packs, add-ons, quota behaviour ───────────────────────────────────
+
+def _vat_json(subtotal: int) -> dict:
+    a = pricing.with_vat(subtotal, get_settings().billing_vat_rate_bp)
+    return {"subtotal_halalas": a.subtotal, "vat_halalas": a.vat, "total_halalas": a.total}
+
+
+@router.get("/topup-packs", summary="Extra AI-reply packs, add-ons and what is in the tenant's balance")
+async def topup_packs(user: CurrentUser, session: AuthTenantSession) -> dict:
+    _require(user, TenantUserRole.ADMIN, TenantUserRole.AUDITOR)
+    from src.shared.db.models import PlanAddon
+
+    packs = await service.list_topup_packs(session)
+    addons = (await session.execute(select(PlanAddon).where(PlanAddon.is_active.is_(True)))).scalars().all()
+    return {
+        "packs": [{"code": p.code, "replies": p.replies, "validity_months": p.validity_months, **_vat_json(p.price_halalas)} for p in packs],
+        "addons": [{"code": a.code, "name_ar": a.name_ar, "available": a.is_available, "unavailable_reason": a.unavailable_reason,
+                    "monthly": _vat_json(a.price_monthly_halalas), "yearly": _vat_json(a.price_monthly_halalas * 10)} for a in addons],
+        "credits": await credits.balance(session, user.tenant_id),
+    }
+
+
+class TopupBody(BaseModel):
+    pack_code: str = Field(..., min_length=2, max_length=30)
+
+
+@router.post("/topups", summary="Buy an extra AI-reply pack (hosted payment page)")
+async def buy_topup(user: CurrentUser, session: AuthTenantSession, body: TopupBody) -> dict:
+    _require(user, TenantUserRole.ADMIN)
+    if not _payments_enabled():
+        raise HTTPException(status_code=503, detail={"code": "PAYMENTS_UNAVAILABLE", "message": "الدفع الإلكتروني غير مفعّل حاليًا. تواصل مع الدعم."})
+    try:
+        t = await service.purchase_topup(session, user.tenant_id, body.pack_code, _urls())
+    except service.BillingError as exc:
+        raise _http(exc) from exc
+    if t.status == "failed" or not t.checkout_url:
+        raise HTTPException(status_code=502, detail={"code": "PROVIDER_ERROR", "message": "تعذّر فتح صفحة الدفع الآن. حاول بعد قليل."})
+    return {"transaction": _txn_json(t), "checkout_url": t.checkout_url}
+
+
+class AddonBody(BaseModel):
+    code: str = Field(..., pattern="^(seat|whatsapp_number)$")
+    quantity: int = Field(1, ge=1, le=50)
+
+
+@router.post("/addons", summary="Add seats / numbers to the current period (pro-rated); recurring from the next renewal")
+async def buy_addon(user: CurrentUser, session: AuthTenantSession, body: AddonBody) -> dict:
+    _require(user, TenantUserRole.ADMIN)
+    if not _payments_enabled():
+        raise HTTPException(status_code=503, detail={"code": "PAYMENTS_UNAVAILABLE", "message": "الدفع الإلكتروني غير مفعّل حاليًا. تواصل مع الدعم."})
+    try:
+        t = await service.purchase_addon(session, user.tenant_id, body.code, body.quantity, _urls())
+    except service.BillingError as exc:
+        raise _http(exc) from exc
+    if t.status == "failed" or not t.checkout_url:
+        raise HTTPException(status_code=502, detail={"code": "PROVIDER_ERROR", "message": "تعذّر فتح صفحة الدفع الآن. حاول بعد قليل."})
+    return {"transaction": _txn_json(t), "checkout_url": t.checkout_url}
+
+
+@router.delete("/addons/{code}", summary="Remove add-on units from the next renewal on (no refund of the current period)")
+async def remove_addon(user: CurrentUser, session: AuthTenantSession, code: Annotated[str, Path(pattern="^(seat|whatsapp_number)$")],
+                       quantity: int = 1) -> dict:
+    _require(user, TenantUserRole.ADMIN)
+    try:
+        sub = await service.reduce_addon(session, user.tenant_id, code, quantity, user.user_id)
+    except service.BillingError as exc:
+        raise _http(exc) from exc
+    await entitlements.invalidate(user.tenant_id)
+    return {"addons": {"seats": sub.addon_seats, "whatsapp_numbers": sub.addon_whatsapp_numbers}}
+
+
+class QuotaSettingsBody(BaseModel):
+    quota_exhausted_action: Optional[str] = Field(None, pattern="^(handoff|stop)$")
+    auto_topup_enabled: Optional[bool] = None
+    auto_topup_pack: Optional[str] = Field(None, max_length=30)
+
+
+@router.put("/quota-settings", summary="What happens when the AI quota is spent + opt-in automatic recharge")
+async def quota_settings(user: CurrentUser, session: AuthTenantSession, body: QuotaSettingsBody) -> dict:
+    _require(user, TenantUserRole.ADMIN)
+    try:
+        sub = await service.update_quota_settings(session, user.tenant_id, quota_exhausted_action=body.quota_exhausted_action,
+                                                  auto_topup_enabled=body.auto_topup_enabled, auto_topup_pack=body.auto_topup_pack, actor=user.user_id)
+    except service.BillingError as exc:
+        raise _http(exc) from exc
+    await entitlements.invalidate(user.tenant_id)
+    return {"quota_exhausted_action": sub.quota_exhausted_action, "auto_topup_enabled": sub.auto_topup_enabled, "auto_topup_pack": sub.auto_topup_pack}
+
+
 @router.post("/cancel", summary="Cancel at the end of the paid period")
 async def cancel(user: CurrentUser, session: AuthTenantSession) -> dict:
     _require(user, TenantUserRole.ADMIN)
@@ -237,6 +330,11 @@ async def manual_activate(tenant_id: Annotated[uuid.UUID, Path()], body: ManualA
         raise _http(exc) from exc
     await entitlements.invalidate(tenant_id)
     return out
+
+
+@router.get("/admin/unit-economics", summary="Platform staff: real AI cost vs revenue and margin per tenant for a month")
+async def unit_economics(staff: StaffUser, period: Annotated[Optional[str], Query(pattern=r"^\d{4}-(0[1-9]|1[0-2])$")] = None) -> dict:
+    return await llm_cost.margin_report(period or usage.period_of())
 
 
 # ── provider webhook ─────────────────────────────────────────────────────────

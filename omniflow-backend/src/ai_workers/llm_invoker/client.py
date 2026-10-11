@@ -210,7 +210,8 @@ class GeminiLLMClient:
 
         model_name = _TIER_TO_MODEL.get(tier, settings.gemini_l1_model)
         timeout = _TIER_TIMEOUT.get(tier, 20.0)
-        gen_config = _TIER_GENERATION_CONFIG.get(tier, _TIER_GENERATION_CONFIG[RoutingTier.L1_TRIAGE])
+        gen_config = dict(_TIER_GENERATION_CONFIG.get(tier, _TIER_GENERATION_CONFIG[RoutingTier.L1_TRIAGE]))
+        gen_config["max_output_tokens"] = min(int(gen_config["max_output_tokens"]), int(settings.llm_max_output_tokens))    # cost ceiling
 
         # Build the system instruction (tenant persona + optional RAG context)
         full_system = self._build_system_instruction(

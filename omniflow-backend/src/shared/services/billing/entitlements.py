@@ -17,7 +17,7 @@ from src.shared.core.config import get_settings
 from src.shared.db.models import Plan
 from src.shared.db.session import get_system_session
 from src.shared.redis_client import redis_mgr
-from src.shared.services.billing import service
+from src.shared.services.billing import catalog, service
 
 logger = structlog.get_logger(__name__)
 CACHE_TTL = 60
@@ -25,7 +25,8 @@ _KEY = "billing:ent:{tid}"
 
 
 def _fallback() -> dict[str, Any]:
-    return {"mode": "full", "status": "unknown", "reason": None, "banner": None, "days_left": None, "plan_code": None, "limits": {}}
+    return {"mode": "full", "status": "unknown", "reason": None, "banner": None, "days_left": None, "plan_code": None, "limits": {},
+            "exempt": True, "quota_action": "handoff", "auto_topup": False}
 
 
 async def snapshot(tenant_id: uuid.UUID, *, now: datetime | None = None, use_cache: bool = True) -> dict[str, Any]:
@@ -45,8 +46,10 @@ async def snapshot(tenant_id: uuid.UUID, *, now: datetime | None = None, use_cac
             sub = await service.ensure_subscription(session, tenant_id, now)
             acc = service.access_of(sub, now)
             plan = await session.scalar(select(Plan).where(Plan.code == sub.plan_code))
+            limits = catalog.effective_limits(sub, plan)          # trial caps / add-ons included; None = unlimited (grandfathered)
             snap = {"mode": acc.mode, "status": acc.status, "reason": acc.reason, "banner": acc.banner, "days_left": acc.days_left,
-                    "plan_code": sub.plan_code, "limits": dict(plan.limits) if plan else {}}
+                    "plan_code": sub.plan_code, "limits": dict(limits or {}), "exempt": limits is None,
+                    "quota_action": sub.quota_exhausted_action, "auto_topup": bool(sub.auto_topup_enabled and sub.auto_topup_pack and sub.payment_token)}
     except Exception as exc:  # noqa: BLE001 - never take every bot down because billing storage hiccuped
         logger.error("billing_entitlement_lookup_failed", tenant_id=str(tenant_id), error=str(exc)[:200])
         return _fallback()
@@ -66,16 +69,3 @@ async def bot_allowed(tenant_id: uuid.UUID) -> tuple[bool, str | None]:
 async def writes_allowed(tenant_id: uuid.UUID) -> tuple[bool, str | None]:
     snap = await snapshot(tenant_id)
     return snap["mode"] != "blocked", snap.get("reason")
-
-
-async def over_message_limit(tenant_id: uuid.UUID) -> bool:
-    """True only when BILLING_ENFORCE_MESSAGE_LIMIT is on and this month's AI messages reached the plan limit (Redis counter, no DB)."""
-    if not get_settings().billing_enforce_message_limit:
-        return False
-    from src.shared.services.billing import usage
-
-    limit = (await snapshot(tenant_id)).get("limits", {}).get("messages_per_month")
-    if not limit:
-        return False
-    raw = await redis_mgr.get_raw(usage._key(tenant_id, usage.period_of()))
-    return bool(raw and raw.isdigit() and int(raw) >= int(limit))

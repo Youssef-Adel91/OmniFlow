@@ -17,7 +17,7 @@ from sqlalchemy.dialects.postgresql import insert as pg_insert
 
 from src.shared.core.config import get_settings
 from src.shared.db.models import (
-    AuditLog, BillingInvoice, PaymentEvent, PaymentTransaction, Plan, Subscription, Tenant,
+    AuditLog, BillingInvoice, PaymentEvent, PaymentTransaction, Plan, PlanAddon, Subscription, Tenant, TopupPack,
 )
 from src.shared.services.billing import pricing
 from src.shared.services.billing.access import Access, evaluate
@@ -127,13 +127,14 @@ def _check_sellable(plan: Plan) -> None:
 
 
 async def _new_transaction(session, sub: Subscription, plan: Plan, interval: str, kind: str, subtotal: int, *, provider: str,
-                           period_start=None, period_end=None, attempt: int = 1, now: datetime | None = None) -> PaymentTransaction:
+                           period_start=None, period_end=None, attempt: int = 1, now: datetime | None = None,
+                           meta: dict | None = None) -> PaymentTransaction:
     amounts = pricing.with_vat(subtotal, get_settings().billing_vat_rate_bp)
     txn = PaymentTransaction(
         transaction_id=uuid.uuid4(), tenant_id=sub.tenant_id, subscription_id=sub.subscription_id, kind=kind,
         plan_code=plan.code, billing_interval=interval, subtotal_halalas=amounts.subtotal, vat_halalas=amounts.vat,
         amount_halalas=amounts.total, currency=plan.currency, status="pending", provider=provider,
-        period_start=period_start, period_end=period_end, attempt=attempt, created_at=now or _now(),
+        period_start=period_start, period_end=period_end, attempt=attempt, created_at=now or _now(), meta=dict(meta or {}),
     )
     session.add(txn)
     await session.flush()
@@ -166,6 +167,18 @@ async def _reusable_pending(session, sub, plan_code, interval, kind, now: dateti
             PaymentTransaction.created_at > cutoff).order_by(PaymentTransaction.created_at.desc()).limit(1))
 
 
+async def addon_prices(session) -> dict[str, int]:
+    return {a.code: a.price_monthly_halalas for a in (await session.execute(select(PlanAddon))).scalars()}
+
+
+async def recurring_subtotal(session, sub: Subscription, plan: Plan, interval: str) -> int:
+    """What one renewal costs before VAT: the plan plus every purchased add-on unit (yearly add-on = 10 x monthly, like the plans)."""
+    prices = await addon_prices(session)
+    months = 10 if interval == "yearly" else 1
+    extra = (sub.addon_seats or 0) * prices.get("seat", 0) + (sub.addon_whatsapp_numbers or 0) * prices.get("whatsapp_number", 0)
+    return pricing.plan_price(plan, interval) + extra * months
+
+
 def _describe(plan: Plan, interval: str, kind: str) -> str:
     unit = "سنوي" if interval == "yearly" else "شهري"
     label = {"upgrade": "ترقية الخطة", "renewal": "تجديد الاشتراك"}.get(kind, "اشتراك")
@@ -191,7 +204,7 @@ async def change_plan(session, tenant_id: uuid.UUID, plan_code: str, interval: s
         cur = await get_plan(session, sub.plan_code)
         same = (plan.code, interval) == (sub.plan_code, sub.billing_interval)
         if same:
-            kind, subtotal, p_start, p_end = "renewal", price, sub.current_period_end, pricing.add_interval(sub.current_period_end, interval)
+            kind, subtotal, p_start, p_end = "renewal", await recurring_subtotal(session, sub, plan, interval), sub.current_period_end, pricing.add_interval(sub.current_period_end, interval)
         elif interval == sub.billing_interval and price > pricing.plan_price(cur, interval):
             subtotal = pricing.prorated_upgrade(pricing.plan_price(cur, interval), price, sub.current_period_start or now,
                                                 sub.current_period_end, now)
@@ -245,8 +258,29 @@ def _renewal_start(sub: Subscription, now: datetime, grace_days: int) -> datetim
     return now
 
 
+async def _apply_one_off(session, sub: Subscription, txn: PaymentTransaction, now: datetime) -> None:
+    """Top-up packs and add-on units change capacity, never the plan / period / status."""
+    if txn.kind == "topup":
+        pack = await session.scalar(select(TopupPack).where(TopupPack.code == (txn.meta or {}).get("pack")))
+        if pack is None:
+            raise BillingError("PACK_NOT_FOUND", "باقة الردود غير موجودة.", 404)
+        from src.shared.services.billing import credits
+
+        await credits.grant(session, tenant_id=txn.tenant_id, pack=pack, transaction_id=txn.transaction_id, now=now)
+        return
+    code, qty = (txn.meta or {}).get("addon"), int((txn.meta or {}).get("quantity") or 0)
+    column = {"seat": "addon_seats", "whatsapp_number": "addon_whatsapp_numbers"}.get(code or "")
+    if column is None or qty <= 0:
+        raise BillingError("ADDON_INVALID", "إضافة غير صالحة.", 422)
+    setattr(sub, column, (getattr(sub, column) or 0) + qty)
+    await session.flush()
+
+
 async def _activate(session, sub: Subscription, txn: PaymentTransaction, info: PaymentInfo | None, now: datetime) -> None:
     cfg = get_settings()
+    if txn.kind in ("topup", "addon"):
+        await _apply_one_off(session, sub, txn, now)
+        return
     if txn.kind == "upgrade":
         sub.plan_code = txn.plan_code
     else:
@@ -266,6 +300,15 @@ async def _activate(session, sub: Subscription, txn: PaymentTransaction, info: P
     await _mirror_tenant(session, sub)
 
 
+def _invoice_description(txn: PaymentTransaction, plan: Plan | None) -> str:
+    meta = txn.meta or {}
+    if txn.kind == "topup":
+        return f"OmniFlow — باقة ردود ذكاء اصطناعي إضافية ({int(meta.get('replies') or 0):,} رد، صلاحية 12 شهرًا)"
+    if txn.kind == "addon":
+        return f"OmniFlow — إضافة: {meta.get('name_ar', meta.get('addon', ''))} × {meta.get('quantity', 1)} (متبقي الفترة الحالية)"
+    return _describe(plan, txn.billing_interval, txn.kind) if plan else f"اشتراك OmniFlow ({txn.plan_code})"
+
+
 async def issue_invoice(session, txn: PaymentTransaction, now: datetime) -> BillingInvoice:
     existing = await session.scalar(select(BillingInvoice).where(BillingInvoice.transaction_id == txn.transaction_id))
     if existing is not None:
@@ -279,7 +322,7 @@ async def issue_invoice(session, txn: PaymentTransaction, now: datetime) -> Bill
         invoice_number=pricing.invoice_number(seq, now.year), issued_at=now,
         subtotal_halalas=txn.subtotal_halalas, vat_halalas=txn.vat_halalas, total_halalas=txn.amount_halalas,
         vat_rate_bp=cfg.billing_vat_rate_bp, currency=txn.currency,
-        description=_describe(plan, txn.billing_interval, txn.kind) if plan else f"اشتراك OmniFlow ({txn.plan_code})",
+        description=_invoice_description(txn, plan),
         period_start=txn.period_start, period_end=txn.period_end,
         seller={"name": cfg.billing_seller_name, "tax_number": cfg.billing_seller_tax_number,
                 "address": cfg.billing_seller_address, "cr_number": cfg.billing_seller_cr_number},
@@ -417,6 +460,156 @@ async def manual_activate(session, tenant_id: uuid.UUID, plan_code: str, interva
 
 
 # ══════════════════════════════════════════════════════════════════════════════
+# Top-up packs and add-ons (one-off purchases on top of an active plan)
+# ══════════════════════════════════════════════════════════════════════════════
+
+async def list_topup_packs(session) -> list[TopupPack]:
+    return list((await session.execute(select(TopupPack).where(TopupPack.is_active.is_(True)).order_by(TopupPack.sort_order))).scalars())
+
+
+async def _active_paying_sub(session, tenant_id: uuid.UUID, now: datetime) -> tuple[Subscription, Plan]:
+    sub = await ensure_subscription(session, tenant_id, now)
+    if sub.is_exempt:
+        raise BillingError("EXEMPT", "هذا الحساب معفى من الفوترة (لا حدود عليه).", 409)
+    if sub.status != "active" or sub.current_period_end is None or sub.current_period_end <= now:
+        raise BillingError("PLAN_REQUIRED", "هذه الخدمة متاحة للاشتراكات المدفوعة الفعّالة فقط — اشترك في باقة أولًا.", 409)
+    plan = await session.scalar(select(Plan).where(Plan.code == sub.plan_code))
+    return sub, plan
+
+
+async def purchase_topup(session, tenant_id: uuid.UUID, pack_code: str, urls: dict[str, str], now: datetime | None = None) -> PaymentTransaction:
+    now = now or _now()
+    pack = await session.scalar(select(TopupPack).where(TopupPack.code == pack_code, TopupPack.is_active.is_(True)))
+    if pack is None:
+        raise BillingError("PACK_NOT_FOUND", "باقة الردود غير موجودة.", 404)
+    sub, plan = await _active_paying_sub(session, tenant_id, now)
+    _check_sellable(plan)
+    txn = await _new_transaction(session, sub, plan, sub.billing_interval, "topup", pack.price_halalas, provider=get_settings().payment_provider,
+                                 now=now, meta={"pack": pack.code, "replies": pack.replies})
+    return await _attach_checkout(session, txn, plan, urls, f"OmniFlow — باقة ردود إضافية ({pack.replies:,})")
+
+
+async def purchase_addon(session, tenant_id: uuid.UUID, addon_code: str, quantity: int, urls: dict[str, str],
+                         now: datetime | None = None) -> PaymentTransaction:
+    """Charge the add-on pro-rata for the rest of the current period; from the next renewal it is part of the recurring price."""
+    now = now or _now()
+    if not 1 <= quantity <= 50:
+        raise BillingError("INVALID_QUANTITY", "الكمية بين 1 و50.", 422)
+    addon = await session.scalar(select(PlanAddon).where(PlanAddon.code == addon_code, PlanAddon.is_active.is_(True)))
+    if addon is None:
+        raise BillingError("ADDON_NOT_FOUND", "الإضافة غير موجودة.", 404)
+    if not addon.is_available:
+        raise BillingError("ADDON_UNAVAILABLE", addon.unavailable_reason or "هذه الإضافة غير متاحة حاليًا.", 409)
+    sub, plan = await _active_paying_sub(session, tenant_id, now)
+    _check_sellable(plan)
+    unit = addon.price_monthly_halalas * (10 if sub.billing_interval == "yearly" else 1)
+    subtotal = pricing.prorated_upgrade(0, unit * quantity, sub.current_period_start or now, sub.current_period_end, now)
+    if subtotal <= 0:
+        raise BillingError("NOTHING_TO_CHARGE", "لا يوجد مبلغ مستحق الآن.", 409)
+    txn = await _new_transaction(session, sub, plan, sub.billing_interval, "addon", subtotal, provider=get_settings().payment_provider, now=now,
+                                 period_start=sub.current_period_start, period_end=sub.current_period_end,
+                                 meta={"addon": addon.code, "quantity": quantity, "name_ar": addon.name_ar, "unit_monthly_halalas": addon.price_monthly_halalas})
+    return await _attach_checkout(session, txn, plan, urls, f"OmniFlow — {addon.name_ar} × {quantity}")
+
+
+async def reduce_addon(session, tenant_id: uuid.UUID, addon_code: str, quantity: int, actor: uuid.UUID | None) -> Subscription:
+    """Drop add-on units from the next renewal on. Takes effect now (no refund of the current period); refused if the capacity is in use."""
+    column = {"seat": "addon_seats", "whatsapp_number": "addon_whatsapp_numbers"}.get(addon_code)
+    sub = await ensure_subscription(session, tenant_id)
+    if column is None or quantity < 1 or quantity > (getattr(sub, column) or 0):
+        raise BillingError("INVALID_QUANTITY", "الكمية غير صالحة.", 422)
+    if addon_code == "seat":
+        from src.shared.services import team
+
+        plan = await session.scalar(select(Plan).where(Plan.code == sub.plan_code))
+        base = int(((plan.limits if plan else {}) or {}).get("seats") or 0)
+        used = (await team.seat_usage_raw(session, tenant_id))["used"]
+        if base and used > base + (sub.addon_seats - quantity):
+            raise BillingError("CAPACITY_IN_USE", f"عدد أعضاء الفريق الحالي ({used}) يتجاوز المقاعد بعد التخفيض. أزل أعضاء أولًا.", 409)
+    setattr(sub, column, getattr(sub, column) - quantity)
+    await session.flush()
+    await _audit(session, tenant_id, "billing.addon_reduced", str(sub.subscription_id), {"addon": addon_code, "quantity": quantity}, actor)
+    return sub
+
+
+async def update_quota_settings(session, tenant_id: uuid.UUID, *, quota_exhausted_action: str | None, auto_topup_enabled: bool | None,
+                                auto_topup_pack: str | None, actor: uuid.UUID | None) -> Subscription:
+    sub = await ensure_subscription(session, tenant_id)
+    if quota_exhausted_action is not None:
+        if quota_exhausted_action not in ("handoff", "stop"):
+            raise BillingError("INVALID_ACTION", "القيمة غير صالحة.", 422)
+        sub.quota_exhausted_action = quota_exhausted_action
+    if auto_topup_pack is not None:
+        if auto_topup_pack and await session.scalar(select(TopupPack).where(TopupPack.code == auto_topup_pack, TopupPack.is_active.is_(True))) is None:
+            raise BillingError("PACK_NOT_FOUND", "باقة الردود غير موجودة.", 404)
+        sub.auto_topup_pack = auto_topup_pack or None
+    if auto_topup_enabled is not None:
+        if auto_topup_enabled and not (sub.auto_topup_pack or auto_topup_pack):
+            raise BillingError("PACK_REQUIRED", "اختر باقة الشحن التلقائي أولًا.", 422)
+        if auto_topup_enabled and not sub.payment_token:
+            raise BillingError("NO_CARD", "الشحن التلقائي يحتاج بطاقة محفوظة (ادفع اشتراكك بالبطاقة أولًا).", 409)
+        sub.auto_topup_enabled = auto_topup_enabled
+    await session.flush()
+    await _audit(session, tenant_id, "billing.quota_settings", str(sub.subscription_id),
+                 {"action": sub.quota_exhausted_action, "auto_topup": sub.auto_topup_enabled, "pack": sub.auto_topup_pack}, actor)
+    return sub
+
+
+async def auto_topup(tenant_id: uuid.UUID, now: datetime | None = None) -> str:
+    """Opt-in recharge when the wall is hit: charge the saved card for the chosen pack. Returns paid | failed | skipped. Never raises.
+    Guards: switch must be ON, a pack + saved card must exist, at most `billing_auto_topup_max_per_month` charges a month and one
+    attempt per cool-down (Redis lock) so a declining card is never hammered."""
+    from src.shared.db.session import get_system_session
+    from src.shared.redis_client import redis_mgr
+    from src.shared.services.billing import entitlements
+
+    now = now or _now()
+    cfg = get_settings()
+    try:
+        if not await redis_mgr.set_if_absent(f"auto_topup_lock:{tenant_id}", "1", ttl=6 * 3600):
+            return "skipped"
+        async with get_system_session() as session:
+            sub = await session.scalar(select(Subscription).where(Subscription.tenant_id == tenant_id).with_for_update())
+            if sub is None or sub.is_exempt or not (sub.auto_topup_enabled and sub.auto_topup_pack and sub.payment_token) or sub.status != "active":
+                return "skipped"
+            month_start = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+            done = await session.scalar(text("SELECT count(*) FROM transactions WHERE tenant_id=:t AND kind='topup' AND status='paid' "
+                                             "AND meta->>'auto'='true' AND paid_at >= :s").bindparams(t=tenant_id, s=month_start)) or 0
+            if done >= cfg.billing_auto_topup_max_per_month:
+                await notify_safe(session, tenant_id, "usage_threshold", "تم بلوغ حد الشحن التلقائي هذا الشهر",
+                                  f"أُوقف الشحن التلقائي بعد {done} عمليات هذا الشهر حمايةً لك. اشترِ باقة ردود يدويًا إن رغبت.", "/settings#billing",
+                                  dedupe_key=f"autotopup_cap:{month_start:%Y%m}")
+                return "skipped"
+            pack = await session.scalar(select(TopupPack).where(TopupPack.code == sub.auto_topup_pack, TopupPack.is_active.is_(True)))
+            plan = await session.scalar(select(Plan).where(Plan.code == sub.plan_code))
+            if pack is None or plan is None:
+                return "skipped"
+            txn = await _new_transaction(session, sub, plan, sub.billing_interval, "topup", pack.price_halalas,
+                                         provider=sub.provider or cfg.payment_provider, now=now,
+                                         meta={"pack": pack.code, "replies": pack.replies, "auto": True})
+            try:
+                info = await get_provider().charge_token(token=decrypt_secret(sub.payment_token), transaction_id=str(txn.transaction_id),
+                                                         amount_halalas=txn.amount_halalas, currency=txn.currency,
+                                                         description=f"OmniFlow — شحن تلقائي ({pack.replies:,} رد)",
+                                                         metadata={"tenant_id": str(tenant_id), "kind": "topup"})
+                txn.provider_payment_id = info.payment_id or None
+                res = await apply_payment_result(session, txn, info, now)
+            except (ProviderError, AmountMismatch) as exc:
+                txn.status, txn.failure_reason = "failed", str(exc)[:500]
+                res = "failed"
+            if res != "paid":
+                await notify_safe(session, tenant_id, "payment_failed", "فشل الشحن التلقائي للردود",
+                                  "تعذّر تحصيل باقة الردود الإضافية من بطاقتك المحفوظة. يمكنك الشراء يدويًا من صفحة الفوترة.", "/settings#billing",
+                                  dedupe_key=f"autotopup_fail:{now:%Y%m%d%H}")
+                return "failed"
+        await entitlements.invalidate(tenant_id)
+        return "paid"
+    except Exception as exc:  # noqa: BLE001 - background helper: log, never raise into the worker
+        logger.error("auto_topup_failed", tenant_id=str(tenant_id), error=type(exc).__name__)
+        return "failed"
+
+
+# ══════════════════════════════════════════════════════════════════════════════
 # Scheduled sweep: trial expiry, renewals + retries, cancellations, grace → suspended
 # ══════════════════════════════════════════════════════════════════════════════
 
@@ -449,7 +642,7 @@ async def _renewal_link(session, sub: Subscription, now: datetime, urls: dict[st
     plan = await get_plan(session, code)
     if await _reusable_pending(session, sub, code, interval, "renewal", now) is not None:
         return
-    txn = await _new_transaction(session, sub, plan, interval, "renewal", pricing.plan_price(plan, interval),
+    txn = await _new_transaction(session, sub, plan, interval, "renewal", await recurring_subtotal(session, sub, plan, interval),
                                  provider=get_settings().payment_provider, attempt=sub.retry_count + 1, now=now)
     await _attach_checkout(session, txn, plan, urls, _describe(plan, interval, "renewal"))
 
@@ -460,7 +653,7 @@ async def _renew(session, sub: Subscription, now: datetime, urls: dict[str, str]
     if not sub.payment_token:                                   # nothing to charge automatically
         sub.retry_count = max(sub.retry_count, get_settings().billing_retry_max - 1)
         return await _fail_attempt(session, sub, None, "no_saved_payment_method", now, urls)
-    txn = await _new_transaction(session, sub, plan, interval, "renewal", pricing.plan_price(plan, interval),
+    txn = await _new_transaction(session, sub, plan, interval, "renewal", await recurring_subtotal(session, sub, plan, interval),
                                  provider=sub.provider or get_settings().payment_provider, attempt=sub.retry_count + 1,
                                  period_start=sub.current_period_end, period_end=pricing.add_interval(sub.current_period_end, interval), now=now)
     try:

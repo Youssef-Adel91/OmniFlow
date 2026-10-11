@@ -36,6 +36,7 @@ KINDS: dict[str, Kind] = {
     "subscription_suspended": Kind("إيقاف الاشتراك", "عندما يُوقف الاشتراك لعدم السداد.", True, True),
     "usage_threshold": Kind("بلوغ حد الاستهلاك", "عند بلوغ 80% ثم 100% من رسائل الباقة.", True, True),
     "trial_ending": Kind("قرب انتهاء التجربة", "قبل انتهاء الفترة التجريبية.", True, True),
+    "retention_notice": Kind("إشعار الاحتفاظ بالبيانات", "قبل إخفاء هوية عملاء لم يتفاعلوا لفترة طويلة.", True, True),
     "team_joined": Kind("انضمام عضو جديد", "عندما يقبل موظف دعوة الانضمام.", True, False),
 }
 

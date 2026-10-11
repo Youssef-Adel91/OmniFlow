@@ -77,11 +77,21 @@ async def export_customer(session, tenant_id: uuid.UUID, customer_id: uuid.UUID,
     }
 
 
-async def anonymize_customer(session, tenant_id: uuid.UUID, customer_id: uuid.UUID, actor_id: uuid.UUID | None, reason: str = "") -> dict[str, int]:
+async def anonymize_customer(session, tenant_id: uuid.UUID, customer_id: uuid.UUID, actor_id: uuid.UUID | None, reason: str = "",
+                             file_store=None) -> dict[str, int]:
+    from src.shared.services import erasure_files
+
     c = await _customer(session, tenant_id, customer_id)
     if c.erased_at is not None:
         raise PrivacyError("ALREADY_ERASED", "تم محو بيانات هذا العميل مسبقًا.", 409)
     now = datetime.now(timezone.utc)
+    # Files first: if they cannot be deleted we stop BEFORE wiping the pointers, so nothing is left orphaned and untraceable.
+    targets = await erasure_files.collect(session, tenant_id, c)
+    try:
+        files_removed = await erasure_files.delete(targets, tenant_id, file_store)
+    except erasure_files.FilesNotDeleted as exc:
+        raise PrivacyError("FILES_NOT_DELETED", f"تعذّر حذف {len(exc.failed)} ملف من التخزين؛ لم يُمحَ العميل. أعد المحاولة لاحقًا.", 502) from exc
+    await erasure_files.forget_reports(session, tenant_id, targets.report_ids)
     conv_ids = list((await session.execute(select(Conversation.conversation_id).where(Conversation.customer_id == customer_id, Conversation.tenant_id == tenant_id))).scalars())
     wiped = 0
     if conv_ids:
@@ -97,7 +107,7 @@ async def anonymize_customer(session, tenant_id: uuid.UUID, customer_id: uuid.UU
     c.marketing_opt_in, c.opt_out_at, c.is_processing_restricted = False, now, True
     c.archived_at, c.erased_at = now, now
     session.add(AuditLog(tenant_id=tenant_id, actor_user_id=actor_id, action="privacy.anonymize", entity_type="customer", entity_id=str(customer_id),
-                         details={"messages_wiped": wiped, "conversations": len(conv_ids), "reason": reason[:200]}))
+                         details={"messages_wiped": wiped, "conversations": len(conv_ids), "files_deleted": files_removed, "reason": reason[:200]}))
     await session.flush()
     try:                                                            # cached chat context must go too
         from src.shared.redis_client import redis_mgr
@@ -105,7 +115,7 @@ async def anonymize_customer(session, tenant_id: uuid.UUID, customer_id: uuid.UU
             await redis_mgr.clear_conversation_history(tenant_id, cid)
     except Exception:  # noqa: BLE001 - Redis is a cache; the DB wipe above is the source of truth
         logger.warning("privacy_redis_clear_failed", customer_id=str(customer_id))
-    return {"messages_wiped": wiped, "conversations": len(conv_ids)}
+    return {"messages_wiped": wiped, "conversations": len(conv_ids), "files_deleted": files_removed}
 
 
 async def summary(session, tenant_id: uuid.UUID) -> dict[str, int]:

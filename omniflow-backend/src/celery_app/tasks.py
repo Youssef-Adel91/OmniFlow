@@ -750,6 +750,23 @@ async def _einvoice_submit_async() -> dict[str, Any]:
         return await ez.submit_due(session)
 
 
+@app.task(name="omniflow.retention_run", bind=True, max_retries=0)
+def retention_run(self) -> dict[str, Any]:  # noqa: ANN001
+    """Daily data-retention pass. Does nothing unless RETENTION_ENABLED=true; deletes nothing unless RETENTION_DRY_RUN=false."""
+    return _run(_retention_run_async)
+
+
+async def _retention_run_async() -> dict[str, Any]:
+    from src.shared.services import retention
+
+    if not settings.retention_enabled:
+        return {"enabled": False}
+    result = await retention.run_all()
+    logger.info("retention_run_completed", dry_run=result["dry_run"], tenants=len(result["tenants"]),
+                anonymized=sum(t["anonymized"] for t in result["tenants"]), failed=sum(1 for t in result["tenants"] if t.get("error")))
+    return {"enabled": True, **result}
+
+
 @app.task(name="omniflow.deliver_webhooks", bind=True, max_retries=1)
 def deliver_webhooks(self) -> dict[str, Any]:  # noqa: ANN001
     """Send due outgoing webhooks (signed, retried with back-off, logged in webhook_deliveries)."""

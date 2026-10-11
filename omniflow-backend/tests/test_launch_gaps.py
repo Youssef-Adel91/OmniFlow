@@ -383,7 +383,7 @@ class LaunchGapsDbTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual((bad.status_code, bad.json()["detail"]["code"]), (422, "CONFIRMATION_MISMATCH"))
             self.assertEqual((await c.post(f"/api/v1/privacy/customers/{uuid.uuid4()}/anonymize", json={"confirm": "x"})).status_code, 422)
             ok = await c.post(f"/api/v1/privacy/customers/{cid}/anonymize", json={"confirm": str(cid), "reason": "طلب العميل"})
-            self.assertEqual((ok.status_code, ok.json()), (200, {"messages_wiped": 2, "conversations": 1}))
+            self.assertEqual((ok.status_code, ok.json()), (200, {"messages_wiped": 2, "conversations": 1, "files_deleted": 0}))
             again = await c.post(f"/api/v1/privacy/customers/{cid}/anonymize", json={"confirm": str(cid)})
             self.assertEqual((again.status_code, again.json()["detail"]["code"]), (409, "ALREADY_ERASED"))
             exp = json.loads((await c.get(f"/api/v1/privacy/customers/{cid}/export")).content)

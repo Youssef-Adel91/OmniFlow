@@ -125,6 +125,11 @@ app.conf.beat_schedule = {
         "schedule": 300.0,
         "options": {"expires": 280},
     },
+    "retention-run": {                         # no-op unless RETENTION_ENABLED; report-only unless RETENTION_DRY_RUN=false
+        "task": "omniflow.retention_run",
+        "schedule": 86400.0,
+        "options": {"expires": 3600},
+    },
     "deliver-webhooks": {                      # outgoing webhooks (Developers v1): signed POSTs with retry/back-off
         "task": "omniflow.deliver_webhooks",
         "schedule": 15.0,

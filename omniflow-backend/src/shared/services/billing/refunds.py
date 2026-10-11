@@ -114,8 +114,12 @@ async def issue(session, txn_id: uuid.UUID, *, reason: str, staff_email: str, am
                       reason=reason[:1000], seller=(invoice.seller if invoice else {}),
                       buyer=(invoice.buyer if invoice else {"name": getattr(tenant, "business_name", "")}))
     session.add(note)
+    await session.flush()
     if invoice is not None:
         invoice.status = "credited"
+    from src.einvoice import service as einvoice
+
+    await einvoice.issue_safely(session, note=note)
 
     if amount >= q["amount_halalas"]:                 # a full refund of the first payment ends the subscription at once
         sub = await session.scalar(select(Subscription).where(Subscription.subscription_id == txn.subscription_id).with_for_update())

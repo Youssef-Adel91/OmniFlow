@@ -23,6 +23,7 @@ PyJWT==2.13.0
 PyOTP==2.10.0
 PyYAML==6.0.3
 Pygments==2.20.0
+qrcode==8.2
 RapidFuzz==3.14.5
 SQLAlchemy==2.0.52
 aiobotocore==3.9.1

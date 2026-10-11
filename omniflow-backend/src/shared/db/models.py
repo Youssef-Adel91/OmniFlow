@@ -99,6 +99,9 @@ class Tenant(Base, TimestampMixin):
         index=True,
         comment="FAL license number — verified via REGA Broker Verification API",
     )
+    vat_number: Mapped[Optional[str]] = mapped_column(String(15), comment="Buyer VAT number for B2B e-invoices; empty = simplified (B2C) invoice")
+    cr_number: Mapped[Optional[str]] = mapped_column(String(20))
+    billing_address: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict, comment="street / building / district / city / postal_zone")
     subscription_tier: Mapped[TenantTier] = mapped_column(
         String(30),
         nullable=False,
@@ -1813,6 +1816,55 @@ class TrialIdentity(Base):
     tenant_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("tenants.tenant_id", ondelete="RESTRICT"), nullable=False)
     kind: Mapped[str] = mapped_column(String(10), nullable=False)
     value_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+
+class EInvoiceUnit(Base):
+    """The issuing unit (EGS): ICV counter + chain head + encrypted keys. System-context only (RLS)."""
+    __tablename__ = "einvoice_units"
+    __table_args__ = (UniqueConstraint("env", "name", name="uq_einvoice_unit_name"),)
+
+    unit_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    name: Mapped[str] = mapped_column(String(100), nullable=False)
+    env: Mapped[str] = mapped_column(String(12), nullable=False, default="sandbox")
+    status: Mapped[str] = mapped_column(String(12), nullable=False, default="new")
+    vat_number: Mapped[str] = mapped_column(String(15), nullable=False)
+    icv_counter: Mapped[int] = mapped_column(BigInteger, nullable=False, default=0)
+    last_hash: Mapped[str] = mapped_column(Text, nullable=False)
+    private_key_enc: Mapped[Optional[str]] = mapped_column(Text)
+    certificate_b64: Mapped[Optional[str]] = mapped_column(Text)
+    secret_enc: Mapped[Optional[str]] = mapped_column(Text)
+    compliance_request_id: Mapped[Optional[str]] = mapped_column(String(64))
+    csr_pem: Mapped[Optional[str]] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+
+class EInvoiceDocument(Base):
+    __tablename__ = "einvoice_documents"
+    __table_args__ = (UniqueConstraint("unit_id", "icv", name="uq_einvoice_unit_icv"),)
+
+    doc_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    tenant_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("tenants.tenant_id", ondelete="RESTRICT"), nullable=False)
+    unit_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("einvoice_units.unit_id", ondelete="RESTRICT"), nullable=False)
+    invoice_id: Mapped[Optional[uuid.UUID]] = mapped_column(UUID(as_uuid=True), ForeignKey("invoices.invoice_id", ondelete="RESTRICT"), unique=True)
+    credit_note_id: Mapped[Optional[uuid.UUID]] = mapped_column(UUID(as_uuid=True), ForeignKey("credit_notes.credit_note_id", ondelete="RESTRICT"), unique=True)
+    doc_number: Mapped[str] = mapped_column(String(40), nullable=False)
+    type_code: Mapped[str] = mapped_column(String(3), nullable=False)
+    subtype: Mapped[str] = mapped_column(String(7), nullable=False)
+    uuid: Mapped[str] = mapped_column(UUID(as_uuid=False), nullable=False, unique=True)
+    icv: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    pih: Mapped[str] = mapped_column(Text, nullable=False)
+    invoice_hash: Mapped[str] = mapped_column(Text, nullable=False)
+    xml: Mapped[str] = mapped_column(Text, nullable=False)
+    qr: Mapped[str] = mapped_column(Text, nullable=False)
+    status: Mapped[str] = mapped_column(String(10), nullable=False, default="pending")
+    attempts: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    next_attempt_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
+    last_error: Mapped[Optional[str]] = mapped_column(Text)
+    zatca_response: Mapped[Optional[dict]] = mapped_column(JSONB)
+    issued_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    submitted_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
 
 

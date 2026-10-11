@@ -101,6 +101,12 @@ function createApiClient(): AxiosInstance {
         console.warn("[OmniFlow API] Unauthorized request", error.config?.url);
       }
 
+      // ── 402 PLAN_LIMIT_REACHED — tell the user (global notice) instead of failing silently ──
+      if (httpStatus === 402 && typeof window !== "undefined") {
+        const detail = (error.response?.data as { detail?: { code?: string } } | undefined)?.detail;
+        if (detail?.code === "PLAN_LIMIT_REACHED") window.dispatchEvent(new CustomEvent("omniflow:plan-limit", { detail }));
+      }
+
       // ── 422 — log validation errors for debugging ────────────────────
       if (httpStatus === 422) {
         const detail = (error.response?.data as any)?.detail;

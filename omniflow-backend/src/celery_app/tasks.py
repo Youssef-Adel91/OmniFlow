@@ -737,6 +737,19 @@ async def _billing_credits_flush_async() -> dict[str, Any]:
         await redis_mgr.stop()
 
 
+@app.task(name="omniflow.einvoice_submit", bind=True, max_retries=1)
+def einvoice_submit(self) -> dict[str, Any]:  # noqa: ANN001
+    """Clear / report pending e-invoices with back-off and dead-lettering. Does nothing while EINVOICE_ENABLED is false."""
+    return _run(_einvoice_submit_async)
+
+
+async def _einvoice_submit_async() -> dict[str, Any]:
+    from src.einvoice import service as ez
+
+    async with get_system_session() as session:
+        return await ez.submit_due(session)
+
+
 @app.task(name="omniflow.billing_llm_rollup", bind=True, max_retries=2)
 def billing_llm_rollup(self) -> dict[str, Any]:  # noqa: ANN001
     """Aggregate the raw per-reply AI cost rows into llm_usage_daily (idempotent)."""

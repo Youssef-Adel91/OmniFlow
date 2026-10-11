@@ -86,3 +86,45 @@ test("server error messages are surfaced", () => {
   assert.equal(m.billingError({ response: { data: { detail: { message: "الدفع غير مفعّل" } } } }, "fb"), "الدفع غير مفعّل");
   assert.equal(m.billingError(new Error("x"), "fb"), "fb");
 });
+
+test("plan card lines come from the limits; enterprise is contact-us", () => {
+  const m = load({});
+  const pro = { contact_sales: false, limits: { messages_per_month: 8000, seats: 5, whatsapp_numbers: 1, properties: 1000, contacts: 10000, campaigns: true } };
+  assert.deepEqual(plain(m.planFeatureLines(pro)), ["8,000 رد ذكاء اصطناعي / شهر", "5 مقاعد", "1 رقم واتساب", "1,000 عقار", "10,000 جهة اتصال", "حملات تسويقية (بموافقة العملاء)"]);
+  const starter = { limits: { messages_per_month: 1500, seats: 2, campaigns: false } };
+  assert.ok(m.planFeatureLines(starter).includes("الحملات التسويقية غير متاحة"));
+  assert.ok(m.planFeatureLines({ contact_sales: true, limits: {} }).includes("تواصل معنا للحصول على عرض"));
+  assert.equal(m.planFeatureLines({ limits: { channels: 1 } })[0], "1 قناة");
+});
+
+test("top-up labels and quota bar tones", () => {
+  const m = load({});
+  assert.equal(m.topupLabel(5000), "5,000 رد");
+  assert.equal(m.quotaTone(10, 100), "ok");
+  assert.equal(m.quotaTone(80, 100), "warn");
+  assert.equal(m.quotaTone(100, 100), "warn");
+  assert.equal(m.quotaTone(101, 100), "over");
+});
+
+test("new billing calls hit the documented endpoints", async () => {
+  const calls = [];
+  const api = {
+    get: async (u, o) => { calls.push(["GET", u, o]); return { data: { items: [], packs: [], addons: [], credits: { remaining: 0, packs: [] } } }; },
+    post: async (u, b) => { calls.push(["POST", u, b]); return { data: { checkout_url: "https://pay.example/1" } }; },
+    put: async (u, b) => { calls.push(["PUT", u, b]); return { data: b }; },
+    delete: async (u, o) => { calls.push(["DELETE", u, o]); return { data: { addons: { seats: 1, whatsapp_numbers: 0 } } }; },
+  };
+  const m = load(api);
+  await m.fetchTopupCatalog();
+  await m.buyTopup("replies_5k");
+  await m.buyAddon("seat", 2);
+  await m.removeAddon("seat", 1);
+  await m.saveQuotaSettings({ quota_exhausted_action: "stop" });
+  await m.fetchCreditNotes();
+  assert.deepEqual(plain(calls.map((c) => [c[0], c[1]])), [
+    ["GET", "/billing/topup-packs"], ["POST", "/billing/topups"], ["POST", "/billing/addons"], ["DELETE", "/billing/addons/seat"], ["PUT", "/billing/quota-settings"], ["GET", "/billing/credit-notes"],
+  ]);
+  assert.deepEqual(plain(calls[1][2]), { pack_code: "replies_5k" });
+  assert.deepEqual(plain(calls[2][2]), { code: "seat", quantity: 2 });
+  assert.deepEqual(plain(calls[3][2]), { params: { quantity: 1 } });
+});

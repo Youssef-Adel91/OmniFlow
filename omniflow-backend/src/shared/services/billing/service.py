@@ -330,6 +330,9 @@ async def issue_invoice(session, txn: PaymentTransaction, now: datetime) -> Bill
     )
     session.add(inv)
     await session.flush()
+    from src.einvoice import service as einvoice          # flag-gated no-op unless EINVOICE_ENABLED; never blocks the payment
+
+    await einvoice.issue_safely(session, invoice=inv)
     return inv
 
 

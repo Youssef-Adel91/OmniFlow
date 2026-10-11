@@ -71,6 +71,7 @@ from src.gateway.routers import reports as reports_router
 from src.gateway.routers import settings as settings_router
 from src.gateway.routers import support as support_router
 from src.gateway.routers import billing as billing_router
+from src.gateway.routers import einvoice as einvoice_router
 from src.gateway.routers import notifications as notifications_router
 from src.gateway.routers import team as team_router
 from src.gateway.routers import privacy as privacy_router
@@ -473,6 +474,7 @@ def _register_routers(app: FastAPI) -> None:
     app.include_router(support_router.router)      # /api/v1/support
     app.include_router(billing_router.router)      # /api/v1/billing   (never behind the subscription gate)
     app.include_router(billing_router.webhook_router)  # /api/v1/webhooks/payments
+    app.include_router(einvoice_router.router)         # /api/v1/einvoice  (404 unless EINVOICE_ENABLED; staff / own-invoice access only)
     app.include_router(broadcasts_router.router, dependencies=_GATE)   # /api/v1/broadcasts
     app.include_router(privacy_router.router)      # /api/v1/privacy (never gated: data-subject rights survive a suspension)
     app.include_router(team_router.router, dependencies=_GATE)         # /api/v1/team

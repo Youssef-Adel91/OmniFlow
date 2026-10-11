@@ -4,10 +4,10 @@ Branch chain (each branch is built on the previous one; migrations are linear 00
 
 | # | Item | Branch | PR | Status |
 |---|------|--------|----|--------|
-| 0a | P10-A plans/limits enforcement | `feat/p10-pricing-einvoice` | (see below) | done (backend), UI pending |
-| 0b | P10-B/C top-ups, hard cap, AI cost | same | | done (backend), UI pending |
-| 0c | P10-D/E/F trial identity, refunds, staff emails | same | | done (backend), UI + policy page pending |
-| 0d | P10-G e-invoice module | same | | in progress |
+| 0a | P10-A plans/limits enforcement | `feat/p10-pricing-einvoice` | (see below) | done (backend + billing UI) |
+| 0b | P10-B/C top-ups, hard cap, AI cost | same | | done (backend + billing UI; platform margin UI = API only) |
+| 0c | P10-D/E/F trial identity, refunds, staff emails | same | | done (backend); refund policy page comes with item 2 |
+| 0d | P10-G e-invoice module | same | | done (flag off; unverified by ZATCA) |
 | 0e | Team page tenant filter + dev cleanup script | same | | done |
 | 1 | Security & tenant-isolation audit | | | pending |
 | 2 | Public pages (Meta / launch) | | | pending |

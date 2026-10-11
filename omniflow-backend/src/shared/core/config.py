@@ -216,6 +216,17 @@ class Settings(BaseSettings):
     billing_seller_cr_number: str = ""
     billing_admin_api_key: str = ""          # enables staff manual activation (header X-Billing-Key); empty = disabled
     billing_enforce_message_limit: bool = True    # hard cap: no LLM call once the plan quota + top-up credits are spent (exempt tenants: never)
+    # ── ZATCA e-invoicing (Phase 2). OFF by default; production submission needs BOTH einvoice_env=production and the explicit allow flag ──
+    einvoice_enabled: bool = False
+    einvoice_env: Literal["sandbox", "simulation", "production"] = "sandbox"
+    einvoice_allow_production_submit: bool = False
+    einvoice_base_url: str = ""                  # optional override (tests / proxies); empty = ZATCA's documented URL for the env
+    einvoice_max_attempts: int = 8
+    billing_seller_street: str = ""
+    billing_seller_building: str = ""
+    billing_seller_district: str = ""
+    billing_seller_city: str = ""
+    billing_seller_postal_zone: str = ""
     billing_refund_window_days: int = 14          # money-back window on a tenant's FIRST payment only
     billing_gateway_fee_bp: int = 0               # gateway fee deducted from a refund (basis points of the payment) — owner supplies the real rate
     billing_gateway_fee_fixed_halalas: int = 0    # …plus a fixed fee per transaction, if the gateway charges one

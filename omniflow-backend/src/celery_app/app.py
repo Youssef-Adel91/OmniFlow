@@ -125,6 +125,11 @@ app.conf.beat_schedule = {
         "schedule": 300.0,
         "options": {"expires": 280},
     },
+    "einvoice-submit": {                       # no-op unless EINVOICE_ENABLED
+        "task": "omniflow.einvoice_submit",
+        "schedule": 300.0,
+        "options": {"expires": 280},
+    },
     "billing-llm-rollup": {
         "task": "omniflow.billing_llm_rollup",
         "schedule": 3600.0,

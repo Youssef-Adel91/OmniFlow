@@ -946,3 +946,26 @@ Run `alembic upgrade head` (head = 0027) after pulling. Existing tenants are gra
 - New screens in a real browser with a real Clerk login.
 
 The durable content of the temporary `NIGHT_REPORT.md` (open decisions, manual test commands) now lives in `docs/launch-decisions-and-manual-tests.md`.
+
+
+## P10 — Pricing, plans, hard AI cap, refunds, e-invoice (2026-10-11)
+
+Branch `feat/p10-pricing-einvoice` (draft PR). Migrations 0028 → 0031, each up/down/up verified locally.
+
+| Area | What is real now | Evidence |
+|---|---|---|
+| Plans (0028) | Starter 299 / Pro 799 / Business 1,799 SAR per month, yearly = 10x, VAT 15 % added on top (halalas); Enterprise = contact us; legacy placeholder plans deactivated; seat add-on 49, WhatsApp-number add-on 99 (the number add-on is **unavailable**: the data model holds one number per tenant) | `tests/test_billing.py`, `tests/test_quotas.py` |
+| Limit enforcement | seats, properties, contacts, campaigns, channels (trial) are enforced in API + bulk imports (rows over the limit are reported per row); grandfathered tenants never limited; inbound contacts are never dropped (counted, block manual adds) | `tests/test_quotas.py` (14 tests) |
+| Hard AI cap (0029) | Plan quota -> top-up credits -> stop, decided atomically in Redis (Lua) **before** the LLM call; 200 concurrent replies never exceed the quota; failed LLM calls hand the reservation back; L3 tier capped at 15 % of replies; output / history / RAG bounded | `tests/test_credits.py` (28 tests, real Redis + real worker `process_message`, model never called after the cap) |
+| Top-ups / add-ons | 5,000 = 189 / 20,000 = 699 / 50,000 = 1,499 SAR + VAT, 12-month validity, hosted checkout, invoice per purchase, 80 %/100 % alerts (in-app + e-mail when configured), exhaustion = hand over to a person (default) or stay silent, opt-in auto-recharge (OFF, max 3/month) | same |
+| Real AI cost | per-reply rows (`llm_usage`, idempotent on the source event), daily roll-up, platform margin view (staff only) with a 40 % cost-to-revenue alert; default 0.02 SAR/reply until `LLM_PRICES_JSON` is filled | same |
+| Trial / refunds (0030) | 14-day first-payment money-back, staff-only, deducts measured AI cost + gateway fee, credit note CN-YYYY-NNNNNN, audit, full refund ends the plan; one free trial per company (hashed CR / phone) | `tests/test_refunds.py` (9 tests) |
+| E-invoice (0031) | UBL 2.1 + atomic ICV/PIH chain + ECDSA signature + QR TLV + CSR + clearance/reporting client + PDF/A-3, behind `EINVOICE_ENABLED` (off), production double-locked | `tests/test_einvoice.py`, `tests/test_einvoice_db.py` (39 tests); see `docs/einvoice.md` |
+| Team page | now filters by tenant explicitly; the three identical "Local Dev User" rows came from dev auto-provisioning (one throw-away tenant per Clerk id, constant name/e-mail) shown through an RLS-bypassing superuser dev database; auto-provisioning now creates unique e-mails; `scripts/dev_cleanup_test_data.py` removes dev workspaces (dry-run default, refuses non-dev) | `tests/test_dev_cleanup.py` |
+
+### NOT verified against real services (P10)
+- Moyasar: no sandbox keys; refunds, top-ups, add-ons and the saved-card auto-recharge are tested against a fake provider only.
+- ZATCA: nothing was sent to or validated by ZATCA (no SDK/portal credentials); the e-invoice XML/signature are unverified by the official validator.
+- AI cost with the real model (prices are owner-supplied config); the 0.02 SAR default is an assumption.
+- `PRICING_STUDY.md` was not available in the build environment: the numbers come from the P10 prompt.
+- Phone OTP verification of new companies is **not implemented** (e-mail verification is Clerk's); only duplicate-company detection is.

@@ -56,6 +56,8 @@ from fastapi import Depends
 from src.gateway.dependencies import subscription_write_gate
 from src.gateway.security_middleware import RateLimitMiddleware, SecurityHeadersMiddleware
 from src.gateway.routers import health as health_router
+from src.gateway.routers import developers as developers_router
+from src.gateway.routers import public_api as public_api_router
 from src.gateway.routers import onboarding as onboarding_router
 from src.gateway.routers import whatsapp_signup as whatsapp_signup_router
 from src.gateway.routers import conversations as conversations_router
@@ -487,6 +489,8 @@ def _register_routers(app: FastAPI) -> None:
     app.include_router(users_router.router, dependencies=_GATE)        # /api/v1/users
     app.include_router(dashboard_router.router, dependencies=_GATE)    # /api/v1/dashboard
     app.include_router(knowledge_router.router, dependencies=_GATE)    # /api/v1/knowledge
+    app.include_router(developers_router.router, dependencies=_GATE)   # /api/v1/developers (keys + webhooks; writes blocked while the subscription is blocked)
+    app.include_router(public_api_router.router)                      # /api/public/v1 — read-only, authenticated by API key (not Clerk), rate-limited per key
     app.include_router(onboarding_router.router)                       # /api/v1/onboarding/checklist (read-only + dismiss; never gated)
     app.include_router(whatsapp_signup_router.router, dependencies=_GATE)  # /api/v1/integrations/whatsapp/embedded-signup (404 while the flag is off)
     app.include_router(facebook_oauth_router.router, dependencies=_GATE)  # /api/v1/integrations/facebook (start, select-page)

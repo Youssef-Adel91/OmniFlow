@@ -97,6 +97,9 @@ async def create_customer(session, *, tenant_id: uuid.UUID, actor_id: uuid.UUID 
         await audit(session, tenant_id=tenant_id, actor_id=actor_id, action="customer.opt_in_granted",
                     customer_id=customer.customer_id, details={"source": customer.opt_in_source})
     await session.flush()
+    from src.shared.services.developers.webhooks_out import emit
+
+    await emit(session, tenant_id, "customer.created", {"customer_id": str(customer.customer_id), "phone": customer.phone_e164, "source": source})
     return customer
 
 

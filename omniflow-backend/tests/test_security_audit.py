@@ -39,6 +39,7 @@ PUBLIC = {
 SELF_REFUSING = {"/api/v1/auth/login", "/api/v1/auth/refresh", "/api/v1/auth/register"}                                  # answer 410
 ALWAYS_OK = {"/api/v1/auth/logout"}                                                                                    # by design never refuses
 PROBES = {"/health", "/health/ready", "/health/workers", "/api/v1/integrations/facebook/callback"}
+AUTH_DEPS = {"get_current_user", "api_principal"}                                                              # Clerk session | read-only API key
 DOC_PATHS = {"/openapi.json", "/docs", "/docs/oauth2-redirect", "/redoc"}                                          # only mounted in development
 
 
@@ -85,14 +86,14 @@ class RouteAuthAudit(unittest.IsolatedAsyncioTestCase):
             self.assertIn(must, self.routes)
 
     def test_every_route_is_authenticated_or_explicitly_public(self):
-        unauth = {k for k, deps in self.routes.items() if "get_current_user" not in deps}
+        unauth = {k for k, deps in self.routes.items() if not AUTH_DEPS & deps}
         unexpected = sorted(unauth - set(PUBLIC))
         self.assertEqual(unexpected, [], f"routes reachable without authentication and not on the allow-list: {unexpected}")
 
     def test_the_allow_list_has_no_stale_or_now_authenticated_entries(self):
         stale = sorted(k for k in PUBLIC if k not in self.routes)
         self.assertEqual(stale, [], f"allow-list entries for routes that do not exist: {stale}")
-        authed = sorted(k for k in PUBLIC if k in self.routes and "get_current_user" in self.routes[k])
+        authed = sorted(k for k in PUBLIC if k in self.routes and AUTH_DEPS & self.routes[k])
         self.assertEqual(authed, [], f"allow-listed routes that are in fact authenticated (remove them): {authed}")
 
     async def test_every_protected_route_refuses_an_anonymous_caller_even_with_a_spoofed_tenant_header(self):

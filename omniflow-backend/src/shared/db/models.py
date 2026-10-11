@@ -1959,3 +1959,66 @@ class NotificationPref(Base):
     in_app: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
     email: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# Developers v1 (night 2 #5): read-only API keys + outgoing signed webhooks
+# ══════════════════════════════════════════════════════════════════════════════
+class ApiKey(Base, TenantScopedMixin):
+    """A read-only API key. Only the SHA-256 of the key is stored; the key is shown once at creation."""
+    __tablename__ = "api_keys"
+
+    key_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    tenant_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("tenants.tenant_id", ondelete="CASCADE"), nullable=False)
+    name: Mapped[str] = mapped_column(String(80), nullable=False)
+    prefix: Mapped[str] = mapped_column(String(16), nullable=False)
+    key_hash: Mapped[str] = mapped_column(String(64), nullable=False, unique=True)
+    created_by: Mapped[Optional[uuid.UUID]] = mapped_column(UUID(as_uuid=True))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    last_used_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
+    revoked_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
+
+
+class ApiUsageLog(Base, TenantScopedMixin):
+    __tablename__ = "api_usage_log"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    tenant_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("tenants.tenant_id", ondelete="CASCADE"), nullable=False)
+    key_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("api_keys.key_id", ondelete="CASCADE"), nullable=False)
+    method: Mapped[str] = mapped_column(String(8), nullable=False)
+    path: Mapped[str] = mapped_column(String(200), nullable=False)
+    status: Mapped[int] = mapped_column(Integer, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+
+class WebhookEndpoint(Base, TenantScopedMixin):
+    __tablename__ = "webhook_endpoints"
+
+    endpoint_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    tenant_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("tenants.tenant_id", ondelete="CASCADE"), nullable=False)
+    url: Mapped[str] = mapped_column(String(500), nullable=False)
+    description: Mapped[Optional[str]] = mapped_column(String(120))
+    secret_enc: Mapped[str] = mapped_column(Text, nullable=False)
+    events: Mapped[list] = mapped_column(JSONB, nullable=False, default=list)
+    active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    consecutive_failures: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    disabled_reason: Mapped[Optional[str]] = mapped_column(String(120))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+
+class WebhookDelivery(Base, TenantScopedMixin):
+    __tablename__ = "webhook_deliveries"
+
+    delivery_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    tenant_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("tenants.tenant_id", ondelete="CASCADE"), nullable=False)
+    endpoint_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("webhook_endpoints.endpoint_id", ondelete="CASCADE"), nullable=False)
+    event_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
+    event_type: Mapped[str] = mapped_column(String(40), nullable=False)
+    payload: Mapped[dict] = mapped_column(JSONB, nullable=False)
+    status: Mapped[str] = mapped_column(String(10), nullable=False, default="pending")
+    attempts: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    next_attempt_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
+    last_status_code: Mapped[Optional[int]] = mapped_column(Integer)
+    last_error: Mapped[Optional[str]] = mapped_column(String(300))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    delivered_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))

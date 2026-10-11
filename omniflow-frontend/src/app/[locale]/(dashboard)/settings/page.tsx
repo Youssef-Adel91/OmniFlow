@@ -28,6 +28,7 @@ import TeamSection from "@/components/settings/TeamSection";
 import ChannelsSection from "@/components/settings/ChannelsSection";
 import ComingSoonSection from "@/components/settings/ComingSoonSection";
 import HoursHandoffSection from "@/components/settings/HoursHandoffSection";
+import DevelopersSection from "@/components/settings/DevelopersSection";
 import IdentitySection from "@/components/settings/IdentitySection";
 import { LoadError } from "@/components/settings/common";
 
@@ -41,7 +42,7 @@ const SECTIONS: { key: SectionKey; label: string; icon: React.ElementType; soon?
   { key: "notifications", label: "الإشعارات", icon: Bell },
   { key: "privacy", label: "الخصوصية والامتثال", icon: ShieldCheck },
   { key: "billing", label: "الفوترة والاستهلاك", icon: CreditCard },
-  { key: "developers", label: "المطورون", icon: Code2, soon: true },
+  { key: "developers", label: "المطورون", icon: Code2 },
   { key: "identity", label: "الهوية", icon: Building2 },
 ];
 
@@ -164,6 +165,7 @@ export default function SettingsPage() {
           {active === "notifications" && <NotificationsSection onDirty={flag("notif")} />}
           {active === "privacy" && <PrivacySection />}
           {active === "billing" && <BillingSection />}
+          {active === "developers" && <DevelopersSection />}
           {SECTIONS.find((s) => s.key === active)?.soon && <ComingSoonSection sectionKey={active} settings={settings} />}
         </div>
       </div>

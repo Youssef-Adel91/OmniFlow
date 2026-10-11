@@ -288,6 +288,10 @@ class ApiCrossTenantTests(unittest.IsolatedAsyncioTestCase):
                         pass
                 await s.commit()
             auth_overrides(app, b, App, role=TenantUserRole.ADMIN)
+            from types import SimpleNamespace
+
+            from src.gateway.routers import public_api
+            app.dependency_overrides[public_api.api_principal] = lambda: SimpleNamespace(key_id=uuid.uuid4(), tenant_id=b, name="isolation-test")      # the public API, as tenant B's key
             wrong, conclusive, inconclusive = [], 0, 0
             async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://t") as c:
                 for (method, path) in sorted(routes):

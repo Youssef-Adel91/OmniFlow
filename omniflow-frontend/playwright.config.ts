@@ -34,7 +34,7 @@ export default defineConfig({
   /* Global test settings */
   use: {
     /* Base URL for all goto() calls */
-    baseURL: 'http://localhost:3000',
+    baseURL: process.env.E2E_BASE_URL || 'http://localhost:3000',
 
     /* Viewport that mimics a typical agent workstation */
     viewport: { width: 1440, height: 900 },
@@ -69,6 +69,12 @@ export default defineConfig({
         ...devices['Desktop Chrome'],
         /* Run headed if the env var HEADED=1 is set, otherwise headless */
         headless: process.env.HEADED !== '1',
+        /* Use a pre-installed Chromium instead of downloading one (set PW_CHROMIUM_PATH) */
+        launchOptions: {
+          ...(process.env.PW_CHROMIUM_PATH ? { executablePath: process.env.PW_CHROMIUM_PATH } : {}),
+          /* sandboxes that force an HTTP proxy: go direct to the local server */
+          ...(process.env.PW_NO_PROXY === '1' ? { args: ['--no-proxy-server'] } : {}),
+        },
       },
     },
   ],

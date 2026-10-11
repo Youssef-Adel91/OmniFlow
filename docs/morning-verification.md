@@ -78,3 +78,11 @@ Try it with something already on port 8000: it must refuse and name the PID, wit
 - **WhatsApp Embedded Signup (#25):** needs Meta Tech Provider approval + `META_ES_CONFIG_ID`; only a simulated Meta was tested.
 - **Public pages (#24):** open `/ar`, `/en`, `/ar/pricing`, legal pages, `/ar/data-deletion/status?code=…`; `GET /sitemap.xml` and `/robots.txt`. Meta's "Data Deletion Request Callback" test button in the app dashboard against your ngrok URL `…/api/v1/meta/data-deletion`.
 - **ZATCA / Moyasar (#22):** sandbox only; see `docs/einvoice.md` and `docs/launch-decisions-and-manual-tests.md`.
+
+## 8. UI (branch `feat/n2-ui-quality`)
+```bash
+cd omniflow-frontend && npm ci && npx next build && npx next start -p 3100 &
+E2E_BASE_URL=http://localhost:3100 npx playwright test e2e/public.spec.ts            # 38 tests, expect all green (ran green in the sandbox)
+E2E_CLERK_EMAIL=… E2E_CLERK_PASSWORD=… E2E_BASE_URL=http://localhost:3000 npx playwright test e2e/flows.spec.ts   # NEVER RUN: expect to fix locators
+```
+Because Clerk now wraps only the signed-in/auth areas, test in a real browser with your Clerk keys: sign-in → dashboard → onboarding → sign-out, and open a public page while signed in. Also check `/robots.txt` and `/sitemap.xml` return 200 (set `PUBLIC_BASE_URL`/`NEXT_PUBLIC_BASE_URL`, otherwise sitemap URLs are relative).

@@ -10,6 +10,7 @@ import { routing, type Locale } from "@/i18n/routing";
 import { Sidebar }    from "@/components/layout/Sidebar";
 import { TopNav }     from "@/components/layout/TopNav";
 import { AuthSyncer } from "@/components/auth/AuthSyncer";
+import { AppProviders } from "@/components/auth/AppProviders";
 import { DashboardAuth } from "@/components/auth/DashboardAuth";
 import { BillingBanner } from "@/components/billing/BillingBanner";
 import { PlanLimitNotice } from "@/components/billing/PlanLimitNotice";
@@ -45,10 +46,12 @@ export default async function DashboardLayout({
     : routing.defaultLocale;
 
   return (
+    <AppProviders>
     <DashboardAuth>
       <AuthSyncer />
       <DashboardShell locale={safeLocale}>{children}</DashboardShell>
     </DashboardAuth>
+    </AppProviders>
   );
 }
 

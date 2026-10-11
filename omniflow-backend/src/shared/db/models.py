@@ -1763,6 +1763,59 @@ class BillingInvoice(Base):
     buyer: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict)
 
 
+class Refund(Base):
+    __tablename__ = "refunds"
+
+    refund_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    tenant_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("tenants.tenant_id", ondelete="RESTRICT"), nullable=False)
+    transaction_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("transactions.transaction_id", ondelete="RESTRICT"), nullable=False)
+    invoice_id: Mapped[Optional[uuid.UUID]] = mapped_column(UUID(as_uuid=True), ForeignKey("invoices.invoice_id", ondelete="RESTRICT"))
+    status: Mapped[str] = mapped_column(String(10), nullable=False, default="pending")
+    reason: Mapped[str] = mapped_column(Text, nullable=False)
+    gross_halalas: Mapped[int] = mapped_column(Integer, nullable=False)
+    consumed_halalas: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    fee_halalas: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    subtotal_halalas: Mapped[int] = mapped_column(Integer, nullable=False)
+    vat_halalas: Mapped[int] = mapped_column(Integer, nullable=False)
+    amount_halalas: Mapped[int] = mapped_column(Integer, nullable=False)
+    provider: Mapped[str] = mapped_column(String(20), nullable=False)
+    provider_refund_id: Mapped[Optional[str]] = mapped_column(String(100))
+    failure_reason: Mapped[Optional[str]] = mapped_column(Text)
+    requested_by: Mapped[str] = mapped_column(String(254), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    completed_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
+
+
+class CreditNote(Base):
+    __tablename__ = "credit_notes"
+
+    credit_note_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    tenant_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("tenants.tenant_id", ondelete="RESTRICT"), nullable=False)
+    refund_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("refunds.refund_id", ondelete="RESTRICT"), nullable=False, unique=True)
+    original_invoice_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("invoices.invoice_id", ondelete="RESTRICT"), nullable=False)
+    credit_note_number: Mapped[str] = mapped_column(String(30), nullable=False, unique=True)
+    issued_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    subtotal_halalas: Mapped[int] = mapped_column(Integer, nullable=False)
+    vat_halalas: Mapped[int] = mapped_column(Integer, nullable=False)
+    total_halalas: Mapped[int] = mapped_column(Integer, nullable=False)
+    vat_rate_bp: Mapped[int] = mapped_column(Integer, nullable=False)
+    currency: Mapped[str] = mapped_column(String(3), nullable=False, default="SAR")
+    reason: Mapped[str] = mapped_column(Text, nullable=False)
+    seller: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict)
+    buyer: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict)
+
+
+class TrialIdentity(Base):
+    __tablename__ = "trial_identities"
+    __table_args__ = (UniqueConstraint("kind", "value_hash", name="uq_trial_identity"),)
+
+    identity_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    tenant_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("tenants.tenant_id", ondelete="RESTRICT"), nullable=False)
+    kind: Mapped[str] = mapped_column(String(10), nullable=False)
+    value_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+
 class PaymentEvent(Base):
     """Every provider webhook delivery, keyed for idempotency (provider + event_key)."""
     __tablename__ = "payment_events"

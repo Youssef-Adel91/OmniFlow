@@ -36,6 +36,13 @@ class PaymentInfo:
 
 
 @dataclass(frozen=True)
+class RefundInfo:
+    refund_id: str
+    status: str                     # refunded | pending | failed
+    amount_halalas: int
+
+
+@dataclass(frozen=True)
 class WebhookEvent:
     event_key: str                  # unique per delivery-able event → idempotency
     event_type: str
@@ -55,5 +62,7 @@ class PaymentProvider(Protocol):
 
     async def charge_token(self, *, token: str, transaction_id: str, amount_halalas: int, currency: str,
                            description: str, metadata: Mapping[str, str]) -> PaymentInfo: ...
+
+    async def refund_payment(self, *, payment_id: str, amount_halalas: int, reason: str) -> RefundInfo: ...
 
     def parse_webhook(self, headers: Mapping[str, str], body: bytes) -> WebhookEvent: ...

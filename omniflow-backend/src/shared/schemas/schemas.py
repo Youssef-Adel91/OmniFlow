@@ -136,6 +136,8 @@ class TenantOnboardingUpdate(BaseModel):
     whatsapp_waba_id: Optional[str] = Field(default=None, max_length=30)
     instagram_page_id: Optional[str] = Field(default=None, max_length=30)
     instagram_page_access_token: Optional[str] = Field(default=None)
+    commercial_registration: Optional[str] = Field(default=None, max_length=30, description="CR number — only its hash is kept, to stop one company restarting free trials")
+    contact_phone: Optional[str] = Field(default=None, max_length=30, description="Company phone — only its hash is kept (same purpose)")
 
 
 class TenantResponse(_OrmBase, _TimestampMixin):

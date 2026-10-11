@@ -31,7 +31,7 @@ from src.shared.core.config import get_settings
 from src.shared.core.enums import TenantUserRole
 from src.shared.db.models import BillingInvoice, PaymentTransaction, Plan
 from src.shared.db.session import get_system_session
-from src.shared.services.billing import catalog, credits, entitlements, llm_cost, pricing, quotas, service, usage
+from src.shared.services.billing import catalog, credits, entitlements, llm_cost, pricing, quotas, refunds, service, usage
 from src.shared.services.billing.invoice_pdf import build_invoice_pdf
 from src.shared.services.billing.providers import get_provider
 from src.shared.services.billing.providers.base import ProviderError, WebhookRejected
@@ -335,6 +335,62 @@ async def manual_activate(tenant_id: Annotated[uuid.UUID, Path()], body: ManualA
 @router.get("/admin/unit-economics", summary="Platform staff: real AI cost vs revenue and margin per tenant for a month")
 async def unit_economics(staff: StaffUser, period: Annotated[Optional[str], Query(pattern=r"^\d{4}-(0[1-9]|1[0-2])$")] = None) -> dict:
     return await llm_cost.margin_report(period or usage.period_of())
+
+
+class RefundBody(BaseModel):
+    transaction_id: uuid.UUID
+    reason: str = Field(..., min_length=5, max_length=1000)
+    amount_halalas: Optional[int] = Field(None, ge=1, description="Lower than the computed maximum only; default = the full computed amount")
+
+
+@router.get("/admin/transactions/{transaction_id}/refund-quote", summary="Staff: what a refund of this payment would be (14-day guarantee, first payment only)")
+async def refund_quote(staff: StaffUser, transaction_id: Annotated[uuid.UUID, Path()]) -> dict:
+    async with get_system_session() as session:
+        txn = await session.scalar(select(PaymentTransaction).where(PaymentTransaction.transaction_id == transaction_id))
+        if txn is None:
+            raise HTTPException(status_code=404, detail={"code": "NOT_FOUND", "message": "العملية غير موجودة."})
+        return await refunds.quote(session, txn)
+
+
+@router.post("/admin/refunds", status_code=201, summary="Staff: refund a first payment (provider refund + credit note + audit)")
+async def issue_refund(staff: StaffUser, body: RefundBody) -> dict:
+    try:
+        async with get_system_session() as session:
+            out = await refunds.issue(session, body.transaction_id, reason=body.reason, staff_email=str(getattr(staff, "email", "")), amount_halalas=body.amount_halalas)
+            tid = (await session.scalar(select(PaymentTransaction.tenant_id).where(PaymentTransaction.transaction_id == body.transaction_id)))
+    except service.BillingError as exc:
+        raise _http(exc) from exc
+    if out.get("failed"):                       # the failed attempt + audit row were committed above; now tell the caller
+        raise HTTPException(status_code=502, detail={"code": out["code"], "message": out["message"], "refund_id": out["refund_id"]})
+    await entitlements.invalidate(tid)
+    return out
+
+
+@router.get("/credit-notes", summary="Credit notes issued to this workspace")
+async def credit_notes(user: CurrentUser, session: AuthTenantSession) -> dict:
+    _require(user, TenantUserRole.ADMIN, TenantUserRole.AUDITOR)
+    from src.shared.db.models import CreditNote
+
+    rows = (await session.execute(select(CreditNote).order_by(CreditNote.issued_at.desc()).limit(100))).scalars()
+    return {"items": [{"credit_note_id": str(n.credit_note_id), "credit_note_number": n.credit_note_number, "issued_at": n.issued_at.isoformat(),
+                       "subtotal_halalas": n.subtotal_halalas, "vat_halalas": n.vat_halalas, "total_halalas": n.total_halalas, "reason": n.reason} for n in rows]}
+
+
+@router.get("/credit-notes/{credit_note_id}/pdf", summary="Credit note as an Arabic PDF")
+async def credit_note_pdf(user: CurrentUser, session: AuthTenantSession, credit_note_id: Annotated[uuid.UUID, Path()]) -> Response:
+    _require(user, TenantUserRole.ADMIN, TenantUserRole.AUDITOR)
+    from types import SimpleNamespace
+
+    from src.shared.db.models import CreditNote
+
+    n = await session.scalar(select(CreditNote).where(CreditNote.credit_note_id == credit_note_id))
+    if n is None:
+        raise HTTPException(status_code=404, detail={"code": "NOT_FOUND", "message": "الإشعار غير موجود."})
+    doc = SimpleNamespace(invoice_number=n.credit_note_number, issued_at=n.issued_at, currency=n.currency, seller=n.seller, buyer=n.buyer,
+                          description="استرداد — " + n.reason, period_start=None, period_end=None, subtotal_halalas=n.subtotal_halalas,
+                          vat_halalas=n.vat_halalas, total_halalas=n.total_halalas, vat_rate_bp=n.vat_rate_bp, reason=n.reason)
+    return Response(content=build_invoice_pdf(doc, credit_note=True), media_type="application/pdf",
+                    headers={"Content-Disposition": f'attachment; filename="{n.credit_note_number}.pdf"', "Cache-Control": "private, no-store"})
 
 
 # ── provider webhook ─────────────────────────────────────────────────────────

@@ -20,7 +20,7 @@ from src.shared.core.enums import TenantUserRole
 from src.shared.services.billing import access, pricing
 from src.shared.services.billing import invoice_pdf, providers
 from src.shared.services.billing.providers import moyasar
-from src.shared.services.billing.providers.base import Checkout, PaymentInfo, ProviderError, WebhookEvent, WebhookRejected
+from src.shared.services.billing.providers.base import Checkout, PaymentInfo, ProviderError, RefundInfo, WebhookEvent, WebhookRejected
 from tests.test_property_import_flow import auth_overrides, client_for
 
 DB_URL = os.environ.get("OMNIFLOW_TEST_DATABASE_URL")
@@ -142,6 +142,13 @@ class FakeProvider:
                            failure_reason="insufficient_funds" if status == "failed" else None)
         self.payments[pid] = info
         return info
+
+    async def refund_payment(self, *, payment_id, amount_halalas, reason):
+        self.refunds = getattr(self, "refunds", [])
+        self.refunds.append({"payment_id": payment_id, "amount_halalas": amount_halalas, "reason": reason})
+        if getattr(self, "refund_error", None):
+            raise self.refund_error
+        return RefundInfo(refund_id=f"ref_{len(self.refunds)}", status=getattr(self, "refund_status", "refunded"), amount_halalas=amount_halalas)
 
     def parse_webhook(self, headers, body):
         data = json.loads(body)

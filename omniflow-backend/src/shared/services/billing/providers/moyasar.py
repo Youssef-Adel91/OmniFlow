@@ -20,7 +20,7 @@ import httpx
 
 from src.shared.core.config import get_settings
 from src.shared.services.billing.providers.base import (
-    Checkout, PaymentInfo, ProviderError, WebhookEvent, WebhookRejected,
+    Checkout, PaymentInfo, ProviderError, RefundInfo, WebhookEvent, WebhookRejected,
 )
 
 _STATUS = {"paid": "paid", "captured": "paid", "failed": "failed", "initiated": "initiated", "refunded": "refunded"}
@@ -113,6 +113,15 @@ class MoyasarProvider:
             "metadata": {**metadata, "transaction_id": transaction_id},
         })
         return _payment(data)
+
+    async def refund_payment(self, *, payment_id: str, amount_halalas: int, reason: str) -> RefundInfo:
+        """Moyasar: POST /payments/{id}/refund {amount}. Refunding returns the payment object (status 'refunded'). Not exercised against
+        the live API from this repository — the contract here follows Moyasar's public documentation only."""
+        data = await self._request("POST", f"/payments/{payment_id}/refund", json={"amount": amount_halalas})
+        status = str(data.get("status") or "").lower()
+        refunded = int(data.get("refunded") or 0)
+        ok = status in ("refunded", "partially_refunded") or refunded >= amount_halalas
+        return RefundInfo(refund_id=str(data.get("id") or payment_id), status="refunded" if ok else "pending", amount_halalas=refunded or amount_halalas)
 
     def parse_webhook(self, headers: Mapping[str, str], body: bytes) -> WebhookEvent:
         expected = (get_settings().moyasar_webhook_secret or "").strip()

@@ -216,6 +216,9 @@ class Settings(BaseSettings):
     billing_seller_cr_number: str = ""
     billing_admin_api_key: str = ""          # enables staff manual activation (header X-Billing-Key); empty = disabled
     billing_enforce_message_limit: bool = True    # hard cap: no LLM call once the plan quota + top-up credits are spent (exempt tenants: never)
+    billing_refund_window_days: int = 14          # money-back window on a tenant's FIRST payment only
+    billing_gateway_fee_bp: int = 0               # gateway fee deducted from a refund (basis points of the payment) — owner supplies the real rate
+    billing_gateway_fee_fixed_halalas: int = 0    # …plus a fixed fee per transaction, if the gateway charges one
     billing_auto_topup_max_per_month: int = 3     # safety: automatic recharges per tenant per calendar month
     billing_enforce_limits: bool = True           # seats / properties / contacts / campaigns / channels (exempt tenants: never)
 

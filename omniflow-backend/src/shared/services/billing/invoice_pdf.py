@@ -29,17 +29,18 @@ def _date(dt: datetime | None) -> str:
     return dt.astimezone(ZoneInfo(get_settings().app_timezone)).strftime("%Y-%m-%d")
 
 
-def invoice_html(inv) -> str:
+def invoice_html(inv, *, credit_note: bool = False) -> str:
     seller, buyer = inv.seller or {}, inv.buyer or {}
     rate = f"{inv.vat_rate_bp / 100:g}"
     period = f"{_date(inv.period_start)} — {_date(inv.period_end)}" if inv.period_start and inv.period_end else "—"
     e = lambda v: escape(str(v or "—"))  # noqa: E731
     return f"""<!doctype html><html lang="ar" dir="rtl"><head><meta charset="utf-8"></head><body>
-<h1>فاتورة اشتراك</h1>
+<h1>{'إشعار دائن (استرداد)' if credit_note else 'فاتورة اشتراك'}</h1>
 <table class="meta">
-<tr><td>رقم الفاتورة</td><td dir="ltr">{e(inv.invoice_number)}</td></tr>
+<tr><td>{'رقم الإشعار' if credit_note else 'رقم الفاتورة'}</td><td dir="ltr">{e(inv.invoice_number)}</td></tr>
 <tr><td>تاريخ الإصدار</td><td>{_date(inv.issued_at)}</td></tr>
 <tr><td>العملة</td><td>{e(inv.currency)}</td></tr>
+{f'<tr><td>السبب</td><td>{e(getattr(inv, "reason", ""))}</td></tr>' if credit_note else ''}
 </table>
 <div class="parties">
 <div><h2>البائع</h2><p>{e(seller.get('name'))}</p><p>الرقم الضريبي: <span dir="ltr">{e(seller.get('tax_number') or _MISSING_TAX)}</span></p>
@@ -51,14 +52,14 @@ def invoice_html(inv) -> str:
 <table class="totals">
 <tr><td>المجموع قبل الضريبة</td><td>{money(inv.subtotal_halalas, inv.currency)}</td></tr>
 <tr><td>ضريبة القيمة المضافة ({rate}%)</td><td>{money(inv.vat_halalas, inv.currency)}</td></tr>
-<tr class="grand"><td>الإجمالي المستحق</td><td>{money(inv.total_halalas, inv.currency)}</td></tr>
+<tr class="grand"><td>{'إجمالي المبلغ المسترد' if credit_note else 'الإجمالي المستحق'}</td><td>{money(inv.total_halalas, inv.currency)}</td></tr>
 </table>
 <p class="note">هذه فاتورة إلكترونية عادية بتفصيل ضريبة القيمة المضافة، ولا تتضمن رمز الاستجابة السريعة (QR) ولا الختم الإلكتروني
 المطلوب ضمن منظومة الفوترة الإلكترونية لهيئة الزكاة والضريبة والجمارك، ولا تُعد بديلًا عنها.</p>
 </body></html>"""
 
 
-def build_invoice_pdf(inv) -> bytes:
+def build_invoice_pdf(inv, *, credit_note: bool = False) -> bytes:
     css = CSS(string=f"""
     @font-face {{ font-family: "NotoNaskh"; src: url("{_FONT.as_posix()}"); }}
     @page {{ size: A4; margin: 2cm; }}
@@ -74,4 +75,4 @@ def build_invoice_pdf(inv) -> bytes:
     .totals .grand td {{ font-weight: bold; border-top: 2px solid #111; }}
     .note {{ margin-top: 1.5em; font-size: 8.5pt; color: #444; }}
     """)
-    return HTML(string=invoice_html(inv)).write_pdf(stylesheets=[css])
+    return HTML(string=invoice_html(inv, credit_note=credit_note)).write_pdf(stylesheets=[css])

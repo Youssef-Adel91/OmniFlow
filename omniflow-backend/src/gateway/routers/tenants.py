@@ -11,11 +11,11 @@ from pydantic import BaseModel
 from sqlalchemy import select
 
 from src.ai_engine.company_context import invalidate_company_context
-from src.shared.db.session import AsyncSessionFactory, get_tenant_session
+from src.shared.db.session import AsyncSessionFactory, get_system_session, get_tenant_session
 from src.shared.db.models import CompanyProfile, Tenant, TenantUser
 from src.shared.core.enums import OnboardingStatus
 from src.shared.schemas.schemas import TenantOnboardingUpdate
-from src.shared.services.billing import quotas
+from src.shared.services.billing import quotas, trial_identity
 from src.gateway.dependencies import get_current_user
 from fastapi import Depends
 
@@ -109,6 +109,13 @@ async def update_tenant_onboarding(
             raise HTTPException(status_code=404, detail="Tenant not found")
 
         tenant.onboarding_status = new_status
+
+        if payload.commercial_registration or payload.contact_phone:
+            try:        # system session: the uniqueness check must see EVERY tenant's identifiers, which a tenant-scoped (RLS) session cannot
+                async with get_system_session() as ident_session:
+                    await trial_identity.claim(ident_session, tenant_uuid, cr=payload.commercial_registration, phone=payload.contact_phone)
+            except trial_identity.TrialAlreadyUsed as exc:
+                raise HTTPException(status_code=409, detail={"code": "TRIAL_ALREADY_USED", "kind": exc.kind, "message": str(exc)}) from exc
 
         if payload.option == "self_service":
             # EAAD* tokens are treated as sandbox credentials:

@@ -103,7 +103,8 @@ class CreditsBase(unittest.IsolatedAsyncioTestCase):
         await self._clear_redis()
         async with self.Admin() as s:
             for t in self.tenants:
-                for stmt in ("DELETE FROM llm_usage_daily WHERE tenant_id=:t", "DELETE FROM llm_usage WHERE tenant_id=:t",
+                for stmt in ("DELETE FROM credit_notes WHERE tenant_id=:t", "DELETE FROM refunds WHERE tenant_id=:t", "DELETE FROM trial_identities WHERE tenant_id=:t",
+                             "DELETE FROM llm_usage_daily WHERE tenant_id=:t", "DELETE FROM llm_usage WHERE tenant_id=:t",
                              "DELETE FROM reply_credits WHERE tenant_id=:t", "DELETE FROM notifications WHERE tenant_id=:t",
                              "DELETE FROM usage_counters WHERE tenant_id=:t", "DELETE FROM payment_events WHERE tenant_id=:t",
                              "DELETE FROM invoices WHERE tenant_id=:t", "DELETE FROM transactions WHERE tenant_id=:t",
@@ -117,6 +118,10 @@ class CreditsBase(unittest.IsolatedAsyncioTestCase):
         await redis_mgr.stop()
 
     # ── helpers ─────────────────────────────────────────────────────────────────────
+    async def _sys(self):
+        from src.shared.db.session import get_system_session
+        return get_system_session()
+
     def app_as(self, role=TenantUserRole.ADMIN, tenant=None):
         app = create_app()
         auth_overrides(app, tenant or self.tenants[0], self.App, role=role)
@@ -306,10 +311,6 @@ class CreditsDbTests(CreditsBase):
             ok = await c.delete(f"{BASE}/addons/seat?quantity=1")
             self.assertEqual((ok.status_code, ok.json()["addons"]["seats"]), (200, 1))
             self.assertEqual((await c.delete(f"{BASE}/addons/seat?quantity=5")).status_code, 422)
-
-    async def _sys(self):
-        from src.shared.db.session import get_system_session
-        return get_system_session()
 
     async def test_removing_a_seat_addon_is_refused_while_the_capacity_is_in_use(self):
         t = self.tenants[0]

@@ -10,7 +10,7 @@ Branch chain (each branch is built on the previous one; migrations are linear 00
 | 0d | P10-G e-invoice module | same | | done (flag off; unverified by ZATCA) |
 | 0e | Team page tenant filter + dev cleanup script | same | | done |
 | 1 | Security & tenant-isolation audit | `feat/n2-security-audit` (on P10) | #23 | done — found + fixed Facebook-callback 401 regression; see docs/security-audit.md |
-| 2 | Public pages (Meta / launch) + Meta data-deletion callback | `feat/n2-public-pages` (on item 1) | see PR list | done — tsc/eslint/64 node tests/next build OK; DB-backed deletion tests ran earlier (33 OK) but were skipped in the last full run (scratch DB offline); legal text = placeholder pending lawyer |
+| 2 | Public pages (Meta / launch) + Meta data-deletion callback | `feat/n2-public-pages` (on item 1) | #24 | done — tsc/eslint/64 node tests/next build OK; DB-backed deletion tests ran earlier (33 OK) but were skipped in the last full run (scratch DB offline); legal text = placeholder pending lawyer |
 | 3 | Onboarding from zero | | | pending |
 | 4 | Help-centre content + user guide | | | pending |
 | 5 | Developers (API keys + outgoing webhooks) | | | pending |

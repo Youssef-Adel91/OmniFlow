@@ -15,6 +15,7 @@ from src.shared.db.session import AsyncSessionFactory, get_tenant_session
 from src.shared.db.models import CompanyProfile, Tenant, TenantUser
 from src.shared.core.enums import OnboardingStatus
 from src.shared.schemas.schemas import TenantOnboardingUpdate
+from src.shared.services.billing import quotas
 from src.gateway.dependencies import get_current_user
 from fastapi import Depends
 
@@ -126,10 +127,14 @@ async def update_tenant_onboarding(
             if payload.meta_access_token:
                 tenant.meta_access_token = payload.meta_access_token
             if payload.whatsapp_phone_number_id:
+                if not tenant.whatsapp_phone_number_id:
+                    await quotas.guard_channel(session, tenant_uuid, "whatsapp")
                 tenant.whatsapp_phone_number_id = payload.whatsapp_phone_number_id
             if payload.whatsapp_waba_id:
                 tenant.whatsapp_waba_id = payload.whatsapp_waba_id
             if payload.instagram_page_id:
+                if not tenant.instagram_page_id:
+                    await quotas.guard_channel(session, tenant_uuid, "meta_page")
                 tenant.instagram_page_id = payload.instagram_page_id
             if payload.instagram_page_access_token:
                 tenant.instagram_page_access_token = payload.instagram_page_access_token

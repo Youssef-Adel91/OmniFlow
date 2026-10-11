@@ -59,6 +59,7 @@ from src.shared.schemas import (
     PropertyListingUpdate,
 )
 from src.shared.core.enums import ListingStatus
+from src.shared.services.billing import quotas
 from src.shared.services.vector_sync import (
     delete_listing_from_qdrant,
     delete_listings_from_qdrant,
@@ -359,6 +360,7 @@ async def create_property(
     # We build the ORM object directly (not via schema.model_dump()) so we can
     # inject fields that must come from the verified JWT, not the request body.
     rega_number = _resolve_rega_number(body.rega_ad_number)
+    await quotas.guard_add(repo.session, user.tenant_id, "properties")
 
     listing = PropertyListing(
         tenant_id=user.tenant_id,

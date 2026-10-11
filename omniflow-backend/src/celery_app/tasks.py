@@ -731,15 +731,17 @@ async def _billing_usage_flush_async() -> dict[str, Any]:
 
     from src.shared.db.models import Plan, Subscription
     from src.shared.redis_client import redis_mgr
-    from src.shared.services.billing import usage
+    from src.shared.services.billing import catalog, usage
     from src.shared.services.notifications import notify_safe
 
     # Each Celery task runs in its own event loop (asyncio.run), so Redis pools must be created and closed per task.
     await redis_mgr.start()
     try:
         async with get_system_session() as session:
-            plans = {p.code: (p.limits or {}).get("messages_per_month") for p in (await session.execute(_select(Plan))).scalars()}
-            limits = {s.tenant_id: plans.get(s.plan_code) for s in (await session.execute(_select(Subscription))).scalars()}
+            plans = {p.code: p for p in (await session.execute(_select(Plan))).scalars()}
+            # trial caps / purchased add-ons included; None = unlimited (grandfathered tenants are never alerted)
+            limits = {s.tenant_id: (catalog.effective_limits(s, plans.get(s.plan_code)) or {}).get("messages_per_month")
+                      for s in (await session.execute(_select(Subscription))).scalars()}
             alerts = await usage.flush(session, limits)
         for a in alerts:
             logger.warning("billing_usage_threshold", tenant_id=str(a["tenant_id"]), period=a["period"], level=a["level"], used=a["used"])

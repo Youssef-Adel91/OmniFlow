@@ -30,7 +30,7 @@ from src.shared.core.config import get_settings
 from src.shared.core.enums import TenantUserRole
 from src.shared.db.models import BillingInvoice, PaymentTransaction, Plan
 from src.shared.db.session import get_system_session
-from src.shared.services.billing import entitlements, pricing, service, usage
+from src.shared.services.billing import catalog, entitlements, pricing, quotas, service, usage
 from src.shared.services.billing.invoice_pdf import build_invoice_pdf
 from src.shared.services.billing.providers import get_provider
 from src.shared.services.billing.providers.base import ProviderError, WebhookRejected
@@ -70,7 +70,7 @@ def _txn_json(t: PaymentTransaction) -> dict:
 def _plan_json(p: Plan) -> dict:
     vat = get_settings().billing_vat_rate_bp
     return {"code": p.code, "name_ar": p.name_ar, "description_ar": p.description_ar, "limits": p.limits, "currency": p.currency,
-            "is_placeholder": p.is_placeholder,
+            "is_placeholder": p.is_placeholder, "contact_sales": p.contact_sales,
             "monthly": {"subtotal_halalas": p.price_monthly_halalas, "total_halalas": pricing.with_vat(p.price_monthly_halalas, vat).total},
             "yearly": {"subtotal_halalas": p.price_yearly_halalas, "total_halalas": pricing.with_vat(p.price_yearly_halalas, vat).total,
                        "monthly_equivalent_halalas": p.price_yearly_halalas // 12}}
@@ -98,7 +98,7 @@ async def subscription(user: CurrentUser, session: AuthTenantSession) -> dict:
     sub = await service.ensure_subscription(session, user.tenant_id)
     a = service.access_of(sub)
     plan = await session.scalar(select(Plan).where(Plan.code == sub.plan_code))
-    limits = dict(plan.limits) if plan else {}
+    limits = catalog.effective_limits(sub, plan) or {}      # trial caps / add-ons included; {} = unlimited (exempt)
     used = await usage.current_usage(session, user.tenant_id)
     msg_limit = limits.get("messages_per_month")
     pending = await session.scalar(
@@ -118,7 +118,9 @@ async def subscription(user: CurrentUser, session: AuthTenantSession) -> dict:
         "card": {"brand": sub.card_brand, "last4": sub.card_last4} if sub.card_last4 else None, "auto_renew": bool(sub.payment_token),
         "last_payment_error": sub.last_payment_error, "retry_count": sub.retry_count,
         "usage": {"ai_messages": used, "limit": msg_limit, "level": usage.level(used, msg_limit)},
-        "limits": limits, "pending_checkout": _txn_json(pending) if pending else None,
+        "limits": limits, "quotas": await quotas.snapshot(session, user.tenant_id),
+        "addons": {"seats": sub.addon_seats, "whatsapp_numbers": sub.addon_whatsapp_numbers},
+        "pending_checkout": _txn_json(pending) if pending else None,
         "last_failed": _txn_json(last_failed) if last_failed else None,
     }
 

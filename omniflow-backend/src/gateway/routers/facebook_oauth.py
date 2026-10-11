@@ -55,6 +55,7 @@ from src.shared.db.models import Tenant, TenantUser
 from src.shared.db.session import AsyncSessionFactory
 from src.shared.redis_client.client import redis_mgr
 from src.shared.security.crypto import decrypt_secret, encrypt_secret
+from src.shared.services.billing import quotas
 
 logger = structlog.get_logger(__name__)
 settings = get_settings()
@@ -274,6 +275,8 @@ async def _save_page_connection(
         tenant = result.scalar_one_or_none()
         if not tenant:
             raise HTTPException(status_code=404, detail="Tenant not found")
+        if not tenant.instagram_page_id:
+            await quotas.guard_channel(session, tenant_id, "meta_page")
         tenant.instagram_page_id = page_id
         tenant.instagram_account_id = instagram_account_id
         tenant.instagram_page_access_token = encrypt_secret(page_access_token_plaintext)

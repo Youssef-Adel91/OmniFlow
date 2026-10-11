@@ -43,6 +43,7 @@ from src.shared.core.enums import ListingStatus
 from src.shared.db.models import AuditLog, ImportJob, ImportMappingTemplate, PropertyListing
 from src.shared.db.session import get_system_session, get_tenant_session
 from src.shared.services import vector_sync
+from src.shared.services.billing import quotas
 from src.shared.services.bulk_import import llm_extract
 from src.shared.services.bulk_import.files import (
     LLM_KINDS, ImportFileError, Table, detect_kind, read_tabular,
@@ -323,8 +324,10 @@ async def validate_job(session, job: ImportJob, mapping_in: dict[str, str | None
                 issues.append({"row": r.row_number, **i.as_dict()})
 
     ignored = sorted(set(table.headers) - set(mapping.values()))
+    room = await quotas.remaining(session, job.tenant_id, "properties")
     summary = {"counts": counts, "preview": preview, "issues": issues, "ignored_columns": ignored,
-               "required_missing": required_missing, "extracted_by_llm": table.extracted_by_llm}
+               "required_missing": required_missing, "extracted_by_llm": table.extracted_by_llm,
+               "plan_limit": {"remaining": room, "exceeds": room is not None and counts["will_create"] > room}}
 
     job.mapping, job.options, job.summary = mapping, options, summary
     job.total_rows = len(results)
@@ -469,6 +472,11 @@ async def _apply_batch(session, tenant_id: uuid.UUID, import_id: uuid.UUID, batc
             rega = f"DEV-IMP-{import_id.hex[:8]}-{r.row_number}"       # create_new: keep both listings
         to_insert.append((r, _listing_values(tenant_id, r.values, rega)))
 
+    room = await quotas.remaining(session, tenant_id, "properties")
+    if room is not None and len(to_insert) > room:      # plan limit: keep what fits, report the rest row by row
+        for r, _v in to_insert[room:]:
+            out["failed"].append((r, "تجاوز حد العقارات في الباقة — رقِّ الباقة لاستيراد هذا الصف"))
+        to_insert = to_insert[:room]
     if to_insert:
         stmt = (pg_insert(PropertyListing).values([v for _, v in to_insert])
                 .on_conflict_do_nothing(constraint="uq_listings_tenant_rega")

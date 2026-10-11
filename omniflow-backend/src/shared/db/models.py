@@ -24,12 +24,13 @@ References: SRS §6 — Data Models
 from __future__ import annotations
 
 import uuid
-from datetime import datetime
+from datetime import date, datetime
 from typing import Optional
 
 from sqlalchemy import (
     BigInteger,
     Boolean,
+    Date,
     ForeignKey,
     Index,
     Integer,
@@ -1599,9 +1600,24 @@ class Plan(Base):
     limits: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict)
     is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
     is_placeholder: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    contact_sales: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, comment="Enterprise: never purchasable online")
     sort_order: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+
+class PlanAddon(Base):
+    """Per-unit recurring add-on (extra seat, extra WhatsApp number). VAT-exclusive; yearly = 10 x monthly like the plans."""
+    __tablename__ = "plan_addons"
+
+    code: Mapped[str] = mapped_column(String(30), primary_key=True)
+    name_ar: Mapped[str] = mapped_column(String(100), nullable=False)
+    price_monthly_halalas: Mapped[int] = mapped_column(Integer, nullable=False)
+    limit_key: Mapped[str] = mapped_column(String(30), nullable=False)
+    is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    is_available: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    unavailable_reason: Mapped[Optional[str]] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
 
 
 class Subscription(Base):
@@ -1630,6 +1646,11 @@ class Subscription(Base):
     payment_token: Mapped[Optional[str]] = mapped_column(Text, comment="Fernet-encrypted provider token; never a card number")
     card_brand: Mapped[Optional[str]] = mapped_column(String(20))
     card_last4: Mapped[Optional[str]] = mapped_column(String(4))
+    addon_seats: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    addon_whatsapp_numbers: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    quota_exhausted_action: Mapped[str] = mapped_column(String(10), nullable=False, default="handoff", comment="handoff | stop — when plan quota + credits are spent")
+    auto_topup_enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    auto_topup_pack: Mapped[Optional[str]] = mapped_column(String(30))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
 
@@ -1660,6 +1681,64 @@ class PaymentTransaction(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     paid_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    meta: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict, comment="add-on / top-up details for non-plan transactions")
+
+
+class TopupPack(Base):
+    """Prepaid AI-reply pack (global catalogue). VAT-exclusive halalas."""
+    __tablename__ = "topup_packs"
+
+    code: Mapped[str] = mapped_column(String(30), primary_key=True)
+    replies: Mapped[int] = mapped_column(Integer, nullable=False)
+    price_halalas: Mapped[int] = mapped_column(Integer, nullable=False)
+    validity_months: Mapped[int] = mapped_column(Integer, nullable=False, default=12)
+    is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    sort_order: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+
+
+class ReplyCredit(Base):
+    """A purchased block of AI replies (tenant RLS). Spent after the plan's monthly quota, earliest expiry first."""
+    __tablename__ = "reply_credits"
+
+    credit_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    tenant_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("tenants.tenant_id", ondelete="RESTRICT"), nullable=False)
+    pack_code: Mapped[str] = mapped_column(String(30), nullable=False)
+    replies_total: Mapped[int] = mapped_column(Integer, nullable=False)
+    replies_remaining: Mapped[int] = mapped_column(Integer, nullable=False)
+    source: Mapped[str] = mapped_column(String(12), nullable=False, default="purchase")
+    transaction_id: Mapped[Optional[uuid.UUID]] = mapped_column(UUID(as_uuid=True), ForeignKey("transactions.transaction_id", ondelete="RESTRICT"), unique=True)
+    purchased_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+
+class LlmUsage(Base):
+    """One row per billable AI reply: measured tokens x configured prices (or the default per-reply cost when unmeasured)."""
+    __tablename__ = "llm_usage"
+
+    usage_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    tenant_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("tenants.tenant_id", ondelete="RESTRICT"), nullable=False)
+    event_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    model: Mapped[str] = mapped_column(String(80), nullable=False)
+    tier: Mapped[str] = mapped_column(String(30), nullable=False)
+    input_tokens: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    output_tokens: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    cost_sar: Mapped[float] = mapped_column(Numeric(14, 6), nullable=False)
+    cost_source: Mapped[str] = mapped_column(String(10), nullable=False)
+    quota_source: Mapped[str] = mapped_column(String(8), nullable=False, default="plan")
+
+
+class LlmUsageDaily(Base):
+    __tablename__ = "llm_usage_daily"
+
+    tenant_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("tenants.tenant_id", ondelete="RESTRICT"), primary_key=True)
+    day: Mapped[date] = mapped_column(Date, primary_key=True)
+    tier: Mapped[str] = mapped_column(String(30), primary_key=True)
+    model: Mapped[str] = mapped_column(String(80), primary_key=True)
+    replies: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    input_tokens: Mapped[int] = mapped_column(BigInteger, nullable=False, default=0)
+    output_tokens: Mapped[int] = mapped_column(BigInteger, nullable=False, default=0)
+    cost_sar: Mapped[float] = mapped_column(Numeric(14, 6), nullable=False, default=0)
 
 
 class BillingInvoice(Base):

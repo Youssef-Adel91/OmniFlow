@@ -215,7 +215,8 @@ class Settings(BaseSettings):
     billing_seller_address: str = ""
     billing_seller_cr_number: str = ""
     billing_admin_api_key: str = ""          # enables staff manual activation (header X-Billing-Key); empty = disabled
-    billing_enforce_message_limit: bool = False   # True = stop AI replies at 100 % of the plan's monthly messages
+    billing_enforce_message_limit: bool = True    # hard cap: no LLM call once the plan quota + top-up credits are spent (exempt tenants: never)
+    billing_enforce_limits: bool = True           # seats / properties / contacts / campaigns / channels (exempt tenants: never)
 
     # ── Email (all optional: with no provider configured, email notifications are simply off) ──
     email_provider: str = ""                 # "resend" | "smtp" | "" (disabled)

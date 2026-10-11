@@ -35,6 +35,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from src.gateway.dependencies import AdminUser, AuthTenantSession, CurrentUser, CustomerWriteUser
 from src.shared.db.models import Appointment, AuditLog, Conversation, Customer, CustomerReport, Message
 from src.shared.services import customers as svc
+from src.shared.services.billing import quotas
 from src.shared.services.bulk_import.customer_schema import MAX_TAGS, MAX_TAG_LEN
 from src.shared.services.bulk_import.phone import normalize_phone
 from src.shared.services.bulk_import.text import ParseError
@@ -422,6 +423,7 @@ def _dup_http(exc: svc.DuplicateCustomerError) -> HTTPException:
 @router.post("", response_model=CustomerItem, status_code=status.HTTP_201_CREATED, include_in_schema=False)
 @router.post("/", response_model=CustomerItem, status_code=status.HTTP_201_CREATED, summary="Add a customer manually")
 async def create_customer(user: CustomerWriteUser, session: AuthTenantSession, body: CustomerCreate) -> CustomerItem:
+    await quotas.guard_add(session, user.tenant_id, "contacts")
     try:
         customer = await svc.create_customer(
             session, tenant_id=user.tenant_id, actor_id=getattr(user, "user_id", None), phone=body.phone, source="manual",

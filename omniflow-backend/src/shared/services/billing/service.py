@@ -80,7 +80,9 @@ async def ensure_subscription(session, tenant_id: uuid.UUID, now: datetime | Non
     if tenant is None:
         raise BillingError("TENANT_NOT_FOUND", "المنشأة غير موجودة.", 404)
     started = tenant.created_at or now
-    tier = str(getattr(tenant.subscription_tier, "value", tenant.subscription_tier) or "economic")
+    tier = str(getattr(tenant.subscription_tier, "value", tenant.subscription_tier) or "")
+    if tier not in ("starter", "pro", "business"):      # legacy / unknown tier → the entry plan the trial converts to by default
+        tier = "starter"
     await session.execute(pg_insert(Subscription).values(
         subscription_id=uuid.uuid4(), tenant_id=tenant_id, plan_code=tier, billing_interval="monthly", status="trial",
         is_exempt=False, trial_ends_at=started + timedelta(days=cfg.billing_trial_days),
@@ -118,6 +120,8 @@ class ChangeResult:
 
 
 def _check_sellable(plan: Plan) -> None:
+    if plan.contact_sales:
+        raise BillingError("CONTACT_SALES", "هذه الباقة مخصّصة للمؤسسات — تواصل معنا للحصول على عرض.", 409)
     if plan.is_placeholder and get_settings().app_env == "production":
         raise BillingError("PLACEHOLDER_PRICING", "أسعار هذه الخطة لم تُعتمد بعد؛ لا يمكن الدفع حاليًا.", 409)
 

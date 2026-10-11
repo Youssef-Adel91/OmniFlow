@@ -60,3 +60,11 @@ def decrypt_secret(ciphertext: str) -> str | None:
     except (InvalidToken, ValueError) as exc:
         logger.warning("field_decryption_failed", error=str(exc)[:200])
         return None
+
+
+def reveal_secret(stored: str | None) -> str | None:
+    """Read a stored credential that may be Fernet ciphertext (new) or legacy plaintext (manually entered before encryption existed)."""
+    if not stored:
+        return None
+    plain = decrypt_secret(stored)
+    return plain if plain is not None else stored

@@ -33,6 +33,7 @@ from sqlalchemy import func, select
 
 from src.gateway.dependencies import AuthTenantSession, CurrentUser, MarketingWriteUser
 from src.shared.core.config import get_settings
+from src.shared.security.crypto import reveal_secret
 from src.shared.core.enums import BroadcastCampaignStatus
 from src.shared.db.models import AuditLog, BroadcastCampaign, BroadcastDelivery, Conversation, Customer, Message, Tenant
 from src.shared.services import broadcast_audience as aud
@@ -249,7 +250,7 @@ async def list_templates(user: CurrentUser, session: AuthTenantSession) -> dict[
     if not t.whatsapp_waba_id:
         raise _err(409, "WABA_ID_MISSING", "معرّف حساب واتساب للأعمال (WABA ID) غير مُدخل في الإعدادات.")
     try:
-        items = await meta_templates.list_approved_templates(t.whatsapp_waba_id, t.meta_access_token)
+        items = await meta_templates.list_approved_templates(t.whatsapp_waba_id, reveal_secret(t.meta_access_token))
     except meta_templates.TemplateFetchError as exc:
         raise _err(502, "META_TEMPLATES_FAILED", str(exc)) from exc
     return {"items": items}

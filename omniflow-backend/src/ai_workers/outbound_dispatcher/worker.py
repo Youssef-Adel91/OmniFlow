@@ -40,6 +40,7 @@ from aiokafka.structs import ConsumerRecord
 
 from src.ai_workers.vcard_gatekeeper import vcard_builder
 from src.shared.events.outbound import OutboundMessage
+from src.shared.security.crypto import reveal_secret
 from src.channel_adapters.whatsapp.client import (
     WhatsAppAuthError,
     WhatsAppInvalidRecipientError,
@@ -124,7 +125,7 @@ async def _resolve_tenant_credentials(
     async with get_tenant_session(tenant_id) as session:
         tenant = await session.scalar(select(Tenant).where(Tenant.tenant_id == tenant_id))
         if tenant and tenant.whatsapp_phone_number_id and tenant.meta_access_token:
-            return TenantCredentials(tenant.whatsapp_phone_number_id, tenant.meta_access_token, str(tenant_id))
+            return TenantCredentials(tenant.whatsapp_phone_number_id, reveal_secret(tenant.meta_access_token), str(tenant_id))
 
     # ── 3. Settings fallback for the reserved local-development tenant only ──
     if (settings.is_development and tenant_id == uuid.UUID(int=1)

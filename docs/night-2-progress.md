@@ -11,7 +11,7 @@ Branch chain (each branch is built on the previous one; migrations are linear 00
 | 0e | Team page tenant filter + dev cleanup script | same | | done |
 | 1 | Security & tenant-isolation audit | `feat/n2-security-audit` (on P10) | #23 | done — found + fixed Facebook-callback 401 regression; see docs/security-audit.md |
 | 2 | Public pages (Meta / launch) + Meta data-deletion callback | `feat/n2-public-pages` (on item 1) | #24 | done — tsc/eslint/64 node tests/next build OK; DB-backed deletion tests ran earlier (33 OK) but were skipped in the last full run (scratch DB offline); legal text = placeholder pending lawyer |
-| 3 | Onboarding from zero | | | pending |
+| 3 | Onboarding from zero (checklist + Embedded Signup, flag off) | `feat/n2-onboarding` (on item 2) | (pending) | done — migration 0033 up/down/up verified on scratch PG; backend suite OK with DB (1 timing flake passes alone); tsc/eslint/68 node tests/next build OK; Embedded Signup tested only against a simulated Meta (httpx MockTransport), never real Meta |
 | 4 | Help-centre content + user guide | | | pending |
 | 5 | Developers (API keys + outgoing webhooks) | | | pending |
 | 6 | Instagram/Facebook comment replies (flag off) | | | pending |

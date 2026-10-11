@@ -14,6 +14,7 @@ import {
   checkChannel, disconnectFacebook, fetchChannels, settingsErrorMessage, updateSettings,
   type ChannelCheck, type ChannelsStatus, type TenantSettings,
 } from "@/lib/api/settings";
+import { WhatsappEmbeddedSignup } from "./WhatsappEmbeddedSignup";
 import { Field, LoadError, SaveBar, SectionHeader, SectionSkeleton, cardClass, inputClass } from "./common";
 import { useSection } from "./useSection";
 
@@ -111,6 +112,7 @@ export default function ChannelsSection({ locale, settings, onSettings, onDirty 
               <div className="flex flex-wrap items-center gap-3 pt-1">
                 <button onClick={() => void runCheck("whatsapp")} disabled={!wa.connected || checks.whatsapp === "loading"} className="px-3 py-1.5 text-xs rounded-lg border border-white/20 hover:bg-white/10 disabled:opacity-50 flex items-center gap-1.5"><RefreshCw className="w-3.5 h-3.5" aria-hidden />فحص الاتصال</button>
                 <Link href={`/${locale}/onboarding`} className="px-3 py-1.5 text-xs rounded-lg border border-[#C9A84C]/40 text-[#E4D5A5] hover:bg-[#C9A84C]/10 flex items-center gap-1.5"><Link2 className="w-3.5 h-3.5" aria-hidden />{wa.connected ? "إعادة الربط / تحديث الرمز" : "ربط واتساب"}</Link>
+                <WhatsappEmbeddedSignup onConnected={(m) => { setNotice(m); void load(); }} />
                 <CheckResult ch="whatsapp" />
               </div>
               <p className="text-xs text-gray-300">رمز الوصول ومعرّف الرقم لا يُعدَّلان من هنا لأسباب أمنية؛ تُحدَّث من صفحة الربط.</p>

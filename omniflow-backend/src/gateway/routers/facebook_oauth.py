@@ -62,6 +62,11 @@ settings = get_settings()
 
 router = APIRouter(prefix="/api/v1/integrations/facebook", tags=["Facebook OAuth"])
 
+# The OAuth callback is a top-level browser redirect from Meta into the popup: it carries NO Authorization header, only the one-time `state`
+# we issued. It therefore lives on its own router that main.py mounts WITHOUT the subscription write gate (the gate resolves the current user,
+# which made every callback answer 401 once the gate was added — regression found by tests/test_security_audit.py).
+callback_router = APIRouter(prefix="/api/v1/integrations/facebook", tags=["Facebook OAuth"])
+
 _GRAPH_BASE: Final[str] = "https://graph.facebook.com"
 _API_VERSION: Final[str] = settings.meta_graph_api_version
 _TIMEOUT_SECONDS: Final[float] = 20.0
@@ -360,7 +365,7 @@ async def start_facebook_oauth(current_user: TenantUser = Depends(get_current_us
 # GET /callback
 # ══════════════════════════════════════════════════════════════════════════════
 
-@router.get("/callback")
+@callback_router.get("/callback")
 async def facebook_oauth_callback(
     code: str | None = Query(default=None),
     state: str | None = Query(default=None),

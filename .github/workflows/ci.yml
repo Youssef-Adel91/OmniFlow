@@ -118,6 +118,20 @@ jobs:
           & "${{ env.PYTHON_EXE }}" -m pip install --no-cache-dir detect-secrets
           & "${{ env.PYTHON_EXE }}" omniflow-backend/scripts/ci_check_detect_secrets.py
 
+      # Second secret scanner (same engine as the pre-commit hook in .pre-commit-config.yaml). It runs only when gitleaks is installed on the runner,
+      # so a missing binary never breaks the pipeline: install it (https://github.com/gitleaks/gitleaks/releases, v8.21.x) to make it enforcing.
+      - name: Secret scan (gitleaks)
+        working-directory: .
+        run: |
+          $gl = Get-Command gitleaks -ErrorAction SilentlyContinue
+          if (-not $gl) {
+            Write-Host "::warning::gitleaks is not installed on this runner - skipping (detect-secrets above still ran). See docs/security-audit.md."
+            $LASTEXITCODE = 0
+            exit 0
+          }
+          & gitleaks detect --source . --no-banner --redact --exit-code 1
+          exit $LASTEXITCODE
+
       - name: Dependency vulnerability scan (pip-audit)
         run: |
           & "${{ env.PYTHON_EXE }}" -m pip install --no-cache-dir pip-audit

@@ -482,7 +482,8 @@ def _register_routers(app: FastAPI) -> None:
     app.include_router(users_router.router, dependencies=_GATE)        # /api/v1/users
     app.include_router(dashboard_router.router, dependencies=_GATE)    # /api/v1/dashboard
     app.include_router(knowledge_router.router, dependencies=_GATE)    # /api/v1/knowledge
-    app.include_router(facebook_oauth_router.router, dependencies=_GATE)  # /api/v1/integrations/facebook
+    app.include_router(facebook_oauth_router.router, dependencies=_GATE)  # /api/v1/integrations/facebook (start, select-page)
+    app.include_router(facebook_oauth_router.callback_router)             # /api/v1/integrations/facebook/callback — public by design (state-verified)
 
 
 # ══════════════════════════════════════════════════════════════════════════════

@@ -20,7 +20,7 @@ from src.shared.core.enums import TenantUserRole
 from src.shared.services.billing import access, pricing
 from src.shared.services.billing import invoice_pdf, providers
 from src.shared.services.billing.providers import moyasar
-from src.shared.services.billing.providers.base import Checkout, PaymentInfo, ProviderError, WebhookEvent, WebhookRejected
+from src.shared.services.billing.providers.base import Checkout, PaymentInfo, ProviderError, RefundInfo, WebhookEvent, WebhookRejected
 from tests.test_property_import_flow import auth_overrides, client_for
 
 DB_URL = os.environ.get("OMNIFLOW_TEST_DATABASE_URL")
@@ -142,6 +142,13 @@ class FakeProvider:
                            failure_reason="insufficient_funds" if status == "failed" else None)
         self.payments[pid] = info
         return info
+
+    async def refund_payment(self, *, payment_id, amount_halalas, reason):
+        self.refunds = getattr(self, "refunds", [])
+        self.refunds.append({"payment_id": payment_id, "amount_halalas": amount_halalas, "reason": reason})
+        if getattr(self, "refund_error", None):
+            raise self.refund_error
+        return RefundInfo(refund_id=f"ref_{len(self.refunds)}", status=getattr(self, "refund_status", "refunded"), amount_halalas=amount_halalas)
 
     def parse_webhook(self, headers, body):
         data = json.loads(body)
@@ -307,7 +314,7 @@ class BillingDbTests(unittest.IsolatedAsyncioTestCase):
     async def hook(self, c, event_id, pid, **kw):
         return await c.post("/api/v1/webhooks/payments", json=self.fake.hook(event_id, pid, **kw))
 
-    async def subscribe(self, c, plan="professional", interval="monthly"):
+    async def subscribe(self, c, plan="pro", interval="monthly"):
         r = await c.post(f"{BASE}/checkout", json={"plan_code": plan, "interval": interval})
         self.assertEqual(r.status_code, 200, r.text)
         return r.json()
@@ -320,14 +327,15 @@ class BillingDbTests(unittest.IsolatedAsyncioTestCase):
             st = (await c.get(f"{BASE}/status")).json()
             self.assertEqual((st["mode"], st["status"], st["is_exempt"]), ("full", "trial", False))       # lazy trial for a new tenant
             plans = (await c.get(f"{BASE}/plans")).json()["items"]
-            self.assertEqual([p["code"] for p in plans], ["economic", "professional", "enterprise"])
-            self.assertTrue(all(p["is_placeholder"] for p in plans))
-            pro = next(p for p in plans if p["code"] == "professional")
-            self.assertEqual((pro["monthly"]["subtotal_halalas"], pro["monthly"]["total_halalas"]), (29900, 34385))
+            self.assertEqual([p["code"] for p in plans], ["starter", "pro", "business", "enterprise"])
+            self.assertFalse(any(p["is_placeholder"] for p in plans))
+            self.assertEqual([p["contact_sales"] for p in plans], [False, False, False, True])
+            pro = next(p for p in plans if p["code"] == "pro")
+            self.assertEqual((pro["monthly"]["subtotal_halalas"], pro["monthly"]["total_halalas"]), (79900, 91885))
 
             first = await self.subscribe(c)
             txn = first["transaction"]
-            self.assertEqual((txn["status"], txn["amount_halalas"], first["checkout_url"].startswith("https://pay.example/")), ("pending", 34385, True))
+            self.assertEqual((txn["status"], txn["amount_halalas"], first["checkout_url"].startswith("https://pay.example/")), ("pending", 91885, True))
             again = await self.subscribe(c)                                                                 # double click → same page
             self.assertEqual(again["transaction"]["transaction_id"], txn["transaction_id"])
             self.assertEqual(len(self.fake.checkouts), 1)
@@ -340,21 +348,21 @@ class BillingDbTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(r.json()["outcome"], "rejected")
             self.assertEqual((await c.get(f"{BASE}/subscription")).json()["status"], "trial")
 
-            pid = self.fake.pay(txn["transaction_id"], 34385)
+            pid = self.fake.pay(txn["transaction_id"], 91885)
             r = await self.hook(c, "evt-paid-1", pid)
             self.assertEqual((r.status_code, r.json()["outcome"]), (200, "applied"))
             self.assertEqual((await self.hook(c, "evt-paid-1", pid)).json()["outcome"], "duplicate")        # same event again
             self.assertEqual((await self.hook(c, "evt-paid-2", pid)).json()["outcome"], "ignored")          # new event, already settled
 
             s = (await c.get(f"{BASE}/subscription")).json()
-            self.assertEqual((s["status"], s["plan"]["code"], s["auto_renew"], s["card"]), ("active", "professional", True, {"brand": "mada", "last4": "4242"}))
+            self.assertEqual((s["status"], s["plan"]["code"], s["auto_renew"], s["card"]), ("active", "pro", True, {"brand": "mada", "last4": "4242"}))
             invs = (await c.get(f"{BASE}/invoices")).json()["items"]
             self.assertEqual(len(invs), 1)
-            self.assertEqual((invs[0]["subtotal_halalas"], invs[0]["vat_halalas"], invs[0]["total_halalas"]), (29900, 4485, 34385))
+            self.assertEqual((invs[0]["subtotal_halalas"], invs[0]["vat_halalas"], invs[0]["total_halalas"]), (79900, 11985, 91885))
             pdf = await c.get(f"{BASE}/invoices/{invs[0]['invoice_id']}/pdf")
             self.assertEqual((pdf.status_code, pdf.content[:5], pdf.headers["content-type"]), (200, b"%PDF-", "application/pdf"))
         tenant = (await self.row("SELECT status, subscription_tier FROM tenants WHERE tenant_id=:t", t=t))[0]
-        self.assertEqual((tenant["status"], tenant["subscription_tier"]), ("active", "professional"))
+        self.assertEqual((tenant["status"], tenant["subscription_tier"]), ("active", "pro"))
         tok = (await self.row("SELECT payment_token FROM subscriptions WHERE tenant_id=:t", t=t))[0]["payment_token"]
         self.assertNotIn("tok_abc123", tok)                                                                 # stored encrypted
 
@@ -426,7 +434,7 @@ class BillingDbTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(s1.current_period_start, end0)
         self.assertEqual(s1.current_period_end, pricing.add_interval(end0, "monthly"))
         self.assertGreater(s1.current_period_end, end0)
-        self.assertEqual(self.fake.charges[0]["amount_halalas"], 34385)
+        self.assertEqual(self.fake.charges[0]["amount_halalas"], 91885)
 
     async def test_provider_outage_during_renewal_counts_as_a_failed_attempt_but_never_suspends_immediately(self):
         from src.shared.services.billing import service
@@ -510,62 +518,84 @@ class BillingDbTests(unittest.IsolatedAsyncioTestCase):
     async def test_checkout_failures_are_reported_not_hidden(self):
         self.fake.checkout_error = ProviderError("provider down", retryable=True, code="network")
         async with client_for(self.app) as c:
-            r = await c.post(f"{BASE}/checkout", json={"plan_code": "economic", "interval": "yearly"})
+            r = await c.post(f"{BASE}/checkout", json={"plan_code": "starter", "interval": "yearly"})
             self.assertEqual((r.status_code, r.json()["detail"]["code"]), (502, "PROVIDER_ERROR"))
             self.assertEqual((await c.post(f"{BASE}/checkout", json={"plan_code": "nope", "interval": "monthly"})).status_code, 404)
-            self.assertEqual((await c.post(f"{BASE}/checkout", json={"plan_code": "economic", "interval": "weekly"})).status_code, 422)
+            self.assertEqual((await c.post(f"{BASE}/checkout", json={"plan_code": "starter", "interval": "weekly"})).status_code, 422)
         with patch.object(get_settings(), "moyasar_secret_key", ""):
             async with client_for(self.app) as c:
-                r = await c.post(f"{BASE}/checkout", json={"plan_code": "economic", "interval": "monthly"})
+                r = await c.post(f"{BASE}/checkout", json={"plan_code": "starter", "interval": "monthly"})
                 self.assertEqual((r.status_code, r.json()["detail"]["code"]), (503, "PAYMENTS_UNAVAILABLE"))
 
     async def test_placeholder_prices_cannot_be_charged_in_production(self):
-        with patch.object(get_settings(), "app_env", "production"):
-            async with client_for(self.app) as c:
-                r = await c.post(f"{BASE}/checkout", json={"plan_code": "economic", "interval": "monthly"})
+        async with self.Admin() as s:
+            await s.execute(self.text("UPDATE plans SET is_placeholder = true WHERE code = 'starter'"))
+            await s.commit()
+        try:
+            with patch.object(get_settings(), "app_env", "production"):
+                async with client_for(self.app) as c:
+                    r = await c.post(f"{BASE}/checkout", json={"plan_code": "starter", "interval": "monthly"})
+                    real = await c.post(f"{BASE}/checkout", json={"plan_code": "pro", "interval": "monthly"})   # real price: sellable
+        finally:
+            async with self.Admin() as s:
+                await s.execute(self.text("UPDATE plans SET is_placeholder = false WHERE code = 'starter'"))
+                await s.commit()
         self.assertEqual((r.status_code, r.json()["detail"]["code"]), (409, "PLACEHOLDER_PRICING"))
+        self.assertEqual(real.status_code, 200, real.text)
+        self.assertEqual(len(self.fake.checkouts), 1)
+
+    async def test_enterprise_is_contact_us_never_purchasable_online(self):
+        async with client_for(self.app) as c:
+            r = await c.post(f"{BASE}/checkout", json={"plan_code": "enterprise", "interval": "monthly"})
+        self.assertEqual((r.status_code, r.json()["detail"]["code"]), (409, "CONTACT_SALES"))
         self.assertEqual(self.fake.checkouts, [])
+
+    async def test_legacy_placeholder_plans_are_not_sellable(self):
+        async with client_for(self.app) as c:
+            for code in ("economic", "professional"):
+                r = await c.post(f"{BASE}/checkout", json={"plan_code": code, "interval": "monthly"})
+                self.assertEqual((r.status_code, r.json()["detail"]["code"]), (404, "PLAN_NOT_FOUND"), code)
 
     # ── plan changes ────────────────────────────────────────────────────────────────
     async def test_upgrade_is_prorated_and_immediate_downgrade_waits_for_renewal(self):
         from src.shared.services.billing import service
         t = self.tenants[0]
         async with client_for(self.app) as c:
-            txn = (await self.subscribe(c, "professional"))["transaction"]
+            txn = (await self.subscribe(c, "pro"))["transaction"]
             await self.hook(c, "evt-1", self.fake.pay(txn["transaction_id"], txn["amount_halalas"]))
             async with await self.sysdb() as db:
                 s = await service.ensure_subscription(db, t)
                 start, end = s.current_period_start, s.current_period_end
-            up = (await self.subscribe(c, "enterprise"))["transaction"]
+            up = (await self.subscribe(c, "business"))["transaction"]
             self.assertEqual(up["kind"], "upgrade")
-            full_diff = 79900 - 29900
+            full_diff = 179900 - 79900
             self.assertTrue(0 < up["subtotal_halalas"] <= full_diff, up)                                     # only the remaining fraction
             self.assertEqual(up["amount_halalas"], pricing.with_vat(up["subtotal_halalas"], 1500).total)
             await self.hook(c, "evt-up", self.fake.pay(up["transaction_id"], up["amount_halalas"], token=False))
             s = (await c.get(f"{BASE}/subscription")).json()
-            self.assertEqual(s["plan"]["code"], "enterprise")
+            self.assertEqual(s["plan"]["code"], "business")
             self.assertEqual((s["current_period_start"], s["current_period_end"]), (start.isoformat(), end.isoformat()))   # period unchanged
-            down = await c.post(f"{BASE}/checkout", json={"plan_code": "economic", "interval": "monthly"})
+            down = await c.post(f"{BASE}/checkout", json={"plan_code": "starter", "interval": "monthly"})
             self.assertEqual((down.json()["action"], down.json()["effective_at"]), ("scheduled", end.isoformat()))
             s = (await c.get(f"{BASE}/subscription")).json()
-            self.assertEqual((s["plan"]["code"], s["pending_plan_code"]), ("enterprise", "economic"))
+            self.assertEqual((s["plan"]["code"], s["pending_plan_code"]), ("business", "starter"))
         # at renewal the scheduled plan (and its price) applies
         self.fake.charge_result = "paid"
         async with await self.sysdb() as db:
             await service.run_sweep(db, service.default_urls(), now=end + timedelta(minutes=5))
             s = await service.ensure_subscription(db, t)
-        self.assertEqual((s.plan_code, s.pending_plan_code), ("economic", None))
-        self.assertEqual(self.fake.charges[-1]["amount_halalas"], pricing.with_vat(9900, 1500).total)
+        self.assertEqual((s.plan_code, s.pending_plan_code), ("starter", None))
+        self.assertEqual(self.fake.charges[-1]["amount_halalas"], pricing.with_vat(29900, 1500).total)
 
     async def test_early_renewal_of_the_same_plan_extends_from_the_current_end(self):
         from src.shared.services.billing import service
         t = self.tenants[0]
         async with client_for(self.app) as c:
-            txn = (await self.subscribe(c, "economic"))["transaction"]
+            txn = (await self.subscribe(c, "starter"))["transaction"]
             await self.hook(c, "evt-1", self.fake.pay(txn["transaction_id"], txn["amount_halalas"]))
             async with await self.sysdb() as db:
                 end = (await service.ensure_subscription(db, t)).current_period_end
-            r = (await self.subscribe(c, "economic"))["transaction"]
+            r = (await self.subscribe(c, "starter"))["transaction"]
             self.assertEqual(r["kind"], "renewal")
             await self.hook(c, "evt-2", self.fake.pay(r["transaction_id"], r["amount_halalas"]))
             async with await self.sysdb() as db:
@@ -613,13 +643,13 @@ class BillingDbTests(unittest.IsolatedAsyncioTestCase):
         async with client_for(self.app_as(TenantUserRole.ADMIN, t1)) as c:
             st = (await c.get(f"{BASE}/status")).json()
             self.assertEqual((st["mode"], st["is_exempt"]), ("full", True))
-            self.assertEqual((await c.post(f"{BASE}/checkout", json={"plan_code": "economic", "interval": "monthly"})).json()["detail"]["code"], "EXEMPT")
+            self.assertEqual((await c.post(f"{BASE}/checkout", json={"plan_code": "starter", "interval": "monthly"})).json()["detail"]["code"], "EXEMPT")
 
     # ── roles + isolation ────────────────────────────────────────────────────────────
     async def test_roles_only_admins_pay_and_agents_see_nothing_financial(self):
         for role, expected in ((TenantUserRole.AGENT, 403), (TenantUserRole.AUDITOR, 403)):
             async with client_for(self.app_as(role)) as c:
-                self.assertEqual((await c.post(f"{BASE}/checkout", json={"plan_code": "economic", "interval": "monthly"})).status_code, expected, role)
+                self.assertEqual((await c.post(f"{BASE}/checkout", json={"plan_code": "starter", "interval": "monthly"})).status_code, expected, role)
                 self.assertEqual((await c.post(f"{BASE}/cancel")).status_code, 403)
                 self.assertEqual((await c.get(f"{BASE}/status")).status_code, 200)                           # banner is for everyone
         async with client_for(self.app_as(TenantUserRole.AGENT)) as c:
@@ -644,7 +674,7 @@ class BillingDbTests(unittest.IsolatedAsyncioTestCase):
     # ── manual activation ────────────────────────────────────────────────────────────
     async def test_manual_activation_is_key_guarded_audited_and_invoiced(self):
         t = self.tenants[0]
-        body = {"plan_code": "professional", "interval": "monthly", "periods": 3, "reference": "TRF-1001", "note": "bank transfer"}
+        body = {"plan_code": "pro", "interval": "monthly", "periods": 3, "reference": "TRF-1001", "note": "bank transfer"}
         async with client_for(self.app) as c:
             self.assertEqual((await c.post(f"{BASE}/admin/tenants/{t}/activate", json=body, headers={"X-Billing-Key": "k"})).status_code, 404)    # off by default
         with patch.object(get_settings(), "billing_admin_api_key", "billing-key-123"):                                                    # pragma: allowlist secret
@@ -654,12 +684,12 @@ class BillingDbTests(unittest.IsolatedAsyncioTestCase):
                 self.assertEqual((await c.post(url, json=body, headers={"X-Billing-Key": "nope"})).status_code, 403)
                 r = await c.post(url, json=body, headers={"X-Billing-Key": "billing-key-123"})
                 self.assertEqual(r.status_code, 201, r.text)
-                self.assertEqual((r.json()["status"], r.json()["provider"], r.json()["subtotal_halalas"]), ("paid", "manual", 29900 * 3))
+                self.assertEqual((r.json()["status"], r.json()["provider"], r.json()["subtotal_halalas"]), ("paid", "manual", 79900 * 3))
                 self.assertEqual((await c.post(f"{BASE}/admin/tenants/{uuid.uuid4()}/activate", json={**body, "plan_code": "x"},
                                                headers={"X-Billing-Key": "billing-key-123"})).status_code, 404)
         async with client_for(self.app) as c:
             s = (await c.get(f"{BASE}/subscription")).json()
-            self.assertEqual((s["status"], s["plan"]["code"], s["auto_renew"]), ("active", "professional", False))
+            self.assertEqual((s["status"], s["plan"]["code"], s["auto_renew"]), ("active", "pro", False))
             start, end = datetime.fromisoformat(s["current_period_start"]), datetime.fromisoformat(s["current_period_end"])
             self.assertEqual(end, pricing.add_interval(pricing.add_interval(pricing.add_interval(start, "monthly"), "monthly"), "monthly"))
             self.assertEqual(len((await c.get(f"{BASE}/invoices")).json()["items"]), 1)
@@ -669,8 +699,8 @@ class BillingDbTests(unittest.IsolatedAsyncioTestCase):
     async def test_manual_activation_with_a_received_amount_splits_the_vat_back_out(self):
         from src.shared.services.billing import service
         async with await self.sysdb() as db:
-            txn = await service.manual_activate(db, self.tenants[0], "economic", "monthly", amount_halalas=11385, reference="R")
-        self.assertEqual((txn.subtotal_halalas, txn.vat_halalas, txn.amount_halalas), (9900, 1485, 11385))
+            txn = await service.manual_activate(db, self.tenants[0], "starter", "monthly", amount_halalas=34385, reference="R")
+        self.assertEqual((txn.subtotal_halalas, txn.vat_halalas, txn.amount_halalas), (29900, 4485, 34385))
 
     # ── usage ────────────────────────────────────────────────────────────────────────
     async def test_usage_alerts_fire_once_at_80_and_100_percent(self):
@@ -694,17 +724,6 @@ class BillingDbTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(await flush(900), [])                                                               # a smaller Redis value never lowers the stored count
         self.assertEqual((await self.row("SELECT ai_messages FROM usage_counters WHERE tenant_id=:t", t=t))[0]["ai_messages"], 1200)
         self.assertEqual((usage.level(799, 1000), usage.level(800, 1000), usage.level(1000, 1000), usage.level(5, None)), ("ok", "warning", "limit_reached", "unlimited"))
-
-    async def test_message_limit_is_only_enforced_when_switched_on(self):
-        from src.shared.services.billing import entitlements, usage
-        t = self.tenants[0]
-        async with client_for(self.app) as c:
-            await c.get(f"{BASE}/status")
-        with patch.object(entitlements.redis_mgr, "get_raw", AsyncMock(side_effect=lambda k: "1000" if k.startswith("usage:") else None)):
-            self.assertFalse(await entitlements.over_message_limit(t))
-            with patch.object(get_settings(), "billing_enforce_message_limit", True):
-                self.assertTrue(await entitlements.over_message_limit(t))
-        self.assertIsNotNone(usage.period_of())
 
     async def test_kill_switch_reopens_everything(self):
         from src.shared.services.billing import entitlements, service

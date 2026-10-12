@@ -57,6 +57,7 @@ dependencies = [
   # ─── RAG / Document Processing ────────────────────────────────
   "unstructured[all-docs]>=0.15.0", # Document parsing (PDF, DOCX, etc.) -- best-effort,
                                      # see rag_engine/ingestion.py's _try_unstructured()
+  "qrcode>=7.4",                    # QR for the ZATCA e-invoice PDF (pure-python SVG output; no PIL)
   "weasyprint>=62.0",               # HTML/CSS -> PDF authoring for customer report generation; verified against 70.0
   "python-docx>=1.1.0",
   "pillow>=10.4.0",                 # Image processing

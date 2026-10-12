@@ -28,6 +28,7 @@ from src.shared.db.models import Customer, ImportJob
 from src.shared.db.session import get_tenant_session
 from src.shared.services import customers as customer_svc
 from src.shared.services import property_import as base
+from src.shared.services.billing import quotas
 from src.shared.services.bulk_import import llm_extract
 from src.shared.services.bulk_import.customer_schema import CUSTOMER_SCHEMA, MAX_TAG_LEN, MAX_TAGS
 from src.shared.services.bulk_import.files import LLM_KINDS, ImportFileError, detect_kind, read_tabular
@@ -172,8 +173,10 @@ async def validate_job(session, job: ImportJob, mapping_in: dict[str, str | None
                 issues.append({"row": r.row_number, **i.as_dict()})
 
     ignored = sorted(set(table.headers) - set(mapping.values()))
+    room = await quotas.remaining(session, job.tenant_id, "contacts")
     summary = {"counts": counts, "preview": preview, "issues": issues, "ignored_columns": ignored,
                "required_missing": required_missing, "extracted_by_llm": table.extracted_by_llm,
+               "plan_limit": {"remaining": room, "exceeds": room is not None and counts["will_create"] > room},
                "consent": {"asked": asks_consent, "confirmed": options["consent_confirmed"], "blocked": consent_blocked}}
     if consent_blocked:
         # The commit is blocked until the declaration is ticked; surface it like a missing required field.
@@ -232,6 +235,13 @@ async def _apply_batch(session, tenant_id: uuid.UUID, job_id: uuid.UUID, batch: 
             totals["opted_in"] += 1
         to_insert.append((r, row))
 
+    room = await quotas.remaining(session, tenant_id, "contacts")
+    if room is not None and len(to_insert) > room:      # plan limit: keep what fits, report the rest row by row
+        for r, row in to_insert[room:]:
+            out["failed"].append((r, "تجاوز حد جهات الاتصال في الباقة — رقِّ الباقة لاستيراد هذا الصف"))
+            if row["marketing_opt_in"]:
+                totals["opted_in"] -= 1
+        to_insert = to_insert[:room]
     if to_insert:
         stmt = pg_insert(Customer).values([row for _, row in to_insert]).on_conflict_do_nothing().returning(Customer.customer_id)
         created = {x[0] for x in await session.execute(stmt)}

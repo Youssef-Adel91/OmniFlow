@@ -42,6 +42,11 @@ class ConversationStatus(StrEnum):
 # Tenant & Subscription
 # ─────────────────────────────────────────────────────────────────────────────
 class TenantTier(StrEnum):
+    # STARTER / PRO / BUSINESS are the sellable plans (P10). ECONOMIC / PROFESSIONAL are legacy placeholders kept so
+    # existing rows still validate; ENTERPRISE is "contact us".
+    STARTER = "starter"
+    PRO = "pro"
+    BUSINESS = "business"
     ECONOMIC = "economic"
     PROFESSIONAL = "professional"
     ENTERPRISE = "enterprise"

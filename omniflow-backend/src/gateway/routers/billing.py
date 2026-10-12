@@ -21,16 +21,17 @@ import uuid
 from typing import Annotated, Optional
 
 import structlog
-from fastapi import APIRouter, Header, HTTPException, Path, Request, Response, status
+from fastapi import APIRouter, Header, HTTPException, Path, Query, Request, Response, status
 from pydantic import BaseModel, Field
 from sqlalchemy import func, select
 
 from src.gateway.dependencies import AuthTenantSession, CurrentUser
+from src.gateway.routers.support import StaffUser
 from src.shared.core.config import get_settings
 from src.shared.core.enums import TenantUserRole
 from src.shared.db.models import BillingInvoice, PaymentTransaction, Plan
 from src.shared.db.session import get_system_session
-from src.shared.services.billing import entitlements, pricing, service, usage
+from src.shared.services.billing import catalog, credits, entitlements, llm_cost, pricing, quotas, refunds, service, usage
 from src.shared.services.billing.invoice_pdf import build_invoice_pdf
 from src.shared.services.billing.providers import get_provider
 from src.shared.services.billing.providers.base import ProviderError, WebhookRejected
@@ -70,7 +71,7 @@ def _txn_json(t: PaymentTransaction) -> dict:
 def _plan_json(p: Plan) -> dict:
     vat = get_settings().billing_vat_rate_bp
     return {"code": p.code, "name_ar": p.name_ar, "description_ar": p.description_ar, "limits": p.limits, "currency": p.currency,
-            "is_placeholder": p.is_placeholder,
+            "is_placeholder": p.is_placeholder, "contact_sales": p.contact_sales,
             "monthly": {"subtotal_halalas": p.price_monthly_halalas, "total_halalas": pricing.with_vat(p.price_monthly_halalas, vat).total},
             "yearly": {"subtotal_halalas": p.price_yearly_halalas, "total_halalas": pricing.with_vat(p.price_yearly_halalas, vat).total,
                        "monthly_equivalent_halalas": p.price_yearly_halalas // 12}}
@@ -98,7 +99,7 @@ async def subscription(user: CurrentUser, session: AuthTenantSession) -> dict:
     sub = await service.ensure_subscription(session, user.tenant_id)
     a = service.access_of(sub)
     plan = await session.scalar(select(Plan).where(Plan.code == sub.plan_code))
-    limits = dict(plan.limits) if plan else {}
+    limits = catalog.effective_limits(sub, plan) or {}      # trial caps / add-ons included; {} = unlimited (exempt)
     used = await usage.current_usage(session, user.tenant_id)
     msg_limit = limits.get("messages_per_month")
     pending = await session.scalar(
@@ -118,7 +119,12 @@ async def subscription(user: CurrentUser, session: AuthTenantSession) -> dict:
         "card": {"brand": sub.card_brand, "last4": sub.card_last4} if sub.card_last4 else None, "auto_renew": bool(sub.payment_token),
         "last_payment_error": sub.last_payment_error, "retry_count": sub.retry_count,
         "usage": {"ai_messages": used, "limit": msg_limit, "level": usage.level(used, msg_limit)},
-        "limits": limits, "pending_checkout": _txn_json(pending) if pending else None,
+        "credits": await credits.balance(session, user.tenant_id),
+        "quota_settings": {"quota_exhausted_action": sub.quota_exhausted_action, "auto_topup_enabled": sub.auto_topup_enabled,
+                           "auto_topup_pack": sub.auto_topup_pack},
+        "limits": limits, "quotas": await quotas.snapshot(session, user.tenant_id),
+        "addons": {"seats": sub.addon_seats, "whatsapp_numbers": sub.addon_whatsapp_numbers},
+        "pending_checkout": _txn_json(pending) if pending else None,
         "last_failed": _txn_json(last_failed) if last_failed else None,
     }
 
@@ -187,6 +193,95 @@ async def checkout(user: CurrentUser, session: AuthTenantSession, body: Checkout
     return {"action": "checkout", "transaction": _txn_json(t), "checkout_url": t.checkout_url}
 
 
+# ── top-up packs, add-ons, quota behaviour ───────────────────────────────────
+
+def _vat_json(subtotal: int) -> dict:
+    a = pricing.with_vat(subtotal, get_settings().billing_vat_rate_bp)
+    return {"subtotal_halalas": a.subtotal, "vat_halalas": a.vat, "total_halalas": a.total}
+
+
+@router.get("/topup-packs", summary="Extra AI-reply packs, add-ons and what is in the tenant's balance")
+async def topup_packs(user: CurrentUser, session: AuthTenantSession) -> dict:
+    _require(user, TenantUserRole.ADMIN, TenantUserRole.AUDITOR)
+    from src.shared.db.models import PlanAddon
+
+    packs = await service.list_topup_packs(session)
+    addons = (await session.execute(select(PlanAddon).where(PlanAddon.is_active.is_(True)))).scalars().all()
+    return {
+        "packs": [{"code": p.code, "replies": p.replies, "validity_months": p.validity_months, **_vat_json(p.price_halalas)} for p in packs],
+        "addons": [{"code": a.code, "name_ar": a.name_ar, "available": a.is_available, "unavailable_reason": a.unavailable_reason,
+                    "monthly": _vat_json(a.price_monthly_halalas), "yearly": _vat_json(a.price_monthly_halalas * 10)} for a in addons],
+        "credits": await credits.balance(session, user.tenant_id),
+    }
+
+
+class TopupBody(BaseModel):
+    pack_code: str = Field(..., min_length=2, max_length=30)
+
+
+@router.post("/topups", summary="Buy an extra AI-reply pack (hosted payment page)")
+async def buy_topup(user: CurrentUser, session: AuthTenantSession, body: TopupBody) -> dict:
+    _require(user, TenantUserRole.ADMIN)
+    if not _payments_enabled():
+        raise HTTPException(status_code=503, detail={"code": "PAYMENTS_UNAVAILABLE", "message": "الدفع الإلكتروني غير مفعّل حاليًا. تواصل مع الدعم."})
+    try:
+        t = await service.purchase_topup(session, user.tenant_id, body.pack_code, _urls())
+    except service.BillingError as exc:
+        raise _http(exc) from exc
+    if t.status == "failed" or not t.checkout_url:
+        raise HTTPException(status_code=502, detail={"code": "PROVIDER_ERROR", "message": "تعذّر فتح صفحة الدفع الآن. حاول بعد قليل."})
+    return {"transaction": _txn_json(t), "checkout_url": t.checkout_url}
+
+
+class AddonBody(BaseModel):
+    code: str = Field(..., pattern="^(seat|whatsapp_number)$")
+    quantity: int = Field(1, ge=1, le=50)
+
+
+@router.post("/addons", summary="Add seats / numbers to the current period (pro-rated); recurring from the next renewal")
+async def buy_addon(user: CurrentUser, session: AuthTenantSession, body: AddonBody) -> dict:
+    _require(user, TenantUserRole.ADMIN)
+    if not _payments_enabled():
+        raise HTTPException(status_code=503, detail={"code": "PAYMENTS_UNAVAILABLE", "message": "الدفع الإلكتروني غير مفعّل حاليًا. تواصل مع الدعم."})
+    try:
+        t = await service.purchase_addon(session, user.tenant_id, body.code, body.quantity, _urls())
+    except service.BillingError as exc:
+        raise _http(exc) from exc
+    if t.status == "failed" or not t.checkout_url:
+        raise HTTPException(status_code=502, detail={"code": "PROVIDER_ERROR", "message": "تعذّر فتح صفحة الدفع الآن. حاول بعد قليل."})
+    return {"transaction": _txn_json(t), "checkout_url": t.checkout_url}
+
+
+@router.delete("/addons/{code}", summary="Remove add-on units from the next renewal on (no refund of the current period)")
+async def remove_addon(user: CurrentUser, session: AuthTenantSession, code: Annotated[str, Path(pattern="^(seat|whatsapp_number)$")],
+                       quantity: int = 1) -> dict:
+    _require(user, TenantUserRole.ADMIN)
+    try:
+        sub = await service.reduce_addon(session, user.tenant_id, code, quantity, user.user_id)
+    except service.BillingError as exc:
+        raise _http(exc) from exc
+    await entitlements.invalidate(user.tenant_id)
+    return {"addons": {"seats": sub.addon_seats, "whatsapp_numbers": sub.addon_whatsapp_numbers}}
+
+
+class QuotaSettingsBody(BaseModel):
+    quota_exhausted_action: Optional[str] = Field(None, pattern="^(handoff|stop)$")
+    auto_topup_enabled: Optional[bool] = None
+    auto_topup_pack: Optional[str] = Field(None, max_length=30)
+
+
+@router.put("/quota-settings", summary="What happens when the AI quota is spent + opt-in automatic recharge")
+async def quota_settings(user: CurrentUser, session: AuthTenantSession, body: QuotaSettingsBody) -> dict:
+    _require(user, TenantUserRole.ADMIN)
+    try:
+        sub = await service.update_quota_settings(session, user.tenant_id, quota_exhausted_action=body.quota_exhausted_action,
+                                                  auto_topup_enabled=body.auto_topup_enabled, auto_topup_pack=body.auto_topup_pack, actor=user.user_id)
+    except service.BillingError as exc:
+        raise _http(exc) from exc
+    await entitlements.invalidate(user.tenant_id)
+    return {"quota_exhausted_action": sub.quota_exhausted_action, "auto_topup_enabled": sub.auto_topup_enabled, "auto_topup_pack": sub.auto_topup_pack}
+
+
 @router.post("/cancel", summary="Cancel at the end of the paid period")
 async def cancel(user: CurrentUser, session: AuthTenantSession) -> dict:
     _require(user, TenantUserRole.ADMIN)
@@ -235,6 +330,67 @@ async def manual_activate(tenant_id: Annotated[uuid.UUID, Path()], body: ManualA
         raise _http(exc) from exc
     await entitlements.invalidate(tenant_id)
     return out
+
+
+@router.get("/admin/unit-economics", summary="Platform staff: real AI cost vs revenue and margin per tenant for a month")
+async def unit_economics(staff: StaffUser, period: Annotated[Optional[str], Query(pattern=r"^\d{4}-(0[1-9]|1[0-2])$")] = None) -> dict:
+    return await llm_cost.margin_report(period or usage.period_of())
+
+
+class RefundBody(BaseModel):
+    transaction_id: uuid.UUID
+    reason: str = Field(..., min_length=5, max_length=1000)
+    amount_halalas: Optional[int] = Field(None, ge=1, description="Lower than the computed maximum only; default = the full computed amount")
+
+
+@router.get("/admin/transactions/{transaction_id}/refund-quote", summary="Staff: what a refund of this payment would be (14-day guarantee, first payment only)")
+async def refund_quote(staff: StaffUser, transaction_id: Annotated[uuid.UUID, Path()]) -> dict:
+    async with get_system_session() as session:
+        txn = await session.scalar(select(PaymentTransaction).where(PaymentTransaction.transaction_id == transaction_id))
+        if txn is None:
+            raise HTTPException(status_code=404, detail={"code": "NOT_FOUND", "message": "العملية غير موجودة."})
+        return await refunds.quote(session, txn)
+
+
+@router.post("/admin/refunds", status_code=201, summary="Staff: refund a first payment (provider refund + credit note + audit)")
+async def issue_refund(staff: StaffUser, body: RefundBody) -> dict:
+    try:
+        async with get_system_session() as session:
+            out = await refunds.issue(session, body.transaction_id, reason=body.reason, staff_email=str(getattr(staff, "email", "")), amount_halalas=body.amount_halalas)
+            tid = (await session.scalar(select(PaymentTransaction.tenant_id).where(PaymentTransaction.transaction_id == body.transaction_id)))
+    except service.BillingError as exc:
+        raise _http(exc) from exc
+    if out.get("failed"):                       # the failed attempt + audit row were committed above; now tell the caller
+        raise HTTPException(status_code=502, detail={"code": out["code"], "message": out["message"], "refund_id": out["refund_id"]})
+    await entitlements.invalidate(tid)
+    return out
+
+
+@router.get("/credit-notes", summary="Credit notes issued to this workspace")
+async def credit_notes(user: CurrentUser, session: AuthTenantSession) -> dict:
+    _require(user, TenantUserRole.ADMIN, TenantUserRole.AUDITOR)
+    from src.shared.db.models import CreditNote
+
+    rows = (await session.execute(select(CreditNote).order_by(CreditNote.issued_at.desc()).limit(100))).scalars()
+    return {"items": [{"credit_note_id": str(n.credit_note_id), "credit_note_number": n.credit_note_number, "issued_at": n.issued_at.isoformat(),
+                       "subtotal_halalas": n.subtotal_halalas, "vat_halalas": n.vat_halalas, "total_halalas": n.total_halalas, "reason": n.reason} for n in rows]}
+
+
+@router.get("/credit-notes/{credit_note_id}/pdf", summary="Credit note as an Arabic PDF")
+async def credit_note_pdf(user: CurrentUser, session: AuthTenantSession, credit_note_id: Annotated[uuid.UUID, Path()]) -> Response:
+    _require(user, TenantUserRole.ADMIN, TenantUserRole.AUDITOR)
+    from types import SimpleNamespace
+
+    from src.shared.db.models import CreditNote
+
+    n = await session.scalar(select(CreditNote).where(CreditNote.credit_note_id == credit_note_id))
+    if n is None:
+        raise HTTPException(status_code=404, detail={"code": "NOT_FOUND", "message": "الإشعار غير موجود."})
+    doc = SimpleNamespace(invoice_number=n.credit_note_number, issued_at=n.issued_at, currency=n.currency, seller=n.seller, buyer=n.buyer,
+                          description="استرداد — " + n.reason, period_start=None, period_end=None, subtotal_halalas=n.subtotal_halalas,
+                          vat_halalas=n.vat_halalas, total_halalas=n.total_halalas, vat_rate_bp=n.vat_rate_bp, reason=n.reason)
+    return Response(content=build_invoice_pdf(doc, credit_note=True), media_type="application/pdf",
+                    headers={"Content-Disposition": f'attachment; filename="{n.credit_note_number}.pdf"', "Cache-Control": "private, no-store"})
 
 
 # ── provider webhook ─────────────────────────────────────────────────────────

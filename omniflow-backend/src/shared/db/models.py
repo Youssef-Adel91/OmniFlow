@@ -24,12 +24,13 @@ References: SRS §6 — Data Models
 from __future__ import annotations
 
 import uuid
-from datetime import datetime
+from datetime import date, datetime
 from typing import Optional
 
 from sqlalchemy import (
     BigInteger,
     Boolean,
+    Date,
     ForeignKey,
     Index,
     Integer,
@@ -98,6 +99,9 @@ class Tenant(Base, TimestampMixin):
         index=True,
         comment="FAL license number — verified via REGA Broker Verification API",
     )
+    vat_number: Mapped[Optional[str]] = mapped_column(String(15), comment="Buyer VAT number for B2B e-invoices; empty = simplified (B2C) invoice")
+    cr_number: Mapped[Optional[str]] = mapped_column(String(20))
+    billing_address: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict, comment="street / building / district / city / postal_zone")
     subscription_tier: Mapped[TenantTier] = mapped_column(
         String(30),
         nullable=False,
@@ -1599,9 +1603,24 @@ class Plan(Base):
     limits: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict)
     is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
     is_placeholder: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    contact_sales: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, comment="Enterprise: never purchasable online")
     sort_order: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+
+class PlanAddon(Base):
+    """Per-unit recurring add-on (extra seat, extra WhatsApp number). VAT-exclusive; yearly = 10 x monthly like the plans."""
+    __tablename__ = "plan_addons"
+
+    code: Mapped[str] = mapped_column(String(30), primary_key=True)
+    name_ar: Mapped[str] = mapped_column(String(100), nullable=False)
+    price_monthly_halalas: Mapped[int] = mapped_column(Integer, nullable=False)
+    limit_key: Mapped[str] = mapped_column(String(30), nullable=False)
+    is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    is_available: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    unavailable_reason: Mapped[Optional[str]] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
 
 
 class Subscription(Base):
@@ -1630,6 +1649,11 @@ class Subscription(Base):
     payment_token: Mapped[Optional[str]] = mapped_column(Text, comment="Fernet-encrypted provider token; never a card number")
     card_brand: Mapped[Optional[str]] = mapped_column(String(20))
     card_last4: Mapped[Optional[str]] = mapped_column(String(4))
+    addon_seats: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    addon_whatsapp_numbers: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    quota_exhausted_action: Mapped[str] = mapped_column(String(10), nullable=False, default="handoff", comment="handoff | stop — when plan quota + credits are spent")
+    auto_topup_enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    auto_topup_pack: Mapped[Optional[str]] = mapped_column(String(30))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
 
@@ -1660,6 +1684,64 @@ class PaymentTransaction(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     paid_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    meta: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict, comment="add-on / top-up details for non-plan transactions")
+
+
+class TopupPack(Base):
+    """Prepaid AI-reply pack (global catalogue). VAT-exclusive halalas."""
+    __tablename__ = "topup_packs"
+
+    code: Mapped[str] = mapped_column(String(30), primary_key=True)
+    replies: Mapped[int] = mapped_column(Integer, nullable=False)
+    price_halalas: Mapped[int] = mapped_column(Integer, nullable=False)
+    validity_months: Mapped[int] = mapped_column(Integer, nullable=False, default=12)
+    is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    sort_order: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+
+
+class ReplyCredit(Base):
+    """A purchased block of AI replies (tenant RLS). Spent after the plan's monthly quota, earliest expiry first."""
+    __tablename__ = "reply_credits"
+
+    credit_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    tenant_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("tenants.tenant_id", ondelete="RESTRICT"), nullable=False)
+    pack_code: Mapped[str] = mapped_column(String(30), nullable=False)
+    replies_total: Mapped[int] = mapped_column(Integer, nullable=False)
+    replies_remaining: Mapped[int] = mapped_column(Integer, nullable=False)
+    source: Mapped[str] = mapped_column(String(12), nullable=False, default="purchase")
+    transaction_id: Mapped[Optional[uuid.UUID]] = mapped_column(UUID(as_uuid=True), ForeignKey("transactions.transaction_id", ondelete="RESTRICT"), unique=True)
+    purchased_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+
+class LlmUsage(Base):
+    """One row per billable AI reply: measured tokens x configured prices (or the default per-reply cost when unmeasured)."""
+    __tablename__ = "llm_usage"
+
+    usage_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    tenant_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("tenants.tenant_id", ondelete="RESTRICT"), nullable=False)
+    event_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    model: Mapped[str] = mapped_column(String(80), nullable=False)
+    tier: Mapped[str] = mapped_column(String(30), nullable=False)
+    input_tokens: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    output_tokens: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    cost_sar: Mapped[float] = mapped_column(Numeric(14, 6), nullable=False)
+    cost_source: Mapped[str] = mapped_column(String(10), nullable=False)
+    quota_source: Mapped[str] = mapped_column(String(8), nullable=False, default="plan")
+
+
+class LlmUsageDaily(Base):
+    __tablename__ = "llm_usage_daily"
+
+    tenant_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("tenants.tenant_id", ondelete="RESTRICT"), primary_key=True)
+    day: Mapped[date] = mapped_column(Date, primary_key=True)
+    tier: Mapped[str] = mapped_column(String(30), primary_key=True)
+    model: Mapped[str] = mapped_column(String(80), primary_key=True)
+    replies: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    input_tokens: Mapped[int] = mapped_column(BigInteger, nullable=False, default=0)
+    output_tokens: Mapped[int] = mapped_column(BigInteger, nullable=False, default=0)
+    cost_sar: Mapped[float] = mapped_column(Numeric(14, 6), nullable=False, default=0)
 
 
 class BillingInvoice(Base):
@@ -1682,6 +1764,108 @@ class BillingInvoice(Base):
     period_end: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
     seller: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict)
     buyer: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict)
+
+
+class Refund(Base):
+    __tablename__ = "refunds"
+
+    refund_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    tenant_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("tenants.tenant_id", ondelete="RESTRICT"), nullable=False)
+    transaction_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("transactions.transaction_id", ondelete="RESTRICT"), nullable=False)
+    invoice_id: Mapped[Optional[uuid.UUID]] = mapped_column(UUID(as_uuid=True), ForeignKey("invoices.invoice_id", ondelete="RESTRICT"))
+    status: Mapped[str] = mapped_column(String(10), nullable=False, default="pending")
+    reason: Mapped[str] = mapped_column(Text, nullable=False)
+    gross_halalas: Mapped[int] = mapped_column(Integer, nullable=False)
+    consumed_halalas: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    fee_halalas: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    subtotal_halalas: Mapped[int] = mapped_column(Integer, nullable=False)
+    vat_halalas: Mapped[int] = mapped_column(Integer, nullable=False)
+    amount_halalas: Mapped[int] = mapped_column(Integer, nullable=False)
+    provider: Mapped[str] = mapped_column(String(20), nullable=False)
+    provider_refund_id: Mapped[Optional[str]] = mapped_column(String(100))
+    failure_reason: Mapped[Optional[str]] = mapped_column(Text)
+    requested_by: Mapped[str] = mapped_column(String(254), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    completed_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
+
+
+class CreditNote(Base):
+    __tablename__ = "credit_notes"
+
+    credit_note_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    tenant_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("tenants.tenant_id", ondelete="RESTRICT"), nullable=False)
+    refund_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("refunds.refund_id", ondelete="RESTRICT"), nullable=False, unique=True)
+    original_invoice_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("invoices.invoice_id", ondelete="RESTRICT"), nullable=False)
+    credit_note_number: Mapped[str] = mapped_column(String(30), nullable=False, unique=True)
+    issued_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    subtotal_halalas: Mapped[int] = mapped_column(Integer, nullable=False)
+    vat_halalas: Mapped[int] = mapped_column(Integer, nullable=False)
+    total_halalas: Mapped[int] = mapped_column(Integer, nullable=False)
+    vat_rate_bp: Mapped[int] = mapped_column(Integer, nullable=False)
+    currency: Mapped[str] = mapped_column(String(3), nullable=False, default="SAR")
+    reason: Mapped[str] = mapped_column(Text, nullable=False)
+    seller: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict)
+    buyer: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict)
+
+
+class TrialIdentity(Base):
+    __tablename__ = "trial_identities"
+    __table_args__ = (UniqueConstraint("kind", "value_hash", name="uq_trial_identity"),)
+
+    identity_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    tenant_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("tenants.tenant_id", ondelete="RESTRICT"), nullable=False)
+    kind: Mapped[str] = mapped_column(String(10), nullable=False)
+    value_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+
+class EInvoiceUnit(Base):
+    """The issuing unit (EGS): ICV counter + chain head + encrypted keys. System-context only (RLS)."""
+    __tablename__ = "einvoice_units"
+    __table_args__ = (UniqueConstraint("env", "name", name="uq_einvoice_unit_name"),)
+
+    unit_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    name: Mapped[str] = mapped_column(String(100), nullable=False)
+    env: Mapped[str] = mapped_column(String(12), nullable=False, default="sandbox")
+    status: Mapped[str] = mapped_column(String(12), nullable=False, default="new")
+    vat_number: Mapped[str] = mapped_column(String(15), nullable=False)
+    icv_counter: Mapped[int] = mapped_column(BigInteger, nullable=False, default=0)
+    last_hash: Mapped[str] = mapped_column(Text, nullable=False)
+    private_key_enc: Mapped[Optional[str]] = mapped_column(Text)
+    certificate_b64: Mapped[Optional[str]] = mapped_column(Text)
+    secret_enc: Mapped[Optional[str]] = mapped_column(Text)
+    compliance_request_id: Mapped[Optional[str]] = mapped_column(String(64))
+    csr_pem: Mapped[Optional[str]] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+
+class EInvoiceDocument(Base):
+    __tablename__ = "einvoice_documents"
+    __table_args__ = (UniqueConstraint("unit_id", "icv", name="uq_einvoice_unit_icv"),)
+
+    doc_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    tenant_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("tenants.tenant_id", ondelete="RESTRICT"), nullable=False)
+    unit_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("einvoice_units.unit_id", ondelete="RESTRICT"), nullable=False)
+    invoice_id: Mapped[Optional[uuid.UUID]] = mapped_column(UUID(as_uuid=True), ForeignKey("invoices.invoice_id", ondelete="RESTRICT"), unique=True)
+    credit_note_id: Mapped[Optional[uuid.UUID]] = mapped_column(UUID(as_uuid=True), ForeignKey("credit_notes.credit_note_id", ondelete="RESTRICT"), unique=True)
+    doc_number: Mapped[str] = mapped_column(String(40), nullable=False)
+    type_code: Mapped[str] = mapped_column(String(3), nullable=False)
+    subtype: Mapped[str] = mapped_column(String(7), nullable=False)
+    uuid: Mapped[str] = mapped_column(UUID(as_uuid=False), nullable=False, unique=True)
+    icv: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    pih: Mapped[str] = mapped_column(Text, nullable=False)
+    invoice_hash: Mapped[str] = mapped_column(Text, nullable=False)
+    xml: Mapped[str] = mapped_column(Text, nullable=False)
+    qr: Mapped[str] = mapped_column(Text, nullable=False)
+    status: Mapped[str] = mapped_column(String(10), nullable=False, default="pending")
+    attempts: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    next_attempt_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
+    last_error: Mapped[Optional[str]] = mapped_column(Text)
+    zatca_response: Mapped[Optional[dict]] = mapped_column(JSONB)
+    issued_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    submitted_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
 
 
 class PaymentEvent(Base):

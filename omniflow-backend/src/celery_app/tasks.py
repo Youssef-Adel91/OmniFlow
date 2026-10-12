@@ -720,6 +720,48 @@ async def _billing_sweep_async() -> dict[str, Any]:
     return result
 
 
+@app.task(name="omniflow.billing_credits_flush", bind=True, max_retries=2)
+def billing_credits_flush(self) -> dict[str, Any]:  # noqa: ANN001
+    """Deduct top-up replies consumed in Redis from the ledger (FIFO by expiry)."""
+    return _run(_billing_credits_flush_async)
+
+
+async def _billing_credits_flush_async() -> dict[str, Any]:
+    from src.shared.redis_client import redis_mgr
+    from src.shared.services.billing import credits
+
+    await redis_mgr.start()
+    try:
+        return {"deducted": await credits.flush_consumption()}
+    finally:
+        await redis_mgr.stop()
+
+
+@app.task(name="omniflow.einvoice_submit", bind=True, max_retries=1)
+def einvoice_submit(self) -> dict[str, Any]:  # noqa: ANN001
+    """Clear / report pending e-invoices with back-off and dead-lettering. Does nothing while EINVOICE_ENABLED is false."""
+    return _run(_einvoice_submit_async)
+
+
+async def _einvoice_submit_async() -> dict[str, Any]:
+    from src.einvoice import service as ez
+
+    async with get_system_session() as session:
+        return await ez.submit_due(session)
+
+
+@app.task(name="omniflow.billing_llm_rollup", bind=True, max_retries=2)
+def billing_llm_rollup(self) -> dict[str, Any]:  # noqa: ANN001
+    """Aggregate the raw per-reply AI cost rows into llm_usage_daily (idempotent)."""
+    return _run(_billing_llm_rollup_async)
+
+
+async def _billing_llm_rollup_async() -> dict[str, Any]:
+    from src.shared.services.billing import llm_cost
+
+    return {"rows": await llm_cost.rollup_daily()}
+
+
 @app.task(name="omniflow.billing_usage_flush", bind=True, max_retries=2)
 def billing_usage_flush(self) -> dict[str, Any]:  # noqa: ANN001
     """Persist the Redis AI-message counters and stamp the 80 % / 100 % alert times (delivery of the alert lands with notifications)."""
@@ -731,22 +773,24 @@ async def _billing_usage_flush_async() -> dict[str, Any]:
 
     from src.shared.db.models import Plan, Subscription
     from src.shared.redis_client import redis_mgr
-    from src.shared.services.billing import usage
+    from src.shared.services.billing import catalog, usage
     from src.shared.services.notifications import notify_safe
 
     # Each Celery task runs in its own event loop (asyncio.run), so Redis pools must be created and closed per task.
     await redis_mgr.start()
     try:
         async with get_system_session() as session:
-            plans = {p.code: (p.limits or {}).get("messages_per_month") for p in (await session.execute(_select(Plan))).scalars()}
-            limits = {s.tenant_id: plans.get(s.plan_code) for s in (await session.execute(_select(Subscription))).scalars()}
+            plans = {p.code: p for p in (await session.execute(_select(Plan))).scalars()}
+            # trial caps / purchased add-ons included; None = unlimited (grandfathered tenants are never alerted)
+            limits = {s.tenant_id: (catalog.effective_limits(s, plans.get(s.plan_code)) or {}).get("messages_per_month")
+                      for s in (await session.execute(_select(Subscription))).scalars()}
             alerts = await usage.flush(session, limits)
         for a in alerts:
             logger.warning("billing_usage_threshold", tenant_id=str(a["tenant_id"]), period=a["period"], level=a["level"], used=a["used"])
             async with get_system_session() as ns:
                 await notify_safe(ns, a["tenant_id"], "usage_threshold",
                                   "بلغت 100% من رسائل باقتك هذا الشهر" if a["level"] == 100 else "اقتربت من حد رسائل باقتك (80%)",
-                                  f"استهلكت {a['used']} رسالة ذكاء اصطناعي هذا الشهر. رقِّ باقتك لتفادي التوقف.", "/settings#billing",
+                                  f"استهلكت {a['used']} رد ذكاء اصطناعي هذا الشهر. رقِّ باقتك أو اشترِ باقة ردود إضافية من صفحة الفوترة لتفادي التوقف.", "/settings#billing",
                                   dedupe_key=f"usage{a['level']}:{a['period']}")
         return {"alerts": len(alerts)}
     finally:

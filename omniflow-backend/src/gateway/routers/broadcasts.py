@@ -36,6 +36,7 @@ from src.shared.core.config import get_settings
 from src.shared.core.enums import BroadcastCampaignStatus
 from src.shared.db.models import AuditLog, BroadcastCampaign, BroadcastDelivery, Conversation, Customer, Message, Tenant
 from src.shared.services import broadcast_audience as aud
+from src.shared.services.billing import quotas
 from src.shared.services import meta_templates
 
 logger = structlog.get_logger(__name__)
@@ -198,6 +199,7 @@ async def list_campaigns(
 @router.post("", response_model=CampaignItem, status_code=status.HTTP_201_CREATED, include_in_schema=False)
 @router.post("/", response_model=CampaignItem, status_code=status.HTTP_201_CREATED, summary="Create a draft campaign")
 async def create_campaign(user: MarketingWriteUser, session: AuthTenantSession, body: CampaignCreate) -> CampaignItem:
+    await quotas.guard_feature(session, user.tenant_id, "campaigns")
     audience = _parse(body.target_audience)
     reach = await _count_audience(session, audience)
     campaign = BroadcastCampaign(
@@ -354,6 +356,7 @@ async def schedule_campaign(
     body: Optional[CampaignSchedule] = None,
 ) -> CampaignItem:
     body = body or CampaignSchedule()
+    await quotas.guard_feature(session, user.tenant_id, "campaigns")
     campaign = await _get_campaign(session, campaign_id)
     _require_mutable(campaign, "schedule")
 

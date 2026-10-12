@@ -187,7 +187,7 @@ class LaunchGapsDbTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual((await c.post("/api/v1/team/invitations", json={"email": "x@example.sa", "role": "agent"})).status_code, 403)
         async with client_for(self.app_as("admin")) as c:
             r = (await c.get("/api/v1/team")).json()
-            self.assertEqual(r["seats"], {"active": 3, "pending": 0, "used": 3, "limit": 3})              # lazy trial on economic → 3 seats (placeholder)
+            self.assertEqual(r["seats"], {"active": 3, "pending": 0, "used": 3, "limit": 2})              # lazy trial → the trial cap (2 seats)
             full = await c.post("/api/v1/team/invitations", json={"email": "new@example.sa", "role": "agent"})
             self.assertEqual((full.status_code, full.json()["detail"]["code"]), (402, "SEAT_LIMIT"))
         async with self.Admin() as s:                                                                     # grandfathered tenants are unlimited
@@ -223,6 +223,9 @@ class LaunchGapsDbTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual((await c.patch(f"/api/v1/team/members/{self.users[(1, 'agent')]}", json={"role": "admin"})).status_code, 404)   # other tenant
             self.assertEqual((await c.patch(f"/api/v1/team/members/{uuid.uuid4()}", json={"role": "agent"})).status_code, 404)
         # promote the agent to admin, then a (second) admin can't remove the very last admin — but can remove one of two
+        async with self.Admin() as s:                                                                     # (seat caps are covered elsewhere)
+            await s.execute(self.text("UPDATE subscriptions SET is_exempt=true WHERE tenant_id=:t"), {"t": self.tenants[0]})
+            await s.commit()
         async with client_for(self.app_as("admin")) as c:
             await c.patch(f"/api/v1/team/members/{agent}", json={"is_active": True, "role": "admin"})
         async with self.Admin() as s:
@@ -436,14 +439,17 @@ class LaunchGapsDbTests(unittest.IsolatedAsyncioTestCase):
         from src.shared.services.billing import service, usage
         t = self.tenants[0]
         async with await self.sysdb() as db:
-            await service.ensure_subscription(db, t)                     # economic plan → 1000 messages / month (placeholder limit)
+            await service.ensure_subscription(db, t)
+        async with self.Admin() as s:                                    # paid Starter plan → 1,500 AI replies / month
+            await s.execute(self.text("UPDATE subscriptions SET plan_code='starter', status='active', current_period_end=now()+interval '20 days' WHERE tenant_id=:t"), {"t": t})
+            await s.commit()
         key = f"usage:{t}:{usage.period_of()}"
         from src.shared.redis_client import redis_mgr
         with patch.object(redis_mgr, "start", AsyncMock()) as start, patch.object(redis_mgr, "stop", AsyncMock()) as stop, \
-                patch.object(redis_mgr, "scan_counters", AsyncMock(return_value={key: 850})):
+                patch.object(redis_mgr, "scan_counters", AsyncMock(return_value={key: 1300})):
             out = await tasks._billing_usage_flush_async()
         self.assertEqual((out, start.await_count, stop.await_count), ({"alerts": 1}, 1, 1))   # pools are opened and closed per task
-        self.assertEqual((await self.rows("SELECT ai_messages FROM usage_counters WHERE tenant_id=:t", t=t))[0]["ai_messages"], 850)
+        self.assertEqual((await self.rows("SELECT ai_messages FROM usage_counters WHERE tenant_id=:t", t=t))[0]["ai_messages"], 1300)
         kinds = [r["kind"] for r in await self.rows("SELECT kind FROM notifications WHERE tenant_id=:t", t=t)]
         self.assertEqual(kinds, ["usage_threshold"])
 

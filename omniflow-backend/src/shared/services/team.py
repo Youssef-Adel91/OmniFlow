@@ -35,21 +35,23 @@ def _now() -> datetime:
 
 
 async def seat_limit(session, tenant_id: uuid.UUID) -> int | None:
-    """None = unlimited (exempt/internal tenants, or a plan without a seat limit)."""
-    sub = await session.scalar(select(Subscription).where(Subscription.tenant_id == tenant_id))
-    if sub is None or sub.is_exempt:
-        return None
-    plan = await session.scalar(select(Plan).where(Plan.code == sub.plan_code))
-    seats = (plan.limits or {}).get("seats") if plan else None
+    """None = unlimited (exempt/internal tenants, or a plan without a seat limit). Trial caps and purchased add-on seats included."""
+    from src.shared.services.billing import quotas
+
+    limits = await quotas.limits_of(session, tenant_id)
+    seats = (limits or {}).get("seats")
     return int(seats) if seats else None
 
 
-async def seat_usage(session, tenant_id: uuid.UUID) -> dict:
+async def seat_usage_raw(session, tenant_id: uuid.UUID) -> dict:
     active = await session.scalar(select(func.count()).select_from(TenantUser).where(TenantUser.tenant_id == tenant_id, TenantUser.is_active.is_(True))) or 0
     pending = await session.scalar(select(func.count()).select_from(TeamInvitation).where(
         TeamInvitation.tenant_id == tenant_id, TeamInvitation.status == "pending", TeamInvitation.expires_at > _now())) or 0
-    limit = await seat_limit(session, tenant_id)
-    return {"active": active, "pending": pending, "used": active + pending, "limit": limit}
+    return {"active": active, "pending": pending, "used": active + pending}
+
+
+async def seat_usage(session, tenant_id: uuid.UUID) -> dict:
+    return {**await seat_usage_raw(session, tenant_id), "limit": await seat_limit(session, tenant_id)}
 
 
 async def _audit(session, tenant_id, actor, action: str, entity: str, details: dict) -> None:

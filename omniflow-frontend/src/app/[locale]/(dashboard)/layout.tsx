@@ -12,6 +12,7 @@ import { TopNav }     from "@/components/layout/TopNav";
 import { AuthSyncer } from "@/components/auth/AuthSyncer";
 import { DashboardAuth } from "@/components/auth/DashboardAuth";
 import { BillingBanner } from "@/components/billing/BillingBanner";
+import { PlanLimitNotice } from "@/components/billing/PlanLimitNotice";
 import { cn }         from "@/lib/utils";
 
 // ── Metadata ──────────────────────────────────────────────────────────────────
@@ -86,6 +87,7 @@ function DashboardShell({
         >
           {/* Subscription state (trial ending / payment overdue / suspended) */}
           <BillingBanner locale={locale} />
+          <PlanLimitNotice locale={locale} />
           {children}
         </main>
       </div>

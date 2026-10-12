@@ -249,9 +249,6 @@ class LLMInvokerWorker(BaseKafkaConsumer):
         if not bot_ok:
             logger.info("llm_invoker_skipped_subscription_blocked", tenant_id=str(tenant_id), reason=block_reason)
             return
-        if await entitlements.over_message_limit(tenant_id):
-            logger.info("llm_invoker_skipped_message_limit", tenant_id=str(tenant_id))
-            return
 
         if decision.conversation_id:
             state = await load_conversation_state(tenant_id, decision.conversation_id)
@@ -276,19 +273,7 @@ class LLMInvokerWorker(BaseKafkaConsumer):
             # preferences (status -> ESCALATED, round-robin assignment, handoff / out-of-hours message). Previously
             # this was a bare `return`: the conversation stayed AI_ACTIVE and the customer got no reply at all.
             if decision.target_tier == RoutingTier.HUMAN_ESCALATION and decision.conversation_id:
-                try:
-                    from src.shared.services.handoff import perform_handoff
-
-                    result = await perform_handoff(tenant_id, decision.conversation_id, reason=decision.route_reason or "")
-                    if result.applied:
-                        await redis_mgr.publish_sse(
-                            tenant_id=tenant_id, event_type="conversation_update",
-                            data={"id": str(decision.conversation_id), "status": ConversationStatus.ESCALATED.value, "is_ai_active": False,
-                                  "assigned_agent_id": str(result.agent_id) if result.agent_id else None})
-                        if result.text:
-                            await self._publish_outbound(decision=decision, text=result.text, llm_response=None, latency_ms=0)
-                except Exception as exc:  # noqa: BLE001 - a handoff problem must not poison the Kafka message
-                    log.error("llm_invoker_handoff_failed", error=str(exc)[:200])
+                await self._handoff_to_human(decision, decision.route_reason or "", log)
             return
 
         if tier == RoutingTier.L0_SEMANTIC_CACHE:
@@ -330,12 +315,24 @@ class LLMInvokerWorker(BaseKafkaConsumer):
                 log.info("llm_invoker_multimodal_unsupported_fallback", message_type=str(event.message_type))
                 return
 
+        # ── 2c. Hard AI-reply cap (P10-B): plan quota → top-up credits → stop, decided atomically BEFORE the LLM is called ──
+        from src.shared.services.billing import credits, llm_cost
+
+        quota_snap = await entitlements.snapshot(tenant_id)
+        quota = await credits.reserve(tenant_id, quota_snap)
+        if not quota.allowed:
+            await self._on_quota_exhausted(decision, quota_snap, log)
+            return
+        if tier == RoutingTier.L3_MASTER and not await credits.l3_allowed(tenant_id):
+            log.info("llm_invoker_l3_share_cap_downgrade")
+            tier = RoutingTier.L2_RAG                # the most expensive tier is capped at a share of the tenant's replies
+
         # ── 3. Fetch conversation history from Redis ──────────────────────────
         conversation_id = decision.conversation_id
         history: list[dict[str, Any]] = []
         if conversation_id:
             history = await redis_mgr.get_conversation_history(
-                tenant_id, conversation_id, last_n=20
+                tenant_id, conversation_id, last_n=settings.llm_history_max_messages
             )
 
         # Ensure current customer message is the last in history for Gemini
@@ -388,6 +385,8 @@ class LLMInvokerWorker(BaseKafkaConsumer):
                     intent_hint=intent_hint,
                 )
 
+            if rag_context and len(rag_context) > settings.llm_rag_max_chars:
+                rag_context = rag_context[: settings.llm_rag_max_chars]          # bound the prompt (and the bill)
             log.info(
                 "rag_context_injected" if rag_context else "rag_context_empty",
                 chars=len(rag_context) if rag_context else 0,
@@ -419,6 +418,7 @@ class LLMInvokerWorker(BaseKafkaConsumer):
                 log.warning("llm_invoker_call_failed", attempt=attempt + 1, error=str(exc)[:200])
 
         if llm_response is None:
+            await credits.release(tenant_id, quota)             # no AI answer was produced → no quota spent
             log.error("llm_invoker_fallback_after_retry", tier=tier, error=str(last_exc)[:200] if last_exc else None)
             await self._publish_outbound(
                 decision=decision,
@@ -446,6 +446,11 @@ class LLMInvokerWorker(BaseKafkaConsumer):
             llm_response=llm_response,
             latency_ms=total_latency_ms,
         )
+
+        # ── 7b. Real cost of this reply (idempotent on the source event; never blocks the reply) ──
+        asyncio.create_task(llm_cost.record(
+            tenant_id=tenant_id, event_id=event.event_id, model=llm_response.model_used, tier=str(tier),
+            input_tokens=llm_response.input_tokens, output_tokens=llm_response.output_tokens, quota_source=quota.source))
 
         # ── 8. Append AI response to Redis conversation history ───────────────
         if conversation_id:
@@ -566,12 +571,49 @@ class LLMInvokerWorker(BaseKafkaConsumer):
                 "message_type": final_message_type,   # Sprint 14: propagate to dispatcher
             },
         )
-        try:    # monthly AI-message counter (billing usage); never allowed to break the reply path
-            from src.shared.services.billing import usage
 
-            await usage.record_ai_message(decision.tenant_id)
-        except Exception:  # noqa: BLE001
-            logger.warning("billing_usage_record_failed", tenant_id=str(decision.tenant_id))
+    async def _handoff_to_human(self, decision: RoutingDecision, reason: str, log) -> None:
+        """Escalate per the tenant's handoff preferences (status, assignment, handoff / out-of-hours message to the customer)."""
+        if not decision.conversation_id:
+            return
+        try:
+            from src.shared.services.handoff import perform_handoff
+
+            result = await perform_handoff(decision.tenant_id, decision.conversation_id, reason=reason)
+            if result.applied:
+                await redis_mgr.publish_sse(
+                    tenant_id=decision.tenant_id, event_type="conversation_update",
+                    data={"id": str(decision.conversation_id), "status": ConversationStatus.ESCALATED.value, "is_ai_active": False,
+                          "assigned_agent_id": str(result.agent_id) if result.agent_id else None})
+                if result.text:
+                    await self._publish_outbound(decision=decision, text=result.text, llm_response=None, latency_ms=0)
+        except Exception as exc:  # noqa: BLE001 - a handoff problem must not poison the Kafka message
+            log.error("llm_invoker_handoff_failed", error=str(exc)[:200])
+
+    async def _on_quota_exhausted(self, decision: RoutingDecision, snap: dict, log) -> None:
+        """Plan quota and top-up credits are spent: no LLM call. Alert the owner once a month, optionally auto-recharge, then hand the
+        conversation to a person (default) or stay silent — the tenant's choice (`quota_exhausted_action`)."""
+        from src.shared.services.billing import credits
+
+        tenant_id = decision.tenant_id
+        log.warning("llm_invoker_quota_exhausted", action=snap.get("quota_action"))
+        try:
+            if await credits.exhausted_alert_once(tenant_id):
+                from src.shared.db.session import get_system_session
+                from src.shared.services.notifications import notify_safe
+
+                async with get_system_session() as ns:
+                    await notify_safe(ns, tenant_id, "usage_threshold", "نفدت ردود الذكاء الاصطناعي",
+                                      "استهلكت حصة باقتك الشهرية ورصيد الردود الإضافية، فلن يردّ المساعد الذكي حتى التجديد أو شراء باقة ردود إضافية.",
+                                      "/settings#billing", dedupe_key=f"quota_exhausted:{credits.usage.period_of()}")
+                if snap.get("auto_topup"):
+                    from src.shared.services.billing import service
+
+                    asyncio.create_task(service.auto_topup(tenant_id))
+        except Exception as exc:  # noqa: BLE001
+            log.warning("llm_invoker_quota_alert_failed", error=type(exc).__name__)
+        if snap.get("quota_action") != "stop":
+            await self._handoff_to_human(decision, "ai_quota_exhausted", log)
 
     async def _publish_escalation_event(self, decision: RoutingDecision) -> None:
         """Persist human escalation when LLM times out, then notify the inbox."""

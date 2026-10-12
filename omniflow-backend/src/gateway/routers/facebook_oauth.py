@@ -148,6 +148,18 @@ async def _exchange_for_long_lived_token(client: httpx.AsyncClient, short_lived_
     return token
 
 
+async def _fetch_user_id(client: httpx.AsyncClient, user_token: str) -> str | None:
+    """The Facebook user id of the person who authorised us — kept only so a Meta data-deletion request for that user can find and remove
+    what we hold for them. Best effort: never blocks connecting a Page."""
+    try:
+        data = await _graph_get(client, "me", {"fields": "id", "access_token": user_token})
+        value = str(data.get("id") or "")
+        return value[:64] or None
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("fb_oauth_user_id_lookup_failed", error=type(exc).__name__)
+        return None
+
+
 async def _list_pages_with_instagram(client: httpx.AsyncClient, long_lived_user_token: str) -> list[dict[str, Any]]:
     """
     GET /me/accounts -> every Page the user administers, each already carrying
@@ -263,6 +275,7 @@ async def _save_page_connection(
     page_id: str,
     page_access_token_plaintext: str,
     instagram_account_id: str | None = None,
+    facebook_user_id: str | None = None,
 ) -> None:
     """
     Persist the chosen Page for a tenant.
@@ -285,6 +298,8 @@ async def _save_page_connection(
         tenant.instagram_page_id = page_id
         tenant.instagram_account_id = instagram_account_id
         tenant.instagram_page_access_token = encrypt_secret(page_access_token_plaintext)
+        if facebook_user_id:
+            tenant.facebook_user_id = facebook_user_id
         try:
             await session.commit()
         except IntegrityError as exc:
@@ -404,6 +419,9 @@ async def facebook_oauth_callback(
             short_lived = await _exchange_code_for_user_token(client, code)
             long_lived = await _exchange_for_long_lived_token(client, short_lived)
             pages = await _list_pages_with_instagram(client, long_lived)
+            fb_user_id = await _fetch_user_id(client, long_lived)
+            for p in pages:
+                p["facebook_user_id"] = fb_user_id
 
             if not pages:
                 return _popup_response({
@@ -416,6 +434,7 @@ async def facebook_oauth_callback(
                 await _subscribe_page_webhooks(client, page["page_id"], page["page_access_token"])
                 await _save_page_connection(
                     tenant_id, page["page_id"], page["page_access_token"], page["instagram_account_id"],
+                    facebook_user_id=page.get("facebook_user_id"),
                 )
                 logger.info(
                     "fb_oauth_connected",
@@ -498,6 +517,7 @@ async def select_facebook_page(
     try:
         await _save_page_connection(
             current_user.tenant_id, chosen["page_id"], page_token, chosen.get("instagram_account_id"),
+            facebook_user_id=chosen.get("facebook_user_id"),
         )
     except PageAlreadyConnectedError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc

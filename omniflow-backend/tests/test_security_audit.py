@@ -29,6 +29,9 @@ PUBLIC = {
     ("POST", "/api/v1/webhooks/payments"): "payment-provider shared secret / signature",
     ("GET", "/api/v1/integrations/facebook/callback"): "browser redirect from Meta; authorised by the one-time `state` we issued",
     ("GET", "/api/v1/stream/dashboard"): "SSE: authenticates inside from `?token=` (EventSource cannot send headers); the tenant_id query is ignored",
+    ("POST", "/api/v1/meta/data-deletion"): "Meta signed_request, HMAC-SHA256 verified with the app secret",
+    ("GET", "/api/v1/meta/data-deletion/status/{code}"): "public status lookup by an unguessable confirmation code",
+    ("GET", "/api/v1/public/catalog"): "public read-only pricing catalogue",
     ("GET", "/health"): "liveness probe (no secrets)",
     ("GET", "/health/ready"): "readiness probe (ok/unavailable only)",
     ("GET", "/health/workers"): "worker heartbeat summary (names + ok/stale only)",
@@ -108,7 +111,7 @@ class RouteAuthAudit(unittest.IsolatedAsyncioTestCase):
         bad = []
         async with httpx.AsyncClient(transport=httpx.ASGITransport(app=self.app), base_url="http://t") as c:
             for (method, path) in sorted(PUBLIC):
-                if path in PROBES or path in ALWAYS_OK or path in {"/api/v1/stream/dashboard", "/api/v1/webhooks/clerk"}:       # these have dedicated tests below
+                if path in PROBES or path in ALWAYS_OK or path in {"/api/v1/stream/dashboard", "/api/v1/webhooks/clerk", "/api/v1/public/catalog", "/api/v1/meta/data-deletion/status/{code}"}:       # these have dedicated tests below
                     continue
                 r = await c.request(method, fill(path), json={} if method == "POST" else None)
                 if path in SELF_REFUSING:

@@ -263,6 +263,7 @@ class Settings(BaseSettings):
 
 
     # ── Meta WhatsApp ─────────────────────────────────────────────────────────
+    public_base_url: str = ""                     # public website origin used in links we hand out (e.g. https://app.example.com); no trailing slash
     meta_app_id: str = ""
     meta_app_secret: str = ""
     meta_graph_api_version: str = "v21.0"

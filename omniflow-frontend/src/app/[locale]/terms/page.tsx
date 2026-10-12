@@ -1,22 +1,19 @@
 import type { Metadata } from "next";
-import { H2, LegalPage } from "@/components/legal/LegalPage";
+import { Doc } from "@/components/public/Doc";
+import { PublicShell } from "@/components/public/PublicShell";
+import { copyFor } from "@/lib/public/copy";
+import { pageMetadata } from "@/lib/public/meta";
+import { asLocale } from "@/lib/public/site";
 
-export const metadata: Metadata = { title: "الشروط والأحكام" };
+export async function generateMetadata({ params }: { params: Promise<{ locale: string }> }): Promise<Metadata> {
+  const locale = asLocale((await params).locale);
+  const c = copyFor(locale).terms;
+  return pageMetadata(locale, "/terms", c.metaTitle, c.title);
+}
 
-export default function TermsPage() {
-  return (
-    <LegalPage title="الشروط والأحكام">
-      <p>تحكم هذه الشروط استخدام منصة OmniFlow من قبل المنشآت العقارية.</p>
-      <H2>الاشتراك والدفع</H2>
-      <p>تُحتسب الاشتراكات شهريًا أو سنويًا بالريال السعودي مضافًا إليها ضريبة القيمة المضافة. [تفاصيل الأسعار والتجديد والإلغاء والاسترداد — تُستكمل من الجهة المختصة.]</p>
-      <H2>الاستخدام المقبول</H2>
-      <p>يلتزم العميل بالحصول على موافقة عملائه قبل الرسائل التسويقية، وبعدم استخدام المنصة في أي نشاط مخالف للأنظمة.</p>
-      <H2>الذكاء الاصطناعي</H2>
-      <p>تُولَّد ردود المساعد الذكي آليًا وقد تحتوي أخطاء؛ المنشأة مسؤولة عن مراجعة المعلومات الجوهرية مع عملائها.</p>
-      <H2>إيقاف الخدمة</H2>
-      <p>قد تُوقف الخدمة عند عدم سداد الاشتراك بعد فترة سماح، وتبقى بيانات المنشأة متاحة للاطلاع والتصدير.</p>
-      <H2>المسؤولية والقانون الواجب التطبيق</H2>
-      <p>[تُستكمل من الجهة القانونية.]</p>
-    </LegalPage>
-  );
+export default async function Page({ params }: { params: Promise<{ locale: string }> }) {
+  const locale = asLocale((await params).locale);
+  const copy = copyFor(locale);
+  const c = copy.terms;
+  return <PublicShell locale={locale}><Doc title={c.title} draft={copy.legalDraft} sections={c.sections} /></PublicShell>;
 }

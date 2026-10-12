@@ -62,7 +62,7 @@ const ar: Copy = {
   faq: {
     title: "أسئلة شائعة",
     items: [
-      { q: "هل أحتاج بطاقة بنكية للتجربة المجانية؟", a: "لا. مدة التجربة 14 يومًا بحدود محدودة (300 رد ذكاء اصطناعي، قناة واحدة، مقعدان، 50 عقارًا، بدون حملات). بعد انتهائها يتحول الحساب للقراءة فقط وتبقى بياناتك محفوظة 30 يومًا." },
+      { q: "هل أحتاج بطاقة بنكية للتجربة المجانية؟", a: "لا. مدة التجربة 14 يومًا بحدود محدودة (300 رد ذكاء اصطناعي، قناة واحدة، مقعدان، 50 عقارًا، بدون حملات). بعد انتهائها يتحول الحساب للقراءة فقط ولا تُحذف بياناتك." },
       { q: "من يدفع رسوم رسائل واتساب؟", a: "رسوم المحادثات والقوالب يدفعها العميل لشركة Meta مباشرة حسب تسعيرها، ولا تدخل في سعر الباقة." },
       { q: "هل يمكن للمساعد أن يخطئ؟", a: "نعم، ردود الذكاء الاصطناعي تُولَّد آليًا. يمكنك ضبط القواعد، وتحويل المحادثات الحساسة لموظف، ومراجعة كل المحادثات من الصندوق." },
       { q: "كيف تُحمى بيانات عملائي؟", a: "تُعزل بيانات كل منشأة عن غيرها على مستوى قاعدة البيانات، وتُسجَّل الإجراءات الحساسة في سجل تدقيق، ولديك أدوات تصدير ومحو لبيانات العملاء. راجع سياسة الخصوصية." },
@@ -184,7 +184,7 @@ const en: Copy = {
   faq: {
     title: "Frequently asked questions",
     items: [
-      { q: "Do I need a card for the free trial?", a: "No. The trial lasts 14 days with limited caps (300 AI replies, one channel, two seats, 50 listings, no campaigns). When it ends the account becomes read-only and your data is kept for 30 days." },
+      { q: "Do I need a card for the free trial?", a: "No. The trial lasts 14 days with limited caps (300 AI replies, one channel, two seats, 50 listings, no campaigns). When it ends the account becomes read-only and your data is not deleted." },
       { q: "Who pays WhatsApp message fees?", a: "Conversation and template fees are paid by you to Meta directly at Meta's pricing; they are not part of the plan price." },
       { q: "Can the assistant be wrong?", a: "Yes, AI replies are generated automatically. You can set rules, hand sensitive chats to a person, and review every conversation in the inbox." },
       { q: "How is my customers' data protected?", a: "Each company's data is isolated from the others at database level, sensitive actions are recorded in an audit log, and you have export and erasure tools for customer data. See the privacy policy." },

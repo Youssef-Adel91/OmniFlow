@@ -9,7 +9,7 @@ Branch chain (each branch is built on the previous one; migrations are linear 00
 | 0c | P10-D/E/F trial identity, refunds, staff emails | same | | done (backend); refund policy page comes with item 2 |
 | 0d | P10-G e-invoice module | same | | done (flag off; unverified by ZATCA) |
 | 0e | Team page tenant filter + dev cleanup script | same | | done |
-| 1 | Security & tenant-isolation audit | | | pending |
+| 1 | Security & tenant-isolation audit | `feat/n2-security-audit` (on P10) | #23 | done — found + fixed Facebook-callback 401 regression; see docs/security-audit.md |
 | 2 | Public pages (Meta / launch) | | | pending |
 | 3 | Onboarding from zero | | | pending |
 | 4 | Help-centre content + user guide | | | pending |

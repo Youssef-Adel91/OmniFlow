@@ -679,7 +679,7 @@ async def return_to_ai(
 async def dashboard_stream(
     request:   Request,
     token:     Annotated[str | None, Query(description="JWT access token (required in production)")] = None,
-    tenant_id: Annotated[str | None, Query(description="Tenant UUID — dev-only fallback, ignored in production")] = None,
+    tenant_id: Annotated[str | None, Query(description="IGNORED (kept for old clients): the tenant always comes from the verified token")] = None,
 ) -> StreamingResponse:
     """
     Long-lived SSE endpoint.
@@ -820,28 +820,3 @@ async def _resolve_tenant_from_request(
     except HTTPException:
         return None
 
-
-# ══════════════════════════════════════════════════════════════════════════════
-# POST /api/v1/chat/simulate-mock (WIZARD OF OZ SIMULATOR)
-# ══════════════════════════════════════════════════════════════════════════════
-
-class MockChatRequest(BaseModel):
-    message: str
-    tenant_id: str
-
-@router.post(
-    "/chat/simulate-mock",
-    summary="Wizard of Oz Mock AI Simulator",
-)
-async def simulate_mock_chat(body: MockChatRequest) -> dict:
-    await asyncio.sleep(1.5)
-    text = body.message
-    
-    if "الياسمين" in text or "فيلا" in text:
-        response = "أهلاً بك! لدينا فيلا رائعة في حي الياسمين بتشطيب فاخر ومواصفات ذكية، السعر ٤ مليون ريال سعودي. متى يناسبك ترتيب زيارة للمعاينة؟"
-    elif "تقرير" in text or "فحص" in text:
-        response = "بالطبع، يمكنك الوصول إلى الخزنة الرقمية والتقرير الفني الشامل عبر الرابط التالي: https://pay.omniflow.ai/demo-vault-7a9b"
-    else:
-        response = "أهلاً بك في شركة النخبة العقارية، كيف يمكنني مساعدتك اليوم؟"
-        
-    return {"response": response}

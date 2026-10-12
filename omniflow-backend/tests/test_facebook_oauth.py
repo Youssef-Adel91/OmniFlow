@@ -38,6 +38,7 @@ class FacebookOAuthTests(unittest.IsolatedAsyncioTestCase):
 
         self.app = FastAPI()
         self.app.include_router(fo.router)
+        self.app.include_router(fo.callback_router)
         self.app.dependency_overrides[fo.get_current_user] = lambda: SimpleNamespace(tenant_id=self.tenant_id)
 
         async def save(tenant_id, page_id, token, instagram_account_id=None):

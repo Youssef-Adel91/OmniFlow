@@ -229,3 +229,24 @@ async def _post_comment_reply(path: str, text: str, access_token: str | None) ->
 
     _raise_for_status(resp)
     return {}  # unreachable
+
+
+async def send_private_reply(page_id: str, comment_id: str, text: str, *, access_token: str | None = None) -> dict[str, Any]:
+    """
+    Answer a Facebook/Instagram comment with a PRIVATE message (Messenger Platform "private replies"):
+    POST /{page-id}/messages with recipient.comment_id. Meta allows one private reply per comment, within 7 days of the comment.
+
+    Written from Meta's documentation; NOT exercised against live Meta from this repository.
+    """
+    access_token = access_token or settings.meta_instagram_page_access_token
+    url = f"{_GRAPH_BASE}/{_API_VERSION}/{page_id}/messages"
+    async with httpx.AsyncClient(timeout=_TIMEOUT_SECONDS) as client:
+        resp = await client.post(
+            url,
+            params={"access_token": access_token},
+            json={"recipient": {"comment_id": comment_id}, "message": {"text": text}},
+        )
+    if resp.status_code == 200:
+        return resp.json()
+    _raise_for_status(resp)
+    return {}  # unreachable

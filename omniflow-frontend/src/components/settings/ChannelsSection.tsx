@@ -14,6 +14,7 @@ import {
   checkChannel, disconnectFacebook, fetchChannels, settingsErrorMessage, updateSettings,
   type ChannelCheck, type ChannelsStatus, type TenantSettings,
 } from "@/lib/api/settings";
+import CommentRepliesCard from "./CommentRepliesCard";
 import { WhatsappEmbeddedSignup } from "./WhatsappEmbeddedSignup";
 import { Field, LoadError, SaveBar, SectionHeader, SectionSkeleton, cardClass, inputClass } from "./common";
 import { useSection } from "./useSection";
@@ -149,6 +150,8 @@ export default function ChannelsSection({ locale, settings, onSettings, onDirty 
                 </div>
               )}
             </section>
+
+            <CommentRepliesCard />
           </div>
         ) : null}
       </div>

@@ -149,6 +149,12 @@ async def _resolve_tenant_credentials(
     return None
 
 
+async def _resolve_instagram_page_id(tenant_id: uuid.UUID) -> str | None:
+    """The tenant's connected Facebook Page id (the sender of a private reply to a comment)."""
+    async with get_tenant_session(tenant_id) as session:
+        return await session.scalar(select(Tenant.instagram_page_id).where(Tenant.tenant_id == tenant_id))
+
+
 async def _resolve_instagram_credentials(tenant_id: uuid.UUID) -> str | None:
     """
     Resolve the tenant's own Instagram/Messenger Page access token.
@@ -396,7 +402,19 @@ class OutboundDispatcherWorker(BaseKafkaConsumer):
         # ── 6. Dispatch (── route by channel, then by message_type) ─────────────
         try:
             if msg.channel == Channel.INSTAGRAM:
-                if msg.reply_target_type in ("comment", "instagram_comment"):
+                if msg.reply_target_type == "comment_private":
+                    # Private reply to a comment (per-tenant "private_dm" mode): the comment_id goes in recipient.comment_id of
+                    # POST /{page-id}/messages. Needs the connected Page id of this tenant.
+                    from src.channel_adapters.instagram.client import send_private_reply
+
+                    _page_id = await _resolve_instagram_page_id(msg.tenant_id)
+                    if not _page_id:
+                        raise RuntimeError("private reply needs a connected Facebook Page")
+                    private_result = await send_private_reply(
+                        _page_id, msg.platform_conversation_id, msg.text, access_token=instagram_access_token)
+                    result = SimpleNamespace(wamid=str(private_result.get("message_id", "")))
+                    log.info("outbound_comment_private_reply_dispatched", comment_id=msg.platform_conversation_id)
+                elif msg.reply_target_type in ("comment", "instagram_comment"):
                     # Reply to a public comment: a different Graph API
                     # endpoint than DMs -- platform_conversation_id holds the
                     # comment_id itself, not a PSID/IGSID (see router.py's

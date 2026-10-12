@@ -125,6 +125,11 @@ app.conf.beat_schedule = {
         "schedule": 300.0,
         "options": {"expires": 280},
     },
+    "deliver-webhooks": {                      # outgoing webhooks (Developers v1): signed POSTs with retry/back-off
+        "task": "omniflow.deliver_webhooks",
+        "schedule": 15.0,
+        "options": {"expires": 30},
+    },
     "einvoice-submit": {                       # no-op unless EINVOICE_ENABLED
         "task": "omniflow.einvoice_submit",
         "schedule": 300.0,

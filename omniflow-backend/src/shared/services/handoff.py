@@ -80,6 +80,11 @@ async def perform_handoff(tenant_id: uuid.UUID, conversation_id: uuid.UUID, *, r
                           "يحتاج عميل إلى موظف بشري." + (f" السبب: {reason[:80]}" if reason and reason not in SILENT_REASONS else ""),
                           f"/inbox?conversation={conversation_id}", user_ids=[agent_id] if agent_id else None,
                           dedupe_key=f"{conversation_id}:{int(now.timestamp()) // 600}")
+        from src.shared.services.developers.webhooks_out import emit
+
+        await emit(session, tenant_id, "conversation.handoff",
+                   {"conversation_id": str(conversation_id), "reason": reason[:80] if reason and reason not in SILENT_REASONS else None,
+                    "assigned_agent_id": str(agent_id) if agent_id else None})
 
     open_now = prefs_svc.is_open(hours, now)
     text: str | None

@@ -750,6 +750,19 @@ async def _einvoice_submit_async() -> dict[str, Any]:
         return await ez.submit_due(session)
 
 
+@app.task(name="omniflow.deliver_webhooks", bind=True, max_retries=1)
+def deliver_webhooks(self) -> dict[str, Any]:  # noqa: ANN001
+    """Send due outgoing webhooks (signed, retried with back-off, logged in webhook_deliveries)."""
+    return _run(_deliver_webhooks_async)
+
+
+async def _deliver_webhooks_async() -> dict[str, Any]:
+    from src.shared.services.developers import webhooks_out
+
+    async with get_system_session() as session:
+        return {"attempted": await webhooks_out.deliver_due(session)}
+
+
 @app.task(name="omniflow.billing_llm_rollup", bind=True, max_retries=2)
 def billing_llm_rollup(self) -> dict[str, Any]:  # noqa: ANN001
     """Aggregate the raw per-reply AI cost rows into llm_usage_daily (idempotent)."""

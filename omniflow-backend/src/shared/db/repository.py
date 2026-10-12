@@ -307,6 +307,10 @@ class CustomerRepository(
         self.session.add(new_customer)
         await self.session.flush()
         await self.session.refresh(new_customer)
+        from src.shared.services.developers.webhooks_out import emit
+
+        await emit(self.session, tenant_id, "customer.created",
+                   {"customer_id": str(new_customer.customer_id), "phone": new_customer.phone_e164, "source": new_customer.source})
         return new_customer, True
 
     async def get_vip_customers(
@@ -594,6 +598,10 @@ class ConversationRepository(
         self.session.add(conv)
         await self.session.flush()
         await self.session.refresh(conv)
+        from src.shared.services.developers.webhooks_out import emit
+
+        await emit(self.session, tenant_id, "conversation.created",
+                   {"conversation_id": str(conv.conversation_id), "customer_id": str(customer_id), "channel": channel})
         return conv, True
 
     async def list_by_status(

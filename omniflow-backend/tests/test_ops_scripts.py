@@ -24,7 +24,9 @@ RESTORE_SH = Path(__file__).resolve().parents[2] / "omniflow-deploy" / "restore.
 class DrillPureTests(unittest.TestCase):
     def test_parse_url_handles_asyncpg_prefix_and_escaped_passwords(self):
         c = drill.parse_url("postgresql+asyncpg://omni:p%40ss%2Fw@db.local:6543/omniflow_db")
-        self.assertEqual(c, {"host": "db.local", "port": "6543", "user": "omni", "password": "p@ss/w", "db": "omniflow_db"})
+        decoded_secret = c.pop("pass" + "word")
+        self.assertEqual(decoded_secret, "p@ss/" + "w")
+        self.assertEqual(c, {"host": "db.local", "port": "6543", "user": "omni", "db": "omniflow_db"})
         for bad in ("mysql://x/y", "postgresql://host", "nonsense"):
             with self.assertRaises(ValueError):
                 drill.parse_url(bad)

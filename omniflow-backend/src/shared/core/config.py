@@ -453,6 +453,17 @@ class Settings(BaseSettings):
     feature_human_takeover: bool = True
     feature_social_comment_replies: bool = False   # OFF: Facebook/Instagram post comments are ignored until this is on AND the tenant enables it
     social_comment_rate_per_minute: int = 30       # max comment replies per tenant per minute (public or private)
+
+    # ── Data retention (night 2 #7). OFF and DRY-RUN by default; the numbers are conservative placeholders pending legal review ──
+    retention_enabled: bool = False                # master switch for the scheduled job (it does nothing while False)
+    retention_dry_run: bool = True                 # report only; set False explicitly to let the job delete / anonymise
+    retention_inactive_customer_days: int = 1095   # anonymise customers with no conversation activity for this long (0 = never)
+    retention_warning_days: int = 14               # warn the workspace admins this many days before anything is anonymised
+    retention_audit_log_days: int = 1825           # delete audit-log rows older than this (0 = never)
+    retention_api_usage_days: int = 90             # API usage log
+    retention_webhook_delivery_days: int = 30      # outgoing-webhook delivery log (delivered/failed rows only)
+    retention_deletion_request_days: int = 365     # Meta data-deletion request receipts
+    retention_batch_limit: int = 200               # customers anonymised per tenant per run
     feature_rega_verification: bool = True
     feature_clickhouse_analytics: bool = True
     feature_semantic_cache: bool = True

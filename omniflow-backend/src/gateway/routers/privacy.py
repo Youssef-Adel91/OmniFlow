@@ -21,8 +21,16 @@ from src.shared.services import privacy as svc
 
 router = APIRouter(prefix="/api/v1/privacy", tags=["Privacy"])
 
-RETENTION_NOTE = ("لا يوجد حذف تلقائي حاليًا: تُحفظ بيانات العملاء والمحادثات إلى أن تطلب المنشأة المحو أو يطلبه العميل. "
-                  "المحو (إخفاء الهوية) نهائي ولا يمكن التراجع عنه، ويُبقي السجلات المحاسبية وسجل التدقيق.")
+_NOTE_TAIL = "المحو (إخفاء الهوية) نهائي ولا يمكن التراجع عنه، ويحذف ملفات العميل من التخزين، ويُبقي السجلات المحاسبية وسجل التدقيق."
+
+
+def retention_note() -> str:
+    from src.shared.core.config import get_settings
+
+    cfg = get_settings()
+    if cfg.retention_enabled and not cfg.retention_dry_run and cfg.retention_inactive_customer_days > 0:
+        return (f"يُخفى تعريف العملاء الذين لم يتفاعلوا لأكثر من {cfg.retention_inactive_customer_days} يومًا تلقائيًا، وتصلك رسالة تنبيه قبل ذلك بـ {cfg.retention_warning_days} يومًا. " + _NOTE_TAIL)
+    return "لا يوجد حذف تلقائي مفعّل حاليًا: تُحفظ بيانات العملاء والمحادثات إلى أن تطلب المنشأة المحو أو يطلبه العميل. " + _NOTE_TAIL
 
 
 def _admin(user) -> None:
@@ -42,7 +50,7 @@ def _err(e: svc.PrivacyError) -> HTTPException:
 @router.get("/summary")
 async def summary(user: CurrentUser, session: AuthTenantSession) -> dict:
     _reader(user)
-    return {**await svc.summary(session, user.tenant_id), "retention_note": RETENTION_NOTE}
+    return {**await svc.summary(session, user.tenant_id), "retention_note": retention_note()}
 
 
 @router.get("/customers/{customer_id}/consents")

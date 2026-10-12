@@ -57,6 +57,18 @@ class S3ClientManager:
         async with self.get_client() as client:
             await client.delete_object(Bucket=bucket, Key=key)
 
+    async def list_keys(self, bucket: str, prefix: str, limit: int = 10_000) -> list[str]:
+        """Object keys under `prefix` (at most `limit`)."""
+        keys: list[str] = []
+        async with self.get_client() as client:
+            paginator = client.get_paginator("list_objects_v2")
+            async for page in paginator.paginate(Bucket=bucket, Prefix=prefix):
+                for obj in page.get("Contents", []):
+                    keys.append(obj["Key"])
+                    if len(keys) >= limit:
+                        return keys
+        return keys
+
     async def generate_presigned_url(self, bucket: str, key: str, expires_in: int = 900) -> str:
         async with self.get_client() as client:
             response = await client.generate_presigned_url(

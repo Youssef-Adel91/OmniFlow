@@ -33,6 +33,7 @@ from sqlalchemy import select
 from src.ai_engine.company_context import invalidate_company_context
 from src.gateway.dependencies import AuthTenantSession, CurrentUser
 from src.shared.core.config import get_settings
+from src.shared.security.crypto import reveal_secret
 from src.shared.core.enums import TenantUserRole
 from src.shared.db.models import Tenant
 
@@ -166,7 +167,7 @@ def _to_settings(tenant: Tenant) -> TenantSettings:
         ),
         whatsapp_phone_number_id=tenant.whatsapp_phone_number_id,
         max_ai_conversations=tenant.max_ai_conversations,
-        meta_access_token=_mask_secret(tenant.meta_access_token),
+        meta_access_token=_mask_secret(reveal_secret(tenant.meta_access_token)),
         ai_system_prompt=tenant.ai_system_prompt,
         custom_ai_instructions=tenant.custom_ai_instructions,
         logo_url=tenant.logo_url,
@@ -506,7 +507,7 @@ async def channels_status(user: CurrentUser, session: AuthTenantSession) -> dict
     return {
         "whatsapp": {
             "connected": wa_connected, "phone_number_id": t.whatsapp_phone_number_id, "waba_id": t.whatsapp_waba_id,
-            "display_phone_number": t.whatsapp_display_phone_number, "token": _mask_secret(t.meta_access_token),
+            "display_phone_number": t.whatsapp_display_phone_number, "token": _mask_secret(reveal_secret(t.meta_access_token)),
             "templates_ready": bool(wa_connected and t.whatsapp_waba_id),
             "last_inbound_at": await _last_inbound(session, ("whatsapp",)),
             "issues": [m for ok, m in ((wa_connected, "لم يُربط رقم واتساب (معرّف الرقم + رمز الوصول)."),
@@ -529,7 +530,7 @@ async def check_channel(user: CurrentUser, session: AuthTenantSession, channel: 
     if channel == "whatsapp":
         if not (t.whatsapp_phone_number_id and t.meta_access_token):
             return {"ok": False, "detail": "واتساب غير مربوط.", "checked_at": datetime.now(timezone.utc).isoformat()}
-        url, token, fields = f"{_GRAPH}/{_settings.meta_graph_api_version}/{t.whatsapp_phone_number_id}", t.meta_access_token, "display_phone_number,verified_name,quality_rating"
+        url, token, fields = f"{_GRAPH}/{_settings.meta_graph_api_version}/{t.whatsapp_phone_number_id}", reveal_secret(t.meta_access_token), "display_phone_number,verified_name,quality_rating"
     elif channel == "facebook":
         token = _page_token(t)
         if not (t.instagram_page_id and token):
@@ -598,6 +599,12 @@ async def ai_test(user: CurrentUser, session: AuthTenantSession, body: AiTestBod
     except Exception as exc:  # noqa: BLE001
         logger.warning("ai_test_failed", tenant_id=str(user.tenant_id), error=str(exc)[:200])
         raise HTTPException(status_code=502, detail={"code": "AI_UNAVAILABLE", "message": "تعذّر الوصول لمزوّد الذكاء الاصطناعي. تحقق من إعداد المفتاح ثم أعد المحاولة."}) from exc
+    try:    # onboarding checklist: a successful bot test ticks "test the bot"
+        tenant = await _load_tenant(session, user.tenant_id)
+        tenant.onboarding_state = {**(tenant.onboarding_state or {}), "bot_tested_at": datetime.now(timezone.utc).isoformat()}
+        await session.flush()
+    except Exception:  # noqa: BLE001 — never fail the test itself over bookkeeping
+        logger.warning("onboarding_bot_test_mark_failed", tenant_id=str(user.tenant_id))
     return {"reply": resp.text, "model": getattr(resp, "model_used", None),
             "latency_ms": int((datetime.now(timezone.utc) - started).total_seconds() * 1000),
             "note": "تجربة داخلية: لا تُرسل لأي عميل ولا تُحفظ، ولا تتضمن بحث العقارات (RAG)."}

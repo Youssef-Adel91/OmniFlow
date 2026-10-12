@@ -39,6 +39,7 @@ from sqlalchemy import (
     Text,
     UniqueConstraint,
     func,
+    text,
 )
 from sqlalchemy import DateTime
 from sqlalchemy.dialects.postgresql import JSONB, UUID
@@ -99,6 +100,7 @@ class Tenant(Base, TimestampMixin):
         index=True,
         comment="FAL license number — verified via REGA Broker Verification API",
     )
+    onboarding_state: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict, server_default=text("'{}'::jsonb"), comment="Checklist state: bot_tested_at, dismissed_at")
     facebook_user_id: Mapped[Optional[str]] = mapped_column(String(64), index=True, comment="Facebook user who connected the Page (for Meta data-deletion requests)")
     vat_number: Mapped[Optional[str]] = mapped_column(String(15), comment="Buyer VAT number for B2B e-invoices; empty = simplified (B2C) invoice")
     cr_number: Mapped[Optional[str]] = mapped_column(String(20))

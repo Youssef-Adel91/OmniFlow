@@ -267,6 +267,8 @@ class Settings(BaseSettings):
     meta_app_id: str = ""
     meta_app_secret: str = ""
     meta_graph_api_version: str = "v21.0"
+    feature_whatsapp_embedded_signup: bool = False   # OFF until Meta App Review / Tech Provider status is granted; endpoints answer 404 while off
+    meta_es_config_id: str = ""                      # Embedded Signup configuration id (Facebook Login for Business); not a secret
     meta_whatsapp_phone_number_id: str = ""
     meta_whatsapp_business_account_id: str = ""
     meta_whatsapp_access_token: str = ""

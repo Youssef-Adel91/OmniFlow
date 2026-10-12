@@ -22,6 +22,7 @@ import { useAuthReady } from "@/hooks/useAuthReady";
 import { useInboxStream } from "@/hooks/useInboxStream";
 import { useInboxStore } from "@/store/inboxStore";
 import { fetchDashboardAnalytics, type DashboardAnalytics, type KpiKey } from "@/lib/api/dashboardAnalytics";
+import { SetupChecklist } from "@/components/onboarding/SetupChecklist";
 import { KpiCard } from "@/components/dashboard/KpiCard";
 import dynamic from "next/dynamic";
 import { BarList, EmptyChart, Funnel, Heatmap } from "@/components/dashboard/ChartWidgets";
@@ -130,6 +131,8 @@ export default function DashboardOverviewPage() {
           </button>
         </div>
       </div>
+
+      <SetupChecklist />
 
       <Filters value={filters} onChange={setFilters} disabled={!data}
         onExportCsv={() => data && downloadCsv(`omniflow-analytics-${data.range.from}_${data.range.to}.csv`, analyticsToCsv(data, KPI_LABELS))} />

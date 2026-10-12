@@ -1,6 +1,8 @@
 """UBL 2.1 invoice / credit note / debit note XML in ZATCA's profile (reporting:1.0)."""
 from __future__ import annotations
 
+import base64
+import hashlib
 import uuid as uuidlib
 from dataclasses import dataclass, field
 from datetime import datetime
@@ -20,7 +22,7 @@ UBL = "{%s}" % NS[None]
 
 TYPE_INVOICE, TYPE_CREDIT, TYPE_DEBIT = "388", "381", "383"
 SUBTYPE_STANDARD, SUBTYPE_SIMPLIFIED = "0100000", "0200000"        # name attribute of InvoiceTypeCode: B2B / B2C
-PIH_FIRST = "NWZlY2ViNjZmZmM4NmYzOGQ5NTI3ODZjNmQ2OTZjNzljMmRiYzIzOWRkNGU5MWI0NjcyOWQ3M2EyN2ZiNTdlOQ=="   # base64(hex(sha256("0")))
+PIH_FIRST = base64.b64encode(hashlib.sha256(b"0").hexdigest().encode()).decode()   # base64(hex(sha256("0"))) -- ZATCA first-invoice previous hash
 
 
 def amount(halalas: int) -> str:

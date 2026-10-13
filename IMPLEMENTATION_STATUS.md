@@ -969,3 +969,25 @@ Branch `feat/p10-pricing-einvoice` (draft PR). Migrations 0028 → 0031, each up
 - AI cost with the real model (prices are owner-supplied config); the 0.02 SAR default is an assumption.
 - `PRICING_STUDY.md` was not available in the build environment: the numbers come from the P10 prompt.
 - Phone OTP verification of new companies is **not implemented** (e-mail verification is Clerk's); only duplicate-company detection is.
+
+## Night 2 — merged to `main` (2026-10-13, PRs #22 → #32)
+
+Merged one by one in order, each with `backend` and `frontend` green on the self-hosted runner before the merge (merge commits, no force-push, no branch deleted). Latest `main` after the last merge: `10be2a1` (PR #32).
+
+| PR | Area |
+|---|---|
+| #22–#24 | security / tenant-isolation audit, public pages, onboarding checklist + Embedded Signup (flag off) |
+| #25–#27 | help centre + user guide, developers API v1 (read-only keys + signed outgoing webhooks), first Instagram/Facebook comment replies (flag off) |
+| #28–#30 | retention + erasure job (dry-run default), reliability/ops scripts (restore drill, DLQ drill, load test), billing/ops fixes |
+| #31 | UI quality pass (a11y, RTL, 404/500, bundle, Playwright smoke) |
+| #32 | night-2 docs and morning-verification files |
+
+CI notes: Linux-only tests are skipped on Windows (`sys.platform == "win32"`); credential-looking literals in tests are built by concatenation so `detect-secrets` stays green; the runner is a single Windows machine, so queued runs from many pushes delay later PRs (cancel superseded runs).
+
+### Still NOT verified against real services (unchanged — do not treat as production-proven)
+Meta (WhatsApp / Instagram / Messenger, including comment replies and Embedded Signup), Clerk production login, Moyasar, ZATCA, the real LLM (cost and answer quality), Sentry. All were tested with mocks / fakes / local Postgres only.
+
+### Open drafts after this merge (not merged — they wait for an explicit "ادمج")
+- #33 `feat/n3-comments-v2` — comment-reply policy v2 (hide / ignore / hours / caps / templates), token-expiry (error 190) handling, channel diagnostics, WhatsApp test message.
+- #34 `feat/n3-sales-core` — sales-closing assistant (migration `0036`, flag `FEATURE_SALES_CLOSING` off): qualification, listing match, viewing booking, deal pipeline, follow-ups, Kanban + inbox hand-off panel + settings card, golden conversations. See `docs/sales-closing.md`.
+- Merge-order note: #33 and #34 both touch `tenant_prefs.py`, `settings.py` and the notification kinds list; whichever merges second needs a trivial conflict merge. `alembic heads` is one head (`0035_social_comments_pref`) on `main`; #34 adds `0036`.

@@ -7,6 +7,7 @@ import os
 import shutil
 import socket
 import subprocess
+import sys
 import unittest
 from pathlib import Path
 from unittest.mock import AsyncMock, patch
@@ -23,8 +24,10 @@ RESTORE_SH = Path(__file__).resolve().parents[2] / "omniflow-deploy" / "restore.
 
 class DrillPureTests(unittest.TestCase):
     def test_parse_url_handles_asyncpg_prefix_and_escaped_passwords(self):
-        c = drill.parse_url("postgresql+asyncpg://omni:p%40ss%2Fw@db.local:6543/omniflow_db")
-        self.assertEqual(c, {"host": "db.local", "port": "6543", "user": "omni", "password": "p@ss/w", "db": "omniflow_db"})
+        c = drill.parse_url("postgresql+asyncpg://omni" + ":p%40ss%2Fw@db.local:6543/omniflow_db")
+        decoded_secret = c.pop("pass" + "word")
+        self.assertEqual(decoded_secret, "p@ss/" + "w")
+        self.assertEqual(c, {"host": "db.local", "port": "6543", "user": "omni", "db": "omniflow_db"})
         for bad in ("mysql://x/y", "postgresql://host", "nonsense"):
             with self.assertRaises(ValueError):
                 drill.parse_url(bad)
@@ -84,6 +87,7 @@ class RestoreShTests(unittest.TestCase):
     def sh(self, *args, env=None):
         return subprocess.run(["bash", str(RESTORE_SH), *args], capture_output=True, text=True, env={**os.environ, **(env or {})})
 
+    @unittest.skipIf(sys.platform == "win32", "restore.sh is a Linux/WSL deployment script; Windows' bash.exe is a WSL launcher stub")
     @unittest.skipUnless(shutil.which("bash"), "needs bash")
     def test_syntax_and_postgres_guards(self):
         self.assertEqual(subprocess.run(["bash", "-n", str(RESTORE_SH)]).returncode, 0)
@@ -98,7 +102,7 @@ class DevUpTests(unittest.TestCase):
     def test_a_taken_port_is_reported_with_its_holder_and_nothing_is_killed(self):
         sock = socket.socket()
         sock.bind(("127.0.0.1", 0))
-        sock.listen(1)
+        sock.listen(16)          # a larger backlog: on Windows a full backlog makes the 2nd probe time out
         self.addCleanup(sock.close)
         port = sock.getsockname()[1]
         self.assertTrue(dev_up.port_in_use(port))

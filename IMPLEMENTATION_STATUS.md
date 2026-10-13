@@ -976,11 +976,17 @@ Merged one by one in order, each with `backend` and `frontend` green on the self
 
 | PR | Area |
 |---|---|
-| #22–#24 | security / tenant-isolation audit, public pages, onboarding checklist + Embedded Signup (flag off) |
-| #25–#27 | help centre + user guide, developers API v1 (read-only keys + signed outgoing webhooks), first Instagram/Facebook comment replies (flag off) |
-| #28–#30 | retention + erasure job (dry-run default), reliability/ops scripts (restore drill, DLQ drill, load test), billing/ops fixes |
-| #31 | UI quality pass (a11y, RTL, 404/500, bundle, Playwright smoke) |
-| #32 | night-2 docs and morning-verification files |
+| #22 | P10: pricing plans, hard AI cap, top-ups, refunds, ZATCA e-invoice module (e-invoice off) |
+| #23 | security audit, tenant-isolation tests, fix for the Facebook OAuth callback 401 |
+| #24 | public pages + Meta data-deletion callback |
+| #25 | onboarding checklist + WhatsApp Embedded Signup (flag off) |
+| #26 | Arabic help-centre articles + user guide |
+| #27 | Developers v1 — read-only API keys + signed outgoing webhooks |
+| #28 | Facebook/Instagram comment replies behind an OFF flag |
+| #29 | retention & erasure job (OFF + dry-run by default) |
+| #30 | reliability & ops — restore drill, `/health/lag`, start-all script, load-test files |
+| #31 | UI quality — error/404 pages, contrast fix, lighter public bundle, Playwright + axe |
+| #32 | documentation, night-2 report, morning verification |
 
 CI notes: Linux-only tests are skipped on Windows (`sys.platform == "win32"`); credential-looking literals in tests are built by concatenation so `detect-secrets` stays green; the runner is a single Windows machine, so queued runs from many pushes delay later PRs (cancel superseded runs).
 

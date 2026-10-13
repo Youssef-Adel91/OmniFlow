@@ -10,8 +10,6 @@ import type { Metadata } from "next";
 import { getMessages } from "next-intl/server";
 import { NextIntlClientProvider } from "next-intl";
 import { routing, type Locale } from "@/i18n/routing";
-import { AuthHydrator } from "@/components/auth/AuthHydrator";
-import { ClerkProvider } from "@clerk/nextjs";
 import "../globals.css";
 
 // ── Metadata ──────────────────────────────────────────────────────────────────
@@ -80,16 +78,9 @@ export default async function RootLocaleLayout({
             : "h-full antialiased font-sans"
         }
       >
-        <ClerkProvider>
-          {/*
-            AuthHydrator triggers the deferred Zustand persist rehydration.
-            Must be OUTSIDE NextIntlClientProvider so it fires on every route.
-          */}
-          <AuthHydrator />
-          <NextIntlClientProvider locale={safeLocale} messages={messages}>
-            {children}
-          </NextIntlClientProvider>
-        </ClerkProvider>
+        <NextIntlClientProvider locale={safeLocale} messages={messages}>
+          {children}
+        </NextIntlClientProvider>
       </body>
     </html>
   );

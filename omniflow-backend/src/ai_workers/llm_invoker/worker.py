@@ -266,6 +266,26 @@ class LLMInvokerWorker(BaseKafkaConsumer):
             tier=tier,
         )
 
+        # ── 1c. Sales closing (OFF unless FEATURE_SALES_CLOSING and the tenant's Settings → Sales switch) ──────────────
+        # Deterministic guards run first and never reach the model: opt-out, prompt-injection, other customers' data, complaints, price negotiation,
+        # the viewing-booking dialogue. Otherwise the qualification + matching listings + hard rules are appended to the system prompt below.
+        sales_addendum: str | None = None
+        sales_followups = False
+        if settings.feature_sales_closing and tier != RoutingTier.HUMAN_ESCALATION:
+            from src.sales import hook as sales_hook
+
+            sres = await sales_hook.before_llm(decision, qualify=tier != RoutingTier.L0_SEMANTIC_CACHE)
+            if sres.reply:
+                await self._publish_outbound(decision=decision, text=sres.reply, llm_response=None, latency_ms=0)
+                if sres.handoff_reason and decision.conversation_id:
+                    await self._handoff_to_human(decision, sres.handoff_reason, log, send_text=False)
+                elif sres.event in ("booking_offer", "booking_clarify"):
+                    asyncio.create_task(sales_hook.after_reply(decision))
+                log.info("llm_invoker_sales_fixed_reply", event=sres.event, handoff=sres.handoff_reason)
+                return
+            sales_addendum = sres.system_addendum
+            sales_followups = True
+
         # ── 2. Non-LLM fast paths ─────────────────────────────────────────────
         if tier == RoutingTier.HUMAN_ESCALATION or (decision.skip_llm and tier != RoutingTier.L0_SEMANTIC_CACHE):
             log.info("llm_invoker_skipped_human_route", reason=decision.route_reason)
@@ -358,6 +378,8 @@ class LLMInvokerWorker(BaseKafkaConsumer):
         base_prompt = real_persona.strip() if real_persona and real_persona.strip() else self._build_persona(tenant_context)
         company_block = await get_company_context(tenant_id)
         system_prompt = compose_system_prompt(base_prompt, company_block)
+        if sales_addendum:
+            system_prompt = f"{system_prompt}\n\n{sales_addendum}"
 
         # ── 5. RAG context injection (L2) ────────────────────────────────────
         rag_context: str | None = None
@@ -473,6 +495,12 @@ class LLMInvokerWorker(BaseKafkaConsumer):
             self._publish_analytics(decision, llm_response, total_latency_ms)
         )
 
+        # ── 9a. Arm the automatic follow-ups (cancelled again the moment the customer writes) ──────────────────────
+        if sales_followups:
+            from src.sales import hook as sales_hook
+
+            asyncio.create_task(sales_hook.after_reply(decision))
+
         # ── 9b. Generic explicit-profile extraction (fire-and-forget) ─────────
         # Runs for every tenant/vertical, not just real estate — see
         # shared/services/customer_profile_extractor.py. Feeds lead_scoring's
@@ -572,7 +600,7 @@ class LLMInvokerWorker(BaseKafkaConsumer):
             },
         )
 
-    async def _handoff_to_human(self, decision: RoutingDecision, reason: str, log) -> None:
+    async def _handoff_to_human(self, decision: RoutingDecision, reason: str, log, *, send_text: bool = True) -> None:
         """Escalate per the tenant's handoff preferences (status, assignment, handoff / out-of-hours message to the customer)."""
         if not decision.conversation_id:
             return
@@ -585,7 +613,7 @@ class LLMInvokerWorker(BaseKafkaConsumer):
                     tenant_id=decision.tenant_id, event_type="conversation_update",
                     data={"id": str(decision.conversation_id), "status": ConversationStatus.ESCALATED.value, "is_ai_active": False,
                           "assigned_agent_id": str(result.agent_id) if result.agent_id else None})
-                if result.text:
+                if result.text and send_text:
                     await self._publish_outbound(decision=decision, text=result.text, llm_response=None, latency_ms=0)
         except Exception as exc:  # noqa: BLE001 - a handoff problem must not poison the Kafka message
             log.error("llm_invoker_handoff_failed", error=str(exc)[:200])

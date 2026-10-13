@@ -185,10 +185,15 @@ export const DEFAULT_SOCIAL_COMMENTS: SocialCommentsPrefs = {
   enabled: false, mode: "public_reply", only_business_hours: false, max_per_hour: 60, ignore_keywords: [], auto_hide_abusive: true,
   hide_keywords: [], public_template: DEFAULT_PUBLIC_TEMPLATE, allow_price_in_private: false,
 };
-export type PrefSection = "business_hours" | "handoff" | "ai_behavior" | "identity" | "social_comments";
+export interface SalesPrefs {
+  enabled: boolean; ask_questions: boolean; max_questions: number; booking_enabled: boolean; slot_minutes: number; days_ahead: number; min_notice_hours: number;
+  max_parallel_viewings: number; viewing_hours: { timezone: string; days: Record<string, string[][]> }; viewing_location_note: string; reminder_hours_before: number;
+  followup_enabled: boolean; followup_delays_hours: number[]; followup_messages: string[]; whatsapp_followup_template: string; whatsapp_followup_template_lang: string;
+}
+export type PrefSection = "business_hours" | "handoff" | "ai_behavior" | "identity" | "social_comments" | "sales";
 export interface PreferencesResponse {
-  preferences: { business_hours: BusinessHours; handoff: HandoffPrefs; ai_behavior: AiBehavior; identity: IdentityPrefs; social_comments: SocialCommentsPrefs };
-  features?: { social_comment_replies?: boolean };
+  preferences: { business_hours: BusinessHours; handoff: HandoffPrefs; ai_behavior: AiBehavior; identity: IdentityPrefs; social_comments: SocialCommentsPrefs; sales?: SalesPrefs };
+  features?: { social_comment_replies?: boolean; sales_closing?: boolean };
   configured: Record<PrefSection, boolean>;
   currencies: string[];
   updated_at: string | null;

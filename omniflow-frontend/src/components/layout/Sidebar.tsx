@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useTranslations } from "next-intl";
@@ -19,11 +19,13 @@ import {
   Zap,
   LogOut,
   Loader2,
+  KanbanSquare,
 } from "lucide-react";
 import { useClerk, useUser } from "@clerk/nextjs";
 import { cn } from "@/lib/utils";
 import { useSidebar, useUnreadCount, useTenant, useTenantStore } from "@/store/tenantStore";
 import type { Locale } from "@/i18n/config";
+import { fetchPreferences } from "@/lib/api/settings";
 
 // ── Nav item definition ───────────────────────────────────────────────────────
 
@@ -43,6 +45,9 @@ const PRIMARY_NAV: NavItem[] = [
   { key: "broadcasts", href: "/broadcasts",   icon: Megaphone, badge: "beta" },
   { key: "reports",    href: "/reports",      icon: FileText         },
 ];
+
+/** Shown only when the sales-closing feature is on for the platform (server flag). */
+const PIPELINE_NAV: NavItem = { key: "pipeline", href: "/pipeline", icon: KanbanSquare };
 
 const SECONDARY_NAV: NavItem[] = [
   { key: "settings", href: "/settings", icon: Settings },
@@ -67,6 +72,13 @@ export function Sidebar({ locale }: SidebarProps) {
   const { user }     = useUser();
   const resetTenant  = useTenantStore((s) => s.resetTenantState);
   const [loggingOut, setLoggingOut] = useState(false);
+  const [salesOn, setSalesOn] = useState(false);
+  useEffect(() => {
+    let alive = true;
+    fetchPreferences().then((p) => { if (alive) setSalesOn(Boolean(p.features?.sales_closing)); }).catch(() => undefined);
+    return () => { alive = false; };
+  }, []);
+  const primaryNav = salesOn ? [...PRIMARY_NAV.slice(0, 4), PIPELINE_NAV, ...PRIMARY_NAV.slice(4)] : PRIMARY_NAV;
 
   const displayName = user?.fullName ?? user?.username ?? "";
   const displayEmail = user?.primaryEmailAddress?.emailAddress ?? "";
@@ -117,7 +129,7 @@ export function Sidebar({ locale }: SidebarProps) {
 
       {/* ── Primary Navigation ──────────────────────────────────────────── */}
       <nav className="flex-1 overflow-y-auto scrollbar-hidden sidebar-scroll px-2 py-4 space-y-0.5">
-        {PRIMARY_NAV.map((item) => {
+        {primaryNav.map((item) => {
           const active = isActive(item.href);
           const Icon   = item.icon;
 

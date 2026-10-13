@@ -171,7 +171,7 @@ export interface SocialCommentsPrefs { enabled: boolean; mode: "public_reply" | 
 export type PrefSection = "business_hours" | "handoff" | "ai_behavior" | "identity" | "social_comments";
 export interface PreferencesResponse {
   preferences: { business_hours: BusinessHours; handoff: HandoffPrefs; ai_behavior: AiBehavior; identity: IdentityPrefs; social_comments: SocialCommentsPrefs };
-  features?: { social_comment_replies?: boolean };
+  features?: { social_comment_replies?: boolean; sales_closing?: boolean };
   configured: Record<PrefSection, boolean>;
   currencies: string[];
   updated_at: string | null;

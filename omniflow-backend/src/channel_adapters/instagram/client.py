@@ -47,6 +47,11 @@ _MAX_RETRIES: Final[int] = 3
 _RETRY_STATUSES: Final[frozenset[int]] = frozenset({429, 500, 502, 503, 504})
 
 
+# Graph API error codes that mean "this access token no longer works": 190 = expired/invalid/revoked, 102 = session invalid,
+# 463/467 = expired / invalid session (older sub-codes some endpoints still return).
+TOKEN_ERROR_CODES: Final[frozenset[int]] = frozenset({190, 102, 463, 467})
+
+
 # ── Typed exceptions ──────────────────────────────────────────────────────────
 
 class MetaAPIError(Exception):
@@ -173,7 +178,9 @@ def _raise_for_status(resp: httpx.Response) -> None:
 
     if resp.status_code == 429:
         raise MetaRateLimitError(message, status_code=429, error_code=code)
-    if resp.status_code in (401, 403):
+    # Meta reports an expired / revoked / invalid token as OAuthException code 190 (and 102 = session invalid) with HTTP 400, NOT 401:
+    # without this branch it fell through to MetaInvalidRecipientError and the tenant was never told to reconnect.
+    if resp.status_code in (401, 403) or code in TOKEN_ERROR_CODES or error.get("type") == "OAuthException" and code in (0, 190, 102):
         raise MetaAuthError(message, status_code=resp.status_code, error_code=code)
     if resp.status_code == 400:
         raise MetaInvalidRecipientError(message, status_code=400, error_code=code)
@@ -246,6 +253,26 @@ async def send_private_reply(page_id: str, comment_id: str, text: str, *, access
             params={"access_token": access_token},
             json={"recipient": {"comment_id": comment_id}, "message": {"text": text}},
         )
+    if resp.status_code == 200:
+        return resp.json()
+    _raise_for_status(resp)
+    return {}  # unreachable
+
+
+async def hide_comment(comment_id: str, *, platform: str, hidden: bool = True, access_token: str | None = None) -> dict[str, Any]:
+    """
+    Hide (or unhide) a comment under a post. The comment stays visible to its author and their friends, but not to the public.
+
+      Facebook : POST /{comment-id}?is_hidden=true   (pages_manage_engagement)
+      Instagram: POST /{ig-comment-id}?hide=true     (instagram_manage_comments)
+
+    Written from Meta's documentation; NOT exercised against live Meta from this repository.
+    """
+    access_token = access_token or settings.meta_instagram_page_access_token
+    param = "hide" if platform == "instagram" else "is_hidden"
+    url = f"{_GRAPH_BASE}/{_API_VERSION}/{comment_id}"
+    async with httpx.AsyncClient(timeout=_TIMEOUT_SECONDS) as client:
+        resp = await client.post(url, params={"access_token": access_token, param: "true" if hidden else "false"})
     if resp.status_code == 200:
         return resp.json()
     _raise_for_status(resp)

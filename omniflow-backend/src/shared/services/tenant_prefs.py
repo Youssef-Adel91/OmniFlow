@@ -137,10 +137,46 @@ class Identity(BaseModel):
         return v
 
 
+DEFAULT_PUBLIC_TEMPLATE = "أهلاً {name} 🌟 شكراً لتعليقك! أرسلنا لك التفاصيل على الخاص."
+_TEMPLATE_FIELDS = {"{name}"}
+
+
 class SocialComments(BaseModel):
-    """What to do when someone comments on the Page / Instagram post. Takes effect only while the platform flag FEATURE_SOCIAL_COMMENT_REPLIES is on."""
+    """What to do when someone comments on the Page / Instagram post. Takes effect only while the platform flag FEATURE_SOCIAL_COMMENT_REPLIES is on.
+
+    mode:
+      public_reply       -> the assistant answers under the comment (the answer passes the public-safety filter: no prices / legal promises)
+      private_dm         -> a private message to the commenter (one per comment, within 7 days: Meta's rule)
+      public_and_private -> a short fixed public reply (`public_template`) AND the assistant's private message with the details
+    """
     enabled: bool = False
-    mode: Literal["public_reply", "private_dm"] = "public_reply"       # reply under the comment, or send the commenter a private message
+    mode: Literal["public_reply", "private_dm", "public_and_private"] = "public_reply"
+    only_business_hours: bool = False                                  # outside the tenant's business hours -> comments are left alone
+    max_per_hour: int = Field(default=60, ge=1, le=1000)               # answered comments per hour, per tenant
+    ignore_keywords: list[str] = Field(default_factory=list, max_length=50)    # comments containing any of these are ignored (competitors, spam words...)
+    auto_hide_abusive: bool = True                                     # hide insults / obvious spam (built-in word list + hide_keywords) instead of answering
+    hide_keywords: list[str] = Field(default_factory=list, max_length=50)
+    public_template: str = Field(default=DEFAULT_PUBLIC_TEMPLATE, max_length=300)
+    allow_price_in_private: bool = False                               # a public answer that quotes a price is replaced by the template; with this on, the full answer is sent privately
+
+    @field_validator("ignore_keywords", "hide_keywords")
+    @classmethod
+    def _kw(cls, v: list[str]) -> list[str]:
+        out = list(dict.fromkeys(k.strip() for k in v if k and k.strip()))
+        if any(len(k) > 40 for k in out):
+            raise ValueError("الكلمة أطول من 40 حرفًا")
+        return out
+
+    @field_validator("public_template")
+    @classmethod
+    def _tpl(cls, v: str) -> str:
+        v = v.strip()
+        if not v:
+            raise ValueError("قالب الرد العلني لا يمكن أن يكون فارغًا")
+        bad = set(re.findall(r"\{[^}]*\}", v)) - _TEMPLATE_FIELDS
+        if bad:
+            raise ValueError("المتغيرات المسموحة في القالب: {name} فقط")
+        return v
 
 
 MODELS: dict[str, type[BaseModel]] = {"business_hours": BusinessHours, "handoff": Handoff, "ai_behavior": AiBehavior, "identity": Identity, "social_comments": SocialComments}

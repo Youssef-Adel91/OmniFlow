@@ -505,8 +505,12 @@ async def channels_status(user: CurrentUser, session: AuthTenantSession) -> dict
     t = await _load_tenant(session, user.tenant_id)
     wa_connected = bool(t.whatsapp_phone_number_id and t.meta_access_token)
     fb_connected = bool(t.instagram_page_id and t.instagram_page_access_token)
+    from src.shared.services import channel_health
+
+    wa_fail, fb_fail = await channel_health.get_failure(user.tenant_id, "whatsapp"), await channel_health.get_failure(user.tenant_id, "facebook")
     return {
         "whatsapp": {
+            "reconnect_needed": bool(wa_fail), "auth_failed_at": (wa_fail or {}).get("at"),
             "connected": wa_connected, "phone_number_id": t.whatsapp_phone_number_id, "waba_id": t.whatsapp_waba_id,
             "display_phone_number": t.whatsapp_display_phone_number, "token": _mask_secret(reveal_secret(t.meta_access_token)),
             "templates_ready": bool(wa_connected and t.whatsapp_waba_id),
@@ -516,6 +520,7 @@ async def channels_status(user: CurrentUser, session: AuthTenantSession) -> dict
                                        (not wa_connected or bool(t.whatsapp_display_phone_number), "رقم العرض (لبطاقة التواصل) غير مُدخل.")) if not ok],
         },
         "facebook": {
+            "reconnect_needed": bool(fb_fail), "auth_failed_at": (fb_fail or {}).get("at"),
             "connected": fb_connected, "page_id": t.instagram_page_id, "instagram_account_id": t.instagram_account_id,
             "messenger": fb_connected, "instagram": bool(fb_connected and t.instagram_account_id),
             "last_inbound_at": await _last_inbound(session, ("instagram", "messenger")),
@@ -556,6 +561,75 @@ async def check_channel(user: CurrentUser, session: AuthTenantSession, channel: 
     expired = err.get("code") in (190, 102) or resp.status_code == 401
     return {"ok": False, "checked_at": now, "needs_reconnect": expired,
             "detail": ("انتهت صلاحية رمز الوصول — أعد الربط." if expired else f"رفضت Meta الطلب ({resp.status_code}): {str(err.get('message', ''))[:160]}")}
+
+
+@router.get("/channels/facebook/diagnostics", summary="Token validity, missing permissions and missing webhook subscriptions of the connected Page")
+async def facebook_diagnostics(user: CurrentUser, session: AuthTenantSession) -> dict[str, Any]:
+    _require_admin(user)
+    from src.shared.services import meta_diagnostics
+
+    t = await _load_tenant(session, user.tenant_id)
+    token = _page_token(t)
+    if not (t.instagram_page_id and token):
+        return {"connected": False, "ok": False, "issues": ["صفحة فيسبوك غير مربوطة."]}
+    rep = await meta_diagnostics.inspect_page(t.instagram_page_id, token, has_instagram=bool(t.instagram_account_id))
+    return {"connected": True, **meta_diagnostics.report_dict(rep)}
+
+
+@router.get("/comments/activity", summary="The last 20 comments the assistant looked at (answered, hidden or ignored)")
+async def comments_activity(user: CurrentUser) -> dict[str, Any]:
+    from src.channel_adapters.instagram import comment_actions
+
+    return {"items": await comment_actions.recent(user.tenant_id)}
+
+
+class WhatsAppTestBody(BaseModel):
+    to: str = Field(..., min_length=5, max_length=30)
+
+
+@router.post("/channels/whatsapp/test-message", summary="Send ONE real test message from the connected WhatsApp number to a number you enter (admin)")
+async def whatsapp_test_message(user: CurrentUser, session: AuthTenantSession, body: WhatsAppTestBody) -> dict[str, Any]:
+    _require_admin(user)
+    from src.channel_adapters.whatsapp.client import WhatsAppAPIError, WhatsAppAuthError, WhatsAppClient
+    from src.shared.redis_client import redis_mgr
+    from src.shared.services import channel_health
+
+    t = await _load_tenant(session, user.tenant_id)
+    token = reveal_secret(t.meta_access_token)
+    if not (t.whatsapp_phone_number_id and token):
+        raise HTTPException(status_code=409, detail={"code": "NOT_CONNECTED", "message": "واتساب غير مربوط."})
+    try:
+        to = _normalize_e164(body.to)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail={"code": "INVALID_PHONE", "message": "رقم الهاتف غير صالح. أدخله مع رمز الدولة، مثل +9665xxxxxxxx."}) from exc
+    used = await redis_mgr.incr_counter(f"wa:testmsg:{user.tenant_id}:{datetime.now(timezone.utc):%Y%m%d%H}", ttl=3700)
+    if used is not None and used > 5:
+        raise HTTPException(status_code=429, detail={"code": "TOO_MANY_TESTS", "message": "وصلت للحد الأقصى (5 رسائل تجريبية في الساعة)."})
+    client = WhatsAppClient()
+    await client.start()
+    method, detail = "text", None
+    try:
+        try:
+            res = await client.send_text_message(phone_number_id=t.whatsapp_phone_number_id, to=to, access_token=token,
+                                                 text="رسالة تجريبية من OmniFlow ✅ ربط واتساب يعمل بنجاح.")
+        except WhatsAppAPIError as exc:
+            if isinstance(exc, WhatsAppAuthError) or getattr(exc, "error_code", 0) != 131047:
+                raise
+            # outside the 24-hour window a plain text is refused (131047): Meta's built-in sample template always exists
+            method = "template"
+            res = await client.send_template_message(phone_number_id=t.whatsapp_phone_number_id, to=to, access_token=token,
+                                                     template_name="hello_world", language_code="en_US")
+    except WhatsAppAuthError as exc:
+        await channel_health.mark_auth_failed(user.tenant_id, "whatsapp", str(exc))
+        return {"ok": False, "needs_reconnect": True, "detail": "انتهت صلاحية رمز واتساب — أعد الربط."}
+    except WhatsAppAPIError as exc:
+        return {"ok": False, "detail": f"رفضت Meta الرسالة (رمز {getattr(exc, 'error_code', 0) or exc.status_code}): {str(exc)[:160]}"}
+    finally:
+        await client.stop()
+    session.add(AuditLog(tenant_id=user.tenant_id, actor_user_id=getattr(user, "user_id", None), action="channel.whatsapp_test_message",
+                         entity_type="tenant", entity_id=str(user.tenant_id), details={"method": method, "to_last4": to[-4:]}))
+    await session.flush()
+    return {"ok": True, "method": method, "message_id": res.wamid, "detail": "أُرسلت الرسالة التجريبية." if method == "text" else "أُرسل القالب الافتراضي (خارج نافذة 24 ساعة)."}
 
 
 @router.post("/channels/facebook/disconnect", summary="Disconnect the Facebook page (Messenger + Instagram) from this workspace")

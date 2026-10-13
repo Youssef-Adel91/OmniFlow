@@ -14,8 +14,10 @@ import {
   checkChannel, disconnectFacebook, fetchChannels, settingsErrorMessage, updateSettings,
   type ChannelCheck, type ChannelsStatus, type TenantSettings,
 } from "@/lib/api/settings";
+import ChannelDiagnostics from "./ChannelDiagnostics";
 import CommentRepliesCard from "./CommentRepliesCard";
 import { WhatsappEmbeddedSignup } from "./WhatsappEmbeddedSignup";
+import WhatsappTestMessage from "./WhatsappTestMessage";
 import { Field, LoadError, SaveBar, SectionHeader, SectionSkeleton, cardClass, inputClass } from "./common";
 import { useSection } from "./useSection";
 
@@ -25,6 +27,15 @@ function StatusPill({ ok, okText, badText }: { ok: boolean; okText: string; badT
   return ok
     ? <span className="inline-flex items-center gap-1.5 text-xs rounded-full bg-emerald-500/15 text-emerald-200 border border-emerald-500/40 px-2.5 py-1"><CheckCircle2 className="w-3.5 h-3.5" aria-hidden />{okText}</span>
     : <span className="inline-flex items-center gap-1.5 text-xs rounded-full bg-red-500/15 text-red-200 border border-red-500/40 px-2.5 py-1"><AlertTriangle className="w-3.5 h-3.5" aria-hidden />{badText}</span>;
+}
+
+function ReconnectBanner({ name, at }: { name: string; at?: string | null }) {
+  return (
+    <div role="alert" className="rounded-lg border border-red-500/40 bg-red-500/10 px-3 py-2 text-sm text-red-100 flex items-start gap-2" data-testid="reconnect-banner">
+      <AlertTriangle className="w-4 h-4 mt-0.5 shrink-0" aria-hidden />
+      <span>انتهت صلاحية ربط {name} أو أُلغي{at ? ` (منذ ${fmt(at)})` : ""}. لن تصل ردود المساعد للعملاء حتى تعيد الربط.</span>
+    </div>
+  );
 }
 
 export default function ChannelsSection({ locale, settings, onSettings, onDirty }: {
@@ -103,6 +114,7 @@ export default function ChannelsSection({ locale, settings, onSettings, onDirty 
                 <h3 className="font-bold text-white flex items-center gap-2"><MessageSquare className="w-4 h-4 text-[#C9A84C]" aria-hidden />واتساب</h3>
                 <StatusPill ok={wa.connected} okText="مربوط" badText="غير مربوط" />
               </div>
+              {wa.reconnect_needed && <ReconnectBanner name="واتساب" at={wa.auth_failed_at} />}
               <dl className="grid grid-cols-[9rem_1fr] gap-x-3 gap-y-1.5 text-sm">
                 <dt className="text-gray-300">Phone Number ID</dt><dd dir="ltr" className="text-start">{wa.phone_number_id ?? "—"}</dd>
                 <dt className="text-gray-300">WABA ID</dt><dd dir="ltr" className="text-start">{wa.waba_id ?? "—"}</dd>
@@ -116,6 +128,7 @@ export default function ChannelsSection({ locale, settings, onSettings, onDirty 
                 <WhatsappEmbeddedSignup onConnected={(m) => { setNotice(m); void load(); }} />
                 <CheckResult ch="whatsapp" />
               </div>
+              {wa.connected && <WhatsappTestMessage />}
               <p className="text-xs text-gray-300">رمز الوصول ومعرّف الرقم لا يُعدَّلان من هنا لأسباب أمنية؛ تُحدَّث من صفحة الربط.</p>
             </section>
 
@@ -125,6 +138,7 @@ export default function ChannelsSection({ locale, settings, onSettings, onDirty 
                 <h3 className="font-bold text-white flex items-center gap-2"><Facebook className="w-4 h-4 text-[#C9A84C]" aria-hidden />فيسبوك · ماسنجر · إنستجرام</h3>
                 <div className="flex gap-2"><StatusPill ok={fb.messenger} okText="ماسنجر" badText="ماسنجر" /><StatusPill ok={fb.instagram} okText="إنستجرام" badText="إنستجرام" /></div>
               </div>
+              {fb.reconnect_needed && <ReconnectBanner name="فيسبوك وإنستجرام" at={fb.auth_failed_at} />}
               <dl className="grid grid-cols-[9rem_1fr] gap-x-3 gap-y-1.5 text-sm">
                 <dt className="text-gray-300">الصفحة (Page ID)</dt><dd dir="ltr" className="text-start">{fb.page_id ?? "—"}</dd>
                 <dt className="text-gray-300">حساب إنستجرام</dt><dd dir="ltr" className="text-start">{fb.instagram_account_id ?? "—"}</dd>
@@ -139,6 +153,7 @@ export default function ChannelsSection({ locale, settings, onSettings, onDirty 
                 <button onClick={() => void disconnect()} disabled={!fb.connected || busy !== null} className="px-3 py-1.5 text-xs rounded-lg border border-red-500/40 text-red-300 hover:bg-red-500/10 disabled:opacity-50 flex items-center gap-1.5"><Unplug className="w-3.5 h-3.5" aria-hidden />فصل</button>
                 <CheckResult ch="facebook" />
               </div>
+              {fb.connected && <ChannelDiagnostics />}
               {pages && (
                 <div role="dialog" aria-label="اختيار الصفحة" className="rounded-lg border border-white/15 p-3 space-y-2">
                   <p className="text-sm text-gray-100">وُجدت أكثر من صفحة؛ اختر الصفحة التي تريد ربطها:</p>
@@ -151,7 +166,7 @@ export default function ChannelsSection({ locale, settings, onSettings, onDirty 
               )}
             </section>
 
-            <CommentRepliesCard />
+            <CommentRepliesCard onDirty={onDirty} />
           </div>
         ) : null}
       </div>

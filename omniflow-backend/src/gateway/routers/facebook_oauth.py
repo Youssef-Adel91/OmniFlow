@@ -206,12 +206,20 @@ async def _list_pages_with_instagram(client: httpx.AsyncClient, long_lived_user_
     return pages
 
 
+# Fields we want from a Page: DMs, quick-reply buttons, delivery/read ticks, reactions, comments on posts, @mentions.
+# NOTE "comments" is NOT a Page field (only Instagram has it); Meta answers an invalid field with an error.
+_FULL_PAGE_FIELDS = "messages,messaging_postbacks,message_deliveries,message_reads,message_reactions,feed,mention"
+# The set that worked before the extra fields were added: used if Meta refuses the full set (e.g. a permission is missing for one field).
+_BASE_PAGE_FIELDS = "messages,messaging_postbacks,feed"
+
+
 async def _subscribe_page_webhooks(client: httpx.AsyncClient, page_id: str, page_token: str) -> None:
-    """POST /{page-id}/subscribed_apps -- wires our app to receive this Page's events."""
-    await _graph_post(client, f"{page_id}/subscribed_apps", {
-        "subscribed_fields": "messages,messaging_postbacks,feed",
-        "access_token": page_token,
-    })
+    """POST /{page-id}/subscribed_apps -- wires our app to receive this Page's events. Falls back to the base set rather than failing the connect."""
+    try:
+        await _graph_post(client, f"{page_id}/subscribed_apps", {"subscribed_fields": _FULL_PAGE_FIELDS, "access_token": page_token})
+    except FacebookOAuthError as exc:
+        logger.warning("fb_oauth_full_subscription_refused_using_base_fields", page_id=page_id, error=str(exc)[:200])
+        await _graph_post(client, f"{page_id}/subscribed_apps", {"subscribed_fields": _BASE_PAGE_FIELDS, "access_token": page_token})
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -313,6 +321,10 @@ async def _save_page_connection(
             raise PageAlreadyConnectedError(
                 "هذه الصفحة أو حساب إنستجرام المرتبط بها مربوطة بالفعل بشركة أخرى."
             ) from exc
+    from src.shared.services import channel_health
+
+    for channel in ("facebook", "instagram"):          # a fresh token: forget any earlier "needs reconnect" alarm
+        await channel_health.clear(tenant_id, channel)
 
 
 # ══════════════════════════════════════════════════════════════════════════════

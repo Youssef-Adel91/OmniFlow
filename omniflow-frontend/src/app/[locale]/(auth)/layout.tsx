@@ -5,10 +5,12 @@
  * Strips out the main dashboard shell (sidebar, header) so auth pages
  * render clean and full-screen.
  */
+import { AppProviders } from "@/components/auth/AppProviders";
+
 export default function AuthLayout({
   children,
 }: {
   children: React.ReactNode;
 }) {
-  return <>{children}</>;
+  return <AppProviders>{children}</AppProviders>;
 }

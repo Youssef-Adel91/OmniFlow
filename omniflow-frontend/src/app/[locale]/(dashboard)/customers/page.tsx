@@ -17,9 +17,10 @@ import {
   AlertTriangle, Calendar, Contact, Download, Flame, Loader2, MailCheck, Phone, Plus, RefreshCw, Search, ShieldCheck,
   ShieldOff, Snowflake, Star, Sun, Upload, Users,
 } from "lucide-react";
-import ImportWizard from "@/components/properties/ImportWizard";
-import CustomerFormDialog from "@/components/customers/CustomerFormDialog";
-import CustomerDetailDrawer from "@/components/customers/CustomerDetailDrawer";
+import dynamic from "next/dynamic";
+const ImportWizard = dynamic(() => import("@/components/properties/ImportWizard"), { ssr: false });
+const CustomerFormDialog = dynamic(() => import("@/components/customers/CustomerFormDialog"), { ssr: false });
+const CustomerDetailDrawer = dynamic(() => import("@/components/customers/CustomerDetailDrawer"), { ssr: false });
 import { Select } from "@/components/ui/Select";
 import { saveBlob } from "@/lib/api/propertyImport";
 import {

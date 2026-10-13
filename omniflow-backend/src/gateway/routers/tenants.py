@@ -133,6 +133,9 @@ async def update_tenant_onboarding(
 
             if payload.meta_access_token:
                 tenant.meta_access_token = payload.meta_access_token
+                from src.shared.services import channel_health
+
+                await channel_health.clear(tenant_uuid, "whatsapp")
             if payload.whatsapp_phone_number_id:
                 if not tenant.whatsapp_phone_number_id:
                     await quotas.guard_channel(session, tenant_uuid, "whatsapp")

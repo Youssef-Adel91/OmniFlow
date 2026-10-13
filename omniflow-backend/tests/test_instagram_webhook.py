@@ -14,7 +14,7 @@ from sqlalchemy.dialects import postgresql
 
 from src.ai_workers.outbound_dispatcher import worker as dispatcher
 from src.channel_adapters.instagram import client as ig_client
-from src.channel_adapters.instagram import comment_policy
+from src.channel_adapters.instagram import comment_actions, comment_policy
 from src.channel_adapters.instagram import router as meta
 from src.shared.core.config import get_settings
 from src.shared.events.outbound import OutboundMessage
@@ -66,7 +66,7 @@ def feed_comment_payload(page_id=PAGE_ID, comment_id="123_456", sender=CUSTOMER_
     }]}]}
 
 
-def comment_patches(mode="public_reply", enabled=True, flag=True, counters=None):
+def comment_patches(mode="public_reply", enabled=True, flag=True, counters=None, extra=None, hours=None):
     """Turn comment replies ON (platform flag + tenant switch) with in-memory dedupe/rate counters. Returns started-by-caller patchers."""
     counters = {} if counters is None else counters
 
@@ -75,12 +75,16 @@ def comment_patches(mode="public_reply", enabled=True, flag=True, counters=None)
         return counters[key]
 
     async def prefs(_tenant):
-        return {"social_comments": {"enabled": enabled, "mode": mode}}
+        out = {"social_comments": {"enabled": enabled, "mode": mode, **(extra or {})}}
+        if hours is not None:
+            out["business_hours"] = hours
+        return out
 
     return [
         patch.object(get_settings(), "feature_social_comment_replies", flag),
         patch.object(comment_policy.redis_mgr, "incr_counter", incr),
         patch.object(comment_policy.tenant_prefs, "get_prefs", prefs),
+        patch.object(comment_actions, "record", AsyncMock()),           # the recent-activity list lives in Redis: not touched by these tests
         patch.object(meta, "_own_account_ids", AsyncMock(return_value={PAGE_ID, IG_ACCOUNT_ID})),
     ]
 

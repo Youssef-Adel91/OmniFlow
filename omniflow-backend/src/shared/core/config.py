@@ -453,6 +453,7 @@ class Settings(BaseSettings):
     feature_human_takeover: bool = True
     feature_social_comment_replies: bool = False   # OFF: Facebook/Instagram post comments are ignored until this is on AND the tenant enables it
     social_comment_rate_per_minute: int = 30       # max comment replies per tenant per minute (public or private)
+    feature_sales_closing: bool = False            # OFF: qualification questions, viewing booking, hand-off rules and follow-ups run only when this is on AND the tenant enables Settings → Sales
 
     # ── Data retention (night 2 #7). OFF and DRY-RUN by default; the numbers are conservative placeholders pending legal review ──
     retention_enabled: bool = False                # master switch for the scheduled job (it does nothing while False)

@@ -50,6 +50,11 @@ class OutboundMessage(BaseModel):
     text: str
     message_type: str = "text"           # "text" | "audio"
     media_url: str | None = None         # Sprint 14: populated for voice notes
+    # WhatsApp pre-approved template (used OUTSIDE the 24-hour window by automatic follow-ups / viewing reminders). When set, the dispatcher sends the
+    # template instead of `text` (which is still stored for the inbox). Body parameters are positional ({{1}}, {{2}} ...).
+    template_name: str | None = None
+    template_language: str = "ar"
+    template_params: list[str] = Field(default_factory=list)
 
     # Metadata
     source_event_id: uuid.UUID     # The CanonicalInboundEvent that triggered this

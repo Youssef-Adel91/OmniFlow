@@ -35,6 +35,7 @@ from sqlalchemy import (
     Index,
     Integer,
     Numeric,
+    SmallInteger,
     String,
     Text,
     UniqueConstraint,
@@ -403,6 +404,9 @@ class Customer(Base, TimestampMixin, TenantScopedMixin):
         nullable=True,
         comment="When extracted_profile was last (re)computed",
     )
+
+    # Sales closing (migration 0036): what the customer SAID, extracted by rules -- see src/sales/qualification.py
+    qualification: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict, server_default="{}")
 
     # AI Lead Scoring
     engagement_score: Mapped[Optional[int]] = mapped_column(
@@ -1446,6 +1450,10 @@ class Appointment(Base, TimestampMixin, TenantScopedMixin):
     status: Mapped[AppointmentStatus] = mapped_column(
         String(20), nullable=False, default=AppointmentStatus.SCHEDULED,
     )
+    listing_id: Mapped[Optional[uuid.UUID]] = mapped_column(UUID(as_uuid=True), ForeignKey("property_listings.listing_id", ondelete="SET NULL"), nullable=True)
+    staff_user_id: Mapped[Optional[uuid.UUID]] = mapped_column(UUID(as_uuid=True), ForeignKey("tenant_users.user_id", ondelete="SET NULL"), nullable=True)
+    reminder_sent_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    source: Mapped[str] = mapped_column(String(10), nullable=False, default="staff", server_default="staff", comment="staff | bot")
 
     def __repr__(self) -> str:
         return f"<Appointment id={self.appointment_id} status={self.status} at={self.scheduled_at}>"
@@ -1516,6 +1524,7 @@ class TenantPreferences(Base):
     ai_behavior: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict, server_default="{}")
     identity: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict, server_default="{}")
     social_comments: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict, server_default="{}")
+    sales: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict, server_default="{}")
     updated_by: Mapped[Optional[uuid.UUID]] = mapped_column(UUID(as_uuid=True), nullable=True)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
 
@@ -2023,3 +2032,53 @@ class WebhookDelivery(Base, TenantScopedMixin):
     last_error: Mapped[Optional[str]] = mapped_column(String(300))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     delivered_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
+
+
+# ════════════════════════════════════════════════════════
+# Sales closing (migration 0036): deals pipeline + follow-up tasks
+# ════════════════════════════════════════════════════════
+DEAL_STAGES = ("new", "qualified", "viewing", "negotiation", "won", "lost")
+OPEN_STAGES = ("new", "qualified", "viewing", "negotiation")
+LOST_REASONS = ("price", "no_response", "competitor", "financing", "not_interested", "other")
+
+
+class Deal(Base, TenantScopedMixin):
+    """One sales opportunity for one customer. At most ONE open deal per customer (partial unique index). Tenant RLS."""
+    __tablename__ = "deals"
+
+    deal_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    tenant_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("tenants.tenant_id", ondelete="CASCADE"), nullable=False, index=True)
+    customer_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("customers.customer_id", ondelete="CASCADE"), nullable=False)
+    conversation_id: Mapped[Optional[uuid.UUID]] = mapped_column(UUID(as_uuid=True), ForeignKey("conversations.conversation_id", ondelete="SET NULL"), nullable=True)
+    listing_id: Mapped[Optional[uuid.UUID]] = mapped_column(UUID(as_uuid=True), ForeignKey("property_listings.listing_id", ondelete="SET NULL"), nullable=True)
+    stage: Mapped[str] = mapped_column(String(12), nullable=False, default="new", server_default="new")
+    reached_stage: Mapped[str] = mapped_column(String(12), nullable=False, default="new", server_default="new")
+    lead_label: Mapped[Optional[str]] = mapped_column(String(5), nullable=True)
+    score: Mapped[int] = mapped_column(nullable=False, default=0, server_default="0")
+    assigned_user_id: Mapped[Optional[uuid.UUID]] = mapped_column(UUID(as_uuid=True), ForeignKey("tenant_users.user_id", ondelete="SET NULL"), nullable=True)
+    value_sar: Mapped[Optional[float]] = mapped_column(Numeric(14, 2), nullable=True)
+    offer_sar: Mapped[Optional[float]] = mapped_column(Numeric(14, 2), nullable=True)
+    lost_reason: Mapped[Optional[str]] = mapped_column(String(20), nullable=True)
+    lost_note: Mapped[Optional[str]] = mapped_column(String(300), nullable=True)
+    source_channel: Mapped[Optional[str]] = mapped_column(String(20), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    stage_changed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    closed_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
+class FollowupTask(Base, TenantScopedMixin):
+    """A scheduled automatic follow-up message (step 1/2/3) for a conversation that went quiet. Cancelled the moment the customer writes, opts out, a human takes over or the deal closes."""
+    __tablename__ = "followup_tasks"
+
+    task_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    tenant_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("tenants.tenant_id", ondelete="CASCADE"), nullable=False, index=True)
+    customer_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("customers.customer_id", ondelete="CASCADE"), nullable=False)
+    conversation_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("conversations.conversation_id", ondelete="CASCADE"), nullable=False)
+    channel: Mapped[str] = mapped_column(String(20), nullable=False)
+    step: Mapped[int] = mapped_column(SmallInteger, nullable=False)
+    due_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    status: Mapped[str] = mapped_column(String(10), nullable=False, default="pending", server_default="pending")
+    reason: Mapped[Optional[str]] = mapped_column(String(60), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    sent_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)

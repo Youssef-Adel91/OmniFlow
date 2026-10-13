@@ -514,6 +514,20 @@ class OutboundDispatcherWorker(BaseKafkaConsumer):
                     caption=msg.text or None,
                 )
                 log.info("outbound_vcard_dispatched", wamid=result.wamid, media_id=media_id)
+            elif msg.template_name:
+                # Pre-approved template: the only kind of business-initiated message WhatsApp allows outside the 24-hour window
+                # (automatic follow-ups, viewing reminders). `msg.text` is kept for the inbox transcript only.
+                components = ([{"type": "body", "parameters": [{"type": "text", "text": str(p)[:1024]} for p in msg.template_params]}]
+                              if msg.template_params else None)
+                result = await whatsapp_client.send_template_message(
+                    phone_number_id=creds.phone_number_id,
+                    to=msg.customer_phone,
+                    template_name=msg.template_name,
+                    language_code=msg.template_language,
+                    components=components,
+                    access_token=creds.access_token,
+                )
+                log.info("outbound_template_dispatched", template=msg.template_name, wamid=result.wamid)
             elif msg.message_type == "audio" and msg.media_url:
                 # Sprint 14: Dispatch as WhatsApp Voice Note ──────────────────
                 # Send the synthesised audio URL as a WhatsApp audio message.

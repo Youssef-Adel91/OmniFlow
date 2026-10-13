@@ -145,6 +145,12 @@ app.conf.beat_schedule = {
         "schedule": 3600.0,
         "options": {"expires": 3500},
     },
+    # Sales closing: due follow-ups + viewing reminders (does nothing unless FEATURE_SALES_CLOSING).
+    "sales-followups": {
+        "task": "omniflow.sales_followups",
+        "schedule": 300.0,
+        "options": {"expires": 280},
+    },
     # VIP re-engagement sweep — 03:00 Riyadh, outside business hours.
     "vip-followup-check": {
         "task": "omniflow.vip_followup_check",

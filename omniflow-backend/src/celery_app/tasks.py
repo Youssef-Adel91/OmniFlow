@@ -825,3 +825,33 @@ async def _billing_usage_flush_async() -> dict[str, Any]:
         return {"alerts": len(alerts)}
     finally:
         await redis_mgr.stop()
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# Sales closing — automatic follow-ups and viewing reminders (both no-ops unless FEATURE_SALES_CLOSING)
+# ══════════════════════════════════════════════════════════════════════════════
+
+@app.task(name="omniflow.sales_followups", bind=True, max_retries=0)
+def sales_followups(self) -> dict[str, Any]:  # noqa: ANN001
+    return _run(_sales_followups_async)
+
+
+async def _sales_followups_async() -> dict[str, Any]:
+    if not settings.feature_sales_closing:
+        return {"skipped": True, "reason": "FEATURE_SALES_CLOSING is off"}
+    from src.sales import followup
+    from src.shared.kafka.producer import KafkaProducerManager
+    from src.shared.redis_client import redis_mgr
+
+    await redis_mgr.start()
+    producer = KafkaProducerManager()
+    await producer.start()
+    try:
+        async with get_system_session() as session:
+            res = await followup.process_due(session, producer)
+            reminders = await followup.remind_viewings(session, producer)
+        logger.info("sales_followups_done", sent=res.sent, skipped=res.skipped, failed=res.failed, reminders=reminders)
+        return {"sent": res.sent, "skipped": res.skipped, "failed": res.failed, "reminders": reminders}
+    finally:
+        await producer.stop()
+        await redis_mgr.stop()

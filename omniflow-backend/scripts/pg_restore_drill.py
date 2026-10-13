@@ -1,6 +1,6 @@
 """PostgreSQL backup → restore drill (no Docker needed; uses the pg_dump / pg_restore / createdb / dropdb binaries on PATH).
 
-    python -m scripts.pg_restore_drill --source postgresql://user:pass@host:5432/dbname [--keep]
+    python -m scripts.pg_restore_drill --source <postgres-connection-url> [--keep]
 
 What it proves: that a dump of SOURCE can be restored into a brand-new database and that the restored copy matches the source —
 same tables, same exact row counts, same Alembic revision, same number of RLS policies (so tenant isolation survives a restore).
@@ -31,7 +31,7 @@ MARKER = "_restore_drill_"
 def parse_url(url: str) -> dict[str, str]:
     u = urlsplit(url.replace("postgresql+asyncpg://", "postgresql://", 1))
     if u.scheme not in ("postgresql", "postgres") or not u.hostname or not u.path.strip("/"):
-        raise ValueError("expected postgresql://user:pass@host:port/dbname")
+        raise ValueError("expected a postgresql URL: scheme://credentials@host:port/dbname")
     return {"host": u.hostname, "port": str(u.port or 5432), "user": unquote(u.username or ""), "password": unquote(u.password or ""), "db": u.path.strip("/")}
 
 
@@ -89,7 +89,7 @@ def compare(src: dict, dst: dict) -> list[str]:
 
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("--source", default=os.environ.get("DRILL_SOURCE_URL"), help="postgresql://user:pass@host:port/db (or env DRILL_SOURCE_URL)")
+    ap.add_argument("--source", default=os.environ.get("DRILL_SOURCE_URL"), help="postgresql connection URL (or env DRILL_SOURCE_URL)")
     ap.add_argument("--keep", action="store_true", help="do not drop the restored scratch database afterwards")
     args = ap.parse_args(argv)
     if not args.source:

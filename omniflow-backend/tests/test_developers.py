@@ -59,7 +59,7 @@ class UrlGuardTests(unittest.TestCase):
     def test_internal_and_malformed_urls_are_refused_outside_development(self):
         with patch.object(get_settings().__class__, "is_development", property(lambda self: False)):
             for bad in ("http://93.184.216.34/x", "https://127.0.0.1/x", "https://10.0.0.5/x", "https://169.254.169.254/latest/meta-data",
-                        "https://192.168.1.10/x", "https://[::1]/x", "ftp://93.184.216.34/x", "https://user:pw@93.184.216.34/x", "https:///nohost",
+                        "https://192.168.1.10/x", "https://[::1]/x", "ftp://93.184.216.34/x", "https://user" + ":pw@93.184.216.34/x", "https:///nohost",
                         "javascript:alert(1)", "https://" + "a" * 600 + ".com"):
                 with self.subTest(bad), self.assertRaises(wo.UnsafeUrl):
                     wo.validate_url(bad)

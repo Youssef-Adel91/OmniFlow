@@ -118,3 +118,53 @@ async def workers_status(response: Response):
         out[name] = "ok" if raw else "missing"
     response.headers["Cache-Control"] = "no-store"
     return {"all_ok": all(v == "ok" for v in out.values()), "workers": out}
+
+
+OUTBOUND_STUCK_MINUTES = 5
+
+
+async def _outbound_backlog() -> dict:
+    """Messages we promised to send (PENDING) that are still waiting after a few minutes — the symptom customers notice first."""
+    from datetime import datetime, timedelta, timezone
+
+    from sqlalchemy import func, select
+
+    from src.shared.db.models import Message
+    from src.shared.db.session import get_system_session
+
+    cutoff = datetime.now(timezone.utc) - timedelta(minutes=OUTBOUND_STUCK_MINUTES)
+    async with get_system_session() as s:
+        n, oldest = (await s.execute(select(func.count(), func.min(Message.created_at)).where(Message.delivery_status == "PENDING", Message.created_at < cutoff))).one()
+    age = int((datetime.now(timezone.utc) - oldest).total_seconds()) if oldest else 0
+    level = "critical" if n >= 50 else "warn" if n else "ok"
+    return {"stuck_pending": int(n), "oldest_age_seconds": age, "level": level, "threshold_minutes": OUTBOUND_STUCK_MINUTES}
+
+
+@router.get("/health/lag", summary="Backlog warnings: Kafka consumer lag, dead letters, stuck outbound messages (informational)")
+async def lag_status(response: Response):
+    """Aggregate counts only (no tenant data). `status` is the worst level; a source we cannot read is reported "unavailable", never guessed.
+
+    Deliberately NOT part of /health/ready: a backlog must page a human, not remove the API from the load balancer.
+    """
+    from src.shared.kafka import lag as kafka_lag
+
+    levels: list[str] = []
+    result: dict = {}
+    try:
+        result["outbound"] = await asyncio.wait_for(_outbound_backlog(), timeout=3.0)
+        levels.append(result["outbound"]["level"])
+    except Exception:
+        result["outbound"] = {"level": "unavailable"}
+    try:
+        broker = await kafka_lag.collect(settings.kafka_bootstrap_servers, kafka_lag.watched(settings))
+        result["kafka"] = broker
+        levels += [t["level"] for g in broker["groups"].values() for t in g.values()]
+        if any(broker["dead_letters"].values()):
+            levels.append("warn")
+    except Exception:
+        result["kafka"] = {"level": "unavailable"}
+    result["status"] = kafka_lag.worst(levels) if levels else "unavailable"
+    if "unavailable" in (result["outbound"].get("level"), result["kafka"].get("level")) and result["status"] == "ok":
+        result["status"] = "degraded"
+    response.headers["Cache-Control"] = "no-store"
+    return result

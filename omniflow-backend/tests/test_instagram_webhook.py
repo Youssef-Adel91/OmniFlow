@@ -132,7 +132,7 @@ class WebhookIngestionTests(unittest.IsolatedAsyncioTestCase):
         (event,) = self.published()
         self.resolve.assert_awaited_once_with(PAGE_ID)
         self.assertEqual(event.tenant_id, self.tenant_id)
-        self.assertEqual(str(event.channel), "instagram")
+        self.assertEqual(str(event.channel), "messenger")                    # object="page" is Messenger, not Instagram
         self.assertEqual(event.platform_user_id, CUSTOMER_IGSID)
         self.assertEqual(event.reply_target_type, "dm")
 
@@ -141,6 +141,7 @@ class WebhookIngestionTests(unittest.IsolatedAsyncioTestCase):
         (event,) = self.published()
         self.resolve.assert_awaited_once_with(IG_ACCOUNT_ID)
         self.assertEqual(event.tenant_id, self.tenant_id)
+        self.assertEqual(str(event.channel), "instagram")
         self.assertEqual(event.platform_conversation_id, CUSTOMER_IGSID)
         self.assertEqual(event.text_content, "hello")
         self.assertEqual(self.publish.await_args.kwargs["headers"]["tenant_id"], str(self.tenant_id))
@@ -169,6 +170,7 @@ class WebhookIngestionTests(unittest.IsolatedAsyncioTestCase):
         (event,) = self.published()
         self.resolve.assert_awaited_once_with(IG_ACCOUNT_ID)
         self.assertEqual(event.reply_target_type, "instagram_comment")
+        self.assertEqual(str(event.channel), "instagram")
         self.assertEqual(event.platform_conversation_id, "17858893269000001")
         self.assertEqual(event.platform_message_id, "17858893269000001")
         self.assertEqual(event.platform_user_id, CUSTOMER_IGSID)
@@ -197,6 +199,7 @@ class WebhookIngestionTests(unittest.IsolatedAsyncioTestCase):
         (event,) = self.published()
         self.resolve.assert_awaited_once_with(PAGE_ID)
         self.assertEqual(event.reply_target_type, "comment")
+        self.assertEqual(str(event.channel), "messenger")                    # Facebook Page comments belong to the Facebook (Messenger) channel
         self.assertEqual(event.platform_conversation_id, "123_456")
         self.assertEqual(event.customer_display_name, "John")
 

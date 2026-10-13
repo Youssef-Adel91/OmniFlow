@@ -68,3 +68,26 @@ test("error messages come from structured, string and validation shapes", () => 
   assert.equal(m.settingsErrorMessage(e([{ msg: "حقل" }])), "حقل");
   assert.equal(m.settingsErrorMessage(new Error("net")), "net");
 });
+
+test("comment activity: every decision has an honest Arabic label and a tone", () => {
+  const m = load(recorder().api);
+  assert.deepEqual(plain(m.commentActionLabel("hidden", "abusive")), { text: "أُخفي (إساءة)", tone: "warn" });
+  assert.deepEqual(plain(m.commentActionLabel("hidden", "spam")), { text: "أُخفي (سبام/رابط)", tone: "warn" });
+  assert.equal(m.commentActionLabel("hide_failed", "abusive").tone, "warn");           // a failed hide must not look like a success
+  assert.deepEqual(plain(m.commentActionLabel("public_and_private", "ok")), { text: "رد علني + رد خاص", tone: "ok" });
+  assert.equal(m.commentActionLabel("ignored", "hourly_cap").text, "تجاهل — تجاوز حد الساعة");
+  assert.equal(m.commentActionLabel("ignored", "something_new").text, "تجاهل — something_new");   // unknown reasons are shown, not hidden
+});
+
+test("comment prefs: defaults are conservative and reconnect/diagnostics/test-message use the right endpoints", async () => {
+  const r = recorder({ ok: true, detail: "x", items: [] });
+  const m = load(r.api);
+  assert.equal(m.DEFAULT_SOCIAL_COMMENTS.enabled, false);
+  assert.equal(m.DEFAULT_SOCIAL_COMMENTS.allow_price_in_private, false);
+  assert.equal(m.DEFAULT_SOCIAL_COMMENTS.auto_hide_abusive, true);
+  await m.fetchFacebookDiagnostics();
+  await m.fetchCommentActivity();
+  await m.sendWhatsappTestMessage("+966501234567");
+  assert.deepEqual(r.calls.map((c) => c.slice(0, 2)), [["get", "/settings/channels/facebook/diagnostics"], ["get", "/settings/comments/activity"], ["post", "/settings/channels/whatsapp/test-message"]]);
+  assert.deepEqual(plain(r.calls[2][2]), { to: "+966501234567" });
+});

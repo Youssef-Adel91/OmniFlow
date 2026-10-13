@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { useParams } from "next/navigation";
 import { cn, formatSAR } from "@/lib/utils";
+import { SalesSummary } from "@/components/features/inbox/SalesSummary";
 import { useActiveConversation } from "@/store/inboxStore";
 import {
   fetchRecommendations,
@@ -354,6 +355,8 @@ export function CustomerContext() {
             <InfoRow icon={Calendar} label="آخر تواصل"   value={new Date(conv.lastMessageAt).toLocaleDateString("ar-SA")} />
           </div>
         </section>
+
+        <SalesSummary conversationId={conv.id} />
 
         {/* ── AI Extracted Intent ─────────────────────────────────────── */}
         <section>

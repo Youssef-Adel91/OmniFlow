@@ -155,6 +155,20 @@ async def _resolve_instagram_page_id(tenant_id: uuid.UUID) -> str | None:
         return await session.scalar(select(Tenant.instagram_page_id).where(Tenant.tenant_id == tenant_id))
 
 
+async def _public_safe_text(msg: OutboundMessage) -> tuple[str, str | None]:
+    """(text to post publicly, text to send as a private follow-up or None). Pure policy lives in comment_moderation."""
+    from src.channel_adapters.instagram import comment_moderation
+    from src.shared.services import tenant_prefs
+
+    violation = comment_moderation.violates_public_policy(msg.text)
+    if violation is None:
+        return msg.text, None
+    pref = tenant_prefs.with_defaults("social_comments", (await tenant_prefs.get_prefs(msg.tenant_id)).get("social_comments"))
+    if pref["allow_price_in_private"]:
+        return comment_moderation.render_public_template(pref["public_template"], name=None), msg.text
+    return comment_moderation.PUBLIC_FALLBACK_NO_DM, None
+
+
 async def _resolve_instagram_credentials(tenant_id: uuid.UUID) -> str | None:
     """
     Resolve the tenant's own Instagram/Messenger Page access token.
@@ -399,6 +413,25 @@ class OutboundDispatcherWorker(BaseKafkaConsumer):
                     )
                 return
 
+        # ── 5c. WhatsApp 24-hour customer-service window ──────────────────────
+        # Free-form messages are rejected by Meta (131047) once the customer's last message is older than 24 h; fail fast with a readable
+        # reason instead of a mystery delivery failure. Template sends (approved templates) are exempt. Retrying cannot help -> acknowledge.
+        if msg.channel == Channel.WHATSAPP and msg.conversation_id and not getattr(msg, "template_name", None):
+            from src.channel_adapters.whatsapp import service_window
+
+            async with get_tenant_session(msg.tenant_id) as window_session:
+                last_inbound = await service_window.last_inbound_at(window_session, msg.conversation_id)
+            if not service_window.is_open(last_inbound):
+                if persisted_msg_id:
+                    await update_message_delivery_status(
+                        tenant_id=msg.tenant_id,
+                        message_id=persisted_msg_id,
+                        delivery_status="FAILED",
+                        failure_reason=service_window.FAILURE_REASON,
+                    )
+                log.warning("outbound_whatsapp_window_closed", last_inbound=last_inbound.isoformat() if last_inbound else None)
+                return
+
         # ── 6. Dispatch (── route by channel, then by message_type) ─────────────
         try:
             if msg.channel == Channel.INSTAGRAM:
@@ -432,11 +465,24 @@ class OutboundDispatcherWorker(BaseKafkaConsumer):
                         if msg.reply_target_type == "instagram_comment"
                         else send_comment_reply
                     )
+                    # Public-safety filter: an answer under a post is visible to everyone, so one that quotes a price or promises a
+                    # return is never posted. It is replaced by the tenant's short template; the full answer goes privately only if
+                    # the tenant allowed it (`allow_price_in_private`).
+                    public_text, private_text = await _public_safe_text(msg)
                     comment_result = await reply_fn(
                         comment_id=msg.platform_conversation_id,
-                        text=msg.text,
+                        text=public_text,
                         access_token=instagram_access_token,
                     )
+                    if private_text:
+                        from src.channel_adapters.instagram.client import send_private_reply
+
+                        _page = await _resolve_instagram_page_id(msg.tenant_id)
+                        if _page:
+                            try:
+                                await send_private_reply(_page, msg.platform_conversation_id, private_text, access_token=instagram_access_token)
+                            except Exception as exc:  # noqa: BLE001 -- the public reply already went out; do not retry it
+                                log.warning("outbound_comment_private_followup_failed", error=type(exc).__name__)
                     result = SimpleNamespace(wamid=str(comment_result.get("id", "")))
                     log.info(
                         "outbound_instagram_comment_dispatched",
@@ -514,6 +560,20 @@ class OutboundDispatcherWorker(BaseKafkaConsumer):
                     caption=msg.text or None,
                 )
                 log.info("outbound_vcard_dispatched", wamid=result.wamid, media_id=media_id)
+            elif msg.template_name:
+                # Pre-approved template: the only kind of business-initiated message WhatsApp allows outside the 24-hour window
+                # (automatic follow-ups, viewing reminders). `msg.text` is kept for the inbox transcript only.
+                components = ([{"type": "body", "parameters": [{"type": "text", "text": str(p)[:1024]} for p in msg.template_params]}]
+                              if msg.template_params else None)
+                result = await whatsapp_client.send_template_message(
+                    phone_number_id=creds.phone_number_id,
+                    to=msg.customer_phone,
+                    template_name=msg.template_name,
+                    language_code=msg.template_language,
+                    components=components,
+                    access_token=creds.access_token,
+                )
+                log.info("outbound_template_dispatched", template=msg.template_name, wamid=result.wamid)
             elif msg.message_type == "audio" and msg.media_url:
                 # Sprint 14: Dispatch as WhatsApp Voice Note ──────────────────
                 # Send the synthesised audio URL as a WhatsApp audio message.
@@ -551,6 +611,11 @@ class OutboundDispatcherWorker(BaseKafkaConsumer):
                     delivery_status="FAILED",
                     failure_reason=str(exc)[:500],
                 )
+            # Tell the tenant (once a day) instead of failing silently: the channel needs to be reconnected from Settings.
+            from src.shared.services import channel_health
+
+            await channel_health.mark_auth_failed(
+                msg.tenant_id, "whatsapp" if msg.channel == Channel.WHATSAPP else "facebook", str(exc))
             log.error(
                 "outbound_auth_failure_no_retry",
                 error=str(exc),

@@ -134,6 +134,7 @@ export const TIER_LABELS: Record<string, string> = {
 //   GET /settings/preferences            PUT /settings/preferences/{section}   (admin)
 // Channels
 //   GET /settings/channels   POST /settings/channels/{whatsapp|facebook}/check   POST /settings/channels/facebook/disconnect
+//   GET /settings/channels/facebook/diagnostics   POST /settings/channels/whatsapp/test-message   GET /settings/comments/activity
 // Bot test
 //   POST /settings/ai/test
 // ══════════════════════════════════════════════════════════════════════════════
@@ -167,11 +168,32 @@ export interface AiBehavior {
 }
 export interface IdentityPrefs { language: "ar" | "en"; timezone: string; currency: string }
 
-export interface SocialCommentsPrefs { enabled: boolean; mode: "public_reply" | "private_dm" }
-export type PrefSection = "business_hours" | "handoff" | "ai_behavior" | "identity" | "social_comments";
+export type CommentMode = "public_reply" | "private_dm" | "public_and_private";
+export interface SocialCommentsPrefs {
+  enabled: boolean;
+  mode: CommentMode;
+  only_business_hours: boolean;
+  max_per_hour: number;
+  ignore_keywords: string[];
+  auto_hide_abusive: boolean;
+  hide_keywords: string[];
+  public_template: string;
+  allow_price_in_private: boolean;
+}
+export const DEFAULT_PUBLIC_TEMPLATE = "أهلاً {name} 🌟 شكراً لتعليقك! أرسلنا لك التفاصيل على الخاص.";
+export const DEFAULT_SOCIAL_COMMENTS: SocialCommentsPrefs = {
+  enabled: false, mode: "public_reply", only_business_hours: false, max_per_hour: 60, ignore_keywords: [], auto_hide_abusive: true,
+  hide_keywords: [], public_template: DEFAULT_PUBLIC_TEMPLATE, allow_price_in_private: false,
+};
+export interface SalesPrefs {
+  enabled: boolean; ask_questions: boolean; max_questions: number; booking_enabled: boolean; slot_minutes: number; days_ahead: number; min_notice_hours: number;
+  max_parallel_viewings: number; viewing_hours: { timezone: string; days: Record<string, string[][]> }; viewing_location_note: string; reminder_hours_before: number;
+  followup_enabled: boolean; followup_delays_hours: number[]; followup_messages: string[]; whatsapp_followup_template: string; whatsapp_followup_template_lang: string;
+}
+export type PrefSection = "business_hours" | "handoff" | "ai_behavior" | "identity" | "social_comments" | "sales";
 export interface PreferencesResponse {
-  preferences: { business_hours: BusinessHours; handoff: HandoffPrefs; ai_behavior: AiBehavior; identity: IdentityPrefs; social_comments: SocialCommentsPrefs };
-  features?: { social_comment_replies?: boolean };
+  preferences: { business_hours: BusinessHours; handoff: HandoffPrefs; ai_behavior: AiBehavior; identity: IdentityPrefs; social_comments: SocialCommentsPrefs; sales?: SalesPrefs };
+  features?: { social_comment_replies?: boolean; sales_closing?: boolean };
   configured: Record<PrefSection, boolean>;
   currencies: string[];
   updated_at: string | null;
@@ -208,10 +230,12 @@ export async function savePreferences<S extends PrefSection>(section: S, value: 
 }
 
 export interface WhatsappChannel {
+  reconnect_needed?: boolean; auth_failed_at?: string | null;
   connected: boolean; phone_number_id: string | null; waba_id: string | null; display_phone_number: string | null; token: string | null;
   templates_ready: boolean; last_inbound_at: string | null; issues: string[];
 }
 export interface FacebookChannel {
+  reconnect_needed?: boolean; auth_failed_at?: string | null;
   connected: boolean; page_id: string | null; instagram_account_id: string | null; messenger: boolean; instagram: boolean;
   last_inbound_at: string | null; issues: string[];
 }
@@ -226,6 +250,46 @@ export async function checkChannel(channel: "whatsapp" | "facebook"): Promise<Ch
   const { data } = await apiClient.post<ChannelCheck>(`/settings/channels/${channel}/check`, undefined, { timeout: 20_000 });
   return data;
 }
+export interface PageDiagnostics {
+  connected: boolean; ok: boolean; reachable?: boolean; token_valid?: boolean | null; expires_at?: string | null;
+  scopes?: string[]; subscribed_fields?: string[]; missing_scopes?: string[]; missing_fields?: string[]; needs_reconnect?: boolean; issues: string[];
+}
+export async function fetchFacebookDiagnostics(): Promise<PageDiagnostics> {
+  const { data } = await apiClient.get<PageDiagnostics>("/settings/channels/facebook/diagnostics", { timeout: 25_000 });
+  return data;
+}
+export type CommentActivityAction = "hidden" | "hide_failed" | "ignored" | "public_reply" | "private_dm" | "public_and_private";
+export interface CommentActivityItem {
+  at: string; platform: "facebook" | "instagram"; comment_id: string; action: CommentActivityAction; reason: string;
+  preview: string; name: string | null; public_reply: string | null;
+}
+export async function fetchCommentActivity(): Promise<CommentActivityItem[]> {
+  const { data } = await apiClient.get<{ items: CommentActivityItem[] }>("/settings/comments/activity");
+  return data.items;
+}
+export interface WhatsappTestResult { ok: boolean; method?: "text" | "template"; message_id?: string; detail: string; needs_reconnect?: boolean }
+export async function sendWhatsappTestMessage(to: string): Promise<WhatsappTestResult> {
+  const { data } = await apiClient.post<WhatsappTestResult>("/settings/channels/whatsapp/test-message", { to }, { timeout: 30_000 });
+  return data;
+}
+
+/** Arabic label for one decision in the "recent comments" list (pure; unit-tested). */
+export function commentActionLabel(action: CommentActivityAction, reason: string): { text: string; tone: "ok" | "warn" | "muted" } {
+  switch (action) {
+    case "hidden": return { text: reason === "spam" ? "أُخفي (سبام/رابط)" : "أُخفي (إساءة)", tone: "warn" };
+    case "hide_failed": return { text: "تعذّر الإخفاء — أخفِه يدويًا", tone: "warn" };
+    case "public_reply": return { text: "رد علني", tone: "ok" };
+    case "private_dm": return { text: "رد خاص", tone: "ok" };
+    case "public_and_private": return { text: "رد علني + رد خاص", tone: "ok" };
+    default: {
+      const why: Record<string, string> = {
+        no_text: "إيموجي/بدون نص", ignore_keyword: "كلمة تجاهل", outside_business_hours: "خارج ساعات العمل", rate_limited: "تجاوز حد الدقيقة", hourly_cap: "تجاوز حد الساعة",
+      };
+      return { text: `تجاهل — ${why[reason] ?? reason}`, tone: "muted" };
+    }
+  }
+}
+
 export async function disconnectFacebook(): Promise<{ connected: boolean; note: string }> {
   const { data } = await apiClient.post<{ connected: boolean; note: string }>("/settings/channels/facebook/disconnect");
   return data;

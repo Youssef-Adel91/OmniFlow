@@ -26,7 +26,7 @@ from pydantic import BaseModel, Field, field_validator, model_validator
 
 from src.shared.services.bulk_import.text import norm_text
 
-SECTIONS = ("business_hours", "handoff", "ai_behavior", "identity", "social_comments")
+SECTIONS = ("business_hours", "handoff", "ai_behavior", "identity", "social_comments", "sales")
 DAYS = ("sun", "mon", "tue", "wed", "thu", "fri", "sat")
 DAY_LABELS_AR = {"sun": "الأحد", "mon": "الإثنين", "tue": "الثلاثاء", "wed": "الأربعاء", "thu": "الخميس", "fri": "الجمعة", "sat": "السبت"}
 CURRENCIES = ("SAR", "AED", "KWD", "QAR", "BHD", "OMR", "EGP", "USD", "EUR")
@@ -137,13 +137,119 @@ class Identity(BaseModel):
         return v
 
 
+DEFAULT_PUBLIC_TEMPLATE = "أهلاً {name} 🌟 شكراً لتعليقك! أرسلنا لك التفاصيل على الخاص."
+_TEMPLATE_FIELDS = {"{name}"}
+
+
 class SocialComments(BaseModel):
-    """What to do when someone comments on the Page / Instagram post. Takes effect only while the platform flag FEATURE_SOCIAL_COMMENT_REPLIES is on."""
+    """What to do when someone comments on the Page / Instagram post. Takes effect only while the platform flag FEATURE_SOCIAL_COMMENT_REPLIES is on.
+
+    mode:
+      public_reply       -> the assistant answers under the comment (the answer passes the public-safety filter: no prices / legal promises)
+      private_dm         -> a private message to the commenter (one per comment, within 7 days: Meta's rule)
+      public_and_private -> a short fixed public reply (`public_template`) AND the assistant's private message with the details
+    """
     enabled: bool = False
-    mode: Literal["public_reply", "private_dm"] = "public_reply"       # reply under the comment, or send the commenter a private message
+    mode: Literal["public_reply", "private_dm", "public_and_private"] = "public_reply"
+    only_business_hours: bool = False                                  # outside the tenant's business hours -> comments are left alone
+    max_per_hour: int = Field(default=60, ge=1, le=1000)               # answered comments per hour, per tenant
+    ignore_keywords: list[str] = Field(default_factory=list, max_length=50)    # comments containing any of these are ignored (competitors, spam words...)
+    auto_hide_abusive: bool = True                                     # hide insults / obvious spam (built-in word list + hide_keywords) instead of answering
+    hide_keywords: list[str] = Field(default_factory=list, max_length=50)
+    public_template: str = Field(default=DEFAULT_PUBLIC_TEMPLATE, max_length=300)
+    allow_price_in_private: bool = False                               # a public answer that quotes a price is replaced by the template; with this on, the full answer is sent privately
+
+    @field_validator("ignore_keywords", "hide_keywords")
+    @classmethod
+    def _kw(cls, v: list[str]) -> list[str]:
+        out = list(dict.fromkeys(k.strip() for k in v if k and k.strip()))
+        if any(len(k) > 40 for k in out):
+            raise ValueError("الكلمة أطول من 40 حرفًا")
+        return out
+
+    @field_validator("public_template")
+    @classmethod
+    def _tpl(cls, v: str) -> str:
+        v = v.strip()
+        if not v:
+            raise ValueError("قالب الرد العلني لا يمكن أن يكون فارغًا")
+        bad = set(re.findall(r"\{[^}]*\}", v)) - _TEMPLATE_FIELDS
+        if bad:
+            raise ValueError("المتغيرات المسموحة في القالب: {name} فقط")
+        return v
 
 
 MODELS: dict[str, type[BaseModel]] = {"business_hours": BusinessHours, "handoff": Handoff, "ai_behavior": AiBehavior, "identity": Identity, "social_comments": SocialComments}
+
+
+def _default_viewing_hours() -> dict[str, Any]:
+    return {"timezone": "Asia/Riyadh", "days": {d: [["10:00", "18:00"]] for d in ("sun", "mon", "tue", "wed", "thu")}}
+
+
+class Sales(BaseModel):
+    """Sales-closing assistant (qualification questions, viewing booking, follow-ups). Everything is OFF until the tenant enables it AND the platform flag FEATURE_SALES_CLOSING is on.
+
+    qualification  -> the assistant asks ONE missing question at a time (budget, district, type, purpose, financing, rooms), at most `max_questions` per conversation.
+    booking        -> offers viewing slots built from `viewing_hours` / `slot_minutes`, books on the customer's choice, reminds `reminder_hours_before` hours before.
+    follow-up      -> up to `max_followups` automatic nudges after `followup_delays_hours` of silence; never to opted-out customers; WhatsApp outside the 24-hour
+                      window needs the approved template named in `whatsapp_followup_template` (otherwise the nudge is skipped, not sent as plain text).
+    """
+    enabled: bool = False
+    ask_questions: bool = True
+    max_questions: int = Field(default=3, ge=0, le=8)
+    booking_enabled: bool = True
+    slot_minutes: int = Field(default=60, ge=15, le=240)
+    days_ahead: int = Field(default=5, ge=1, le=14)
+    min_notice_hours: int = Field(default=2, ge=0, le=72)
+    max_parallel_viewings: int = Field(default=1, ge=1, le=20)
+    viewing_hours: dict[str, Any] = Field(default_factory=_default_viewing_hours)
+    viewing_location_note: str = Field(default="", max_length=300)
+    reminder_hours_before: int = Field(default=2, ge=1, le=48)
+    followup_enabled: bool = False
+    followup_delays_hours: list[int] = Field(default_factory=lambda: [2, 20, 72])
+    followup_messages: list[str] = Field(default_factory=lambda: [
+        "أهلاً {name} 👋 حبيت أتأكد إذا عندك أي سؤال، وأقدر أرتب لك معاينة في الوقت اللي يناسبك.",
+        "مرحباً {name}، لسا مهتم؟ إذا تحب أرسل لك خيارات ثانية تناسب طلبك أو أحجز لك معاينة.",
+        "{name}، هذي آخر رسالة متابعة مني حتى لا أزعجك. إذا احتجت أي شيء راسلنا في أي وقت 🤝"])
+    whatsapp_followup_template: str = Field(default="", max_length=100)
+    whatsapp_followup_template_lang: str = Field(default="ar", max_length=10)
+
+    @field_validator("viewing_hours")
+    @classmethod
+    def _hours(cls, v: dict[str, Any]) -> dict[str, Any]:
+        bh = BusinessHours.model_validate({"enabled": False, "timezone": v.get("timezone", "Asia/Riyadh"), "days": v.get("days", {})})
+        return {"timezone": bh.timezone, "days": bh.days}
+
+    @field_validator("followup_delays_hours")
+    @classmethod
+    def _delays(cls, v: list[int]) -> list[int]:
+        if not 0 <= len(v) <= 3:
+            raise ValueError("حتى 3 رسائل متابعة")
+        if any(not 1 <= h <= 720 for h in v):
+            raise ValueError("المهلة بين 1 و720 ساعة")
+        if sorted(v) != v or len(set(v)) != len(v):
+            raise ValueError("يجب أن تتزايد المهل (مثلًا 24 ثم 72 ثم 168)")
+        return v
+
+    @field_validator("followup_messages")
+    @classmethod
+    def _msgs(cls, v: list[str]) -> list[str]:
+        out = [m.strip() for m in v]
+        if any(not m for m in out) or any(len(m) > 600 for m in out):
+            raise ValueError("نص المتابعة فارغ أو أطول من 600 حرف")
+        bad = {f for m in out for f in re.findall(r"\{[^}]*\}", m)} - {"{name}"}
+        if bad:
+            raise ValueError("المتغير المسموح في رسائل المتابعة: {name} فقط")
+        return out
+
+    @model_validator(mode="after")
+    def _enough_messages(self) -> "Sales":
+        if len(self.followup_messages) < len(self.followup_delays_hours):
+            raise ValueError("عدد رسائل المتابعة أقل من عدد المهل")
+        return self
+
+
+MODELS["sales"] = Sales
 
 
 def validate_section(section: str, payload: dict[str, Any]) -> dict[str, Any]:

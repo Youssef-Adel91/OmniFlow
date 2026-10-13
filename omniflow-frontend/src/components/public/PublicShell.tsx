@@ -10,7 +10,7 @@ export function PublicShell({ locale, children }: { locale: PublicLocale; childr
   const dir = locale === "ar" ? "rtl" : "ltr";
   const link = "text-sm text-white/70 hover:text-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-[#C9A84C] rounded";
   return (
-    <div dir={dir} lang={locale} className="min-h-screen bg-[#0a1128] text-white antialiased">
+    <div dir={dir} lang={locale} className="min-h-screen bg-[#0a1128] text-white antialiased [&_h1]:text-inherit [&_h2]:text-inherit [&_h3]:text-inherit">
       <a href="#main" className="sr-only focus:not-sr-only focus:fixed focus:top-2 focus:start-2 focus:z-[60] focus:bg-[#C9A84C] focus:text-[#0a1128] focus:px-4 focus:py-2 focus:rounded-lg">
         {locale === "ar" ? "تخطَّ إلى المحتوى" : "Skip to content"}
       </a>

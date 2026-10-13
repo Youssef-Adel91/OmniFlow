@@ -15,6 +15,7 @@ import {
 } from "@/lib/api/settings";
 import { Field, SaveBar, SectionHeader, SectionSkeleton, Toggle, cardClass, inputClass } from "./common";
 import { useSection } from "./useSection";
+import SalesCard from "./SalesCard";
 
 interface PersonaDraft { prompt: string; instructions: string }
 
@@ -118,6 +119,7 @@ export default function AiSection({ locale, settings, behavior, onSettings, onBe
           </div>
         )}
       </div>
+      <SalesCard />
     </div>
   );
 }

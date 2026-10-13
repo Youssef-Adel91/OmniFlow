@@ -168,9 +168,14 @@ export interface AiBehavior {
 export interface IdentityPrefs { language: "ar" | "en"; timezone: string; currency: string }
 
 export interface SocialCommentsPrefs { enabled: boolean; mode: "public_reply" | "private_dm" }
-export type PrefSection = "business_hours" | "handoff" | "ai_behavior" | "identity" | "social_comments";
+export interface SalesPrefs {
+  enabled: boolean; ask_questions: boolean; max_questions: number; booking_enabled: boolean; slot_minutes: number; days_ahead: number; min_notice_hours: number;
+  max_parallel_viewings: number; viewing_hours: { timezone: string; days: Record<string, string[][]> }; viewing_location_note: string; reminder_hours_before: number;
+  followup_enabled: boolean; followup_delays_hours: number[]; followup_messages: string[]; whatsapp_followup_template: string; whatsapp_followup_template_lang: string;
+}
+export type PrefSection = "business_hours" | "handoff" | "ai_behavior" | "identity" | "social_comments" | "sales";
 export interface PreferencesResponse {
-  preferences: { business_hours: BusinessHours; handoff: HandoffPrefs; ai_behavior: AiBehavior; identity: IdentityPrefs; social_comments: SocialCommentsPrefs };
+  preferences: { business_hours: BusinessHours; handoff: HandoffPrefs; ai_behavior: AiBehavior; identity: IdentityPrefs; social_comments: SocialCommentsPrefs; sales?: SalesPrefs };
   features?: { social_comment_replies?: boolean; sales_closing?: boolean };
   configured: Record<PrefSection, boolean>;
   currencies: string[];

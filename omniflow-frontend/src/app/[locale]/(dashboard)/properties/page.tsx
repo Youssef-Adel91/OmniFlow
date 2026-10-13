@@ -19,8 +19,10 @@
 
 import React, { useState, useEffect, useCallback } from "react";
 import { useParams } from "next/navigation";
-import { PropertyFormSheet } from "@/components/properties/PropertyFormSheet";
-import ImportWizard from "@/components/properties/ImportWizard";
+import dynamic from "next/dynamic";
+// Rarely-open panels are loaded on demand (the import wizard alone is ~140 KB of JS) instead of with the first paint.
+const PropertyFormSheet = dynamic(() => import("@/components/properties/PropertyFormSheet").then((m) => m.PropertyFormSheet), { ssr: false });
+const ImportWizard = dynamic(() => import("@/components/properties/ImportWizard"), { ssr: false });
 import { ACTIVE_STATUSES, fetchImport, importErrorMessage, saveBlob, type ImportJob } from "@/lib/api/propertyImport";
 import {
   listProperties,

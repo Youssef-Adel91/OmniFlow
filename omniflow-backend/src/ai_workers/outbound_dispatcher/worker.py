@@ -413,6 +413,25 @@ class OutboundDispatcherWorker(BaseKafkaConsumer):
                     )
                 return
 
+        # ── 5c. WhatsApp 24-hour customer-service window ──────────────────────
+        # Free-form messages are rejected by Meta (131047) once the customer's last message is older than 24 h; fail fast with a readable
+        # reason instead of a mystery delivery failure. Template sends (approved templates) are exempt. Retrying cannot help -> acknowledge.
+        if msg.channel == Channel.WHATSAPP and msg.conversation_id and not getattr(msg, "template_name", None):
+            from src.channel_adapters.whatsapp import service_window
+
+            async with get_tenant_session(msg.tenant_id) as window_session:
+                last_inbound = await service_window.last_inbound_at(window_session, msg.conversation_id)
+            if not service_window.is_open(last_inbound):
+                if persisted_msg_id:
+                    await update_message_delivery_status(
+                        tenant_id=msg.tenant_id,
+                        message_id=persisted_msg_id,
+                        delivery_status="FAILED",
+                        failure_reason=service_window.FAILURE_REASON,
+                    )
+                log.warning("outbound_whatsapp_window_closed", last_inbound=last_inbound.isoformat() if last_inbound else None)
+                return
+
         # ── 6. Dispatch (── route by channel, then by message_type) ─────────────
         try:
             if msg.channel == Channel.INSTAGRAM:

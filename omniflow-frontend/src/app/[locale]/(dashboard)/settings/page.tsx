@@ -20,17 +20,21 @@ import {
 import { useAuthReady } from "@/hooks/useAuthReady";
 import { useTenantStore } from "@/store/tenantStore";
 import { fetchPreferences, fetchSettings, settingsErrorMessage, type PreferencesResponse, type TenantSettings } from "@/lib/api/settings";
-import AiSection from "@/components/settings/AiSection";
-import BillingSection from "@/components/settings/BillingSection";
-import NotificationsSection from "@/components/settings/NotificationsSection";
-import PrivacySection from "@/components/settings/PrivacySection";
-import TeamSection from "@/components/settings/TeamSection";
 import ChannelsSection from "@/components/settings/ChannelsSection";
 import ComingSoonSection from "@/components/settings/ComingSoonSection";
-import HoursHandoffSection from "@/components/settings/HoursHandoffSection";
-import DevelopersSection from "@/components/settings/DevelopersSection";
-import IdentitySection from "@/components/settings/IdentitySection";
 import { LoadError } from "@/components/settings/common";
+import dynamic from "next/dynamic";
+
+// Sections other than the default tab are fetched when opened, not with the page.
+const SectionFallback = () => <div className="card h-48 animate-pulse" role="status" aria-busy="true" aria-label="جارٍ التحميل" />;
+const AiSection = dynamic(() => import("@/components/settings/AiSection"), { ssr: false, loading: SectionFallback });
+const BillingSection = dynamic(() => import("@/components/settings/BillingSection"), { ssr: false, loading: SectionFallback });
+const NotificationsSection = dynamic(() => import("@/components/settings/NotificationsSection"), { ssr: false, loading: SectionFallback });
+const PrivacySection = dynamic(() => import("@/components/settings/PrivacySection"), { ssr: false, loading: SectionFallback });
+const TeamSection = dynamic(() => import("@/components/settings/TeamSection"), { ssr: false, loading: SectionFallback });
+const HoursHandoffSection = dynamic(() => import("@/components/settings/HoursHandoffSection"), { ssr: false, loading: SectionFallback });
+const DevelopersSection = dynamic(() => import("@/components/settings/DevelopersSection"), { ssr: false, loading: SectionFallback });
+const IdentitySection = dynamic(() => import("@/components/settings/IdentitySection"), { ssr: false, loading: SectionFallback });
 
 type SectionKey = "channels" | "team" | "hours" | "ai" | "notifications" | "privacy" | "billing" | "developers" | "identity";
 

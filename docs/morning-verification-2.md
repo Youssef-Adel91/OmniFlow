@@ -2,19 +2,13 @@
 
 كل ما في الفروع الجديدة اختُبر بـ mocks وقاعدة Postgres محلية فقط. هذه قائمة ما يجب أن تفعله أنت أو آلة فيها الخدمات الحقيقية. لا تضع مفاتيح حقيقية في أي أمر؛ اقرأها من `.env`.
 
-## 0) ترتيب الدمج المقترح (لا شيء يُدمج إلا بقولك «ادمج»)
-| # | PR | ملاحظات |
-|---|---|---|
-| 1 | #35 docs: IMPLEMENTATION_STATUS | وثائق فقط |
-| 2 | #36 نافذة 24 ساعة على واتساب | بلا migration؛ يلمس `outbound_dispatcher/worker.py` |
-| 3 | #33 ردود التعليقات v2 | بلا migration؛ يلمس `tenant_prefs.py`, `settings.py`, `instagram/*`, `outbound_dispatcher/worker.py` |
-| 4 | #34 إغلاق الصفقات | **migration 0036** (الوحيد)؛ يلمس `tenant_prefs.py`, `settings.py`, `notifications.py`, `outbound_dispatcher/worker.py`, `llm_invoker/worker.py` |
-بعد كل دمج حدّث فرع التالي من `main` (أو استخدم «Update branch») وانتظر نجاح `backend` و`frontend`. تعارضات متوقعة بسيطة: قائمة `KINDS` في `notifications.py` (سطر مجاور)، وأقسام `SECTIONS`/`MODELS` في `tenant_prefs.py`، وفرع `elif` في الـ dispatcher.
+## 0) حالة الدمج
+دُمجت كلها في `main` بالترتيب: #35 ← #36 ← #33 ← #34 (ثم هذه الوثائق #37). ما بقي لك: التحقق أدناه بخدمات حقيقية، لا دمج.
 
 ## 1) قاعدة البيانات
 ```bash
 cd omniflow-backend
-alembic heads                       # بعد دمج #34: رأس واحد = 0036_sales_pipeline
+alembic heads                       # رأس واحد = 0036_sales_pipeline (مدموج)
 alembic upgrade head && alembic downgrade 0035_social_comments_pref && alembic upgrade head    # على قاعدة DEV فقط
 ```
 الجداول الجديدة (`deals`, `followup_tasks`) عليها RLS؛ دور التطبيق يحصل على صلاحياتها من `omniflow-deploy/provision-app-role.sql` (default privileges). على قاعدة أُنشئ دورها يدويًا قد تحتاج `GRANT SELECT,INSERT,UPDATE,DELETE ON deals, followup_tasks TO <app_role>`.

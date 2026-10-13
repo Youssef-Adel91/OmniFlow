@@ -132,5 +132,8 @@ async def signup_complete(body: SignupComplete, user: CurrentUser, session: Auth
         await session.flush()
     except IntegrityError as exc:
         raise HTTPException(status_code=409, detail={"code": "NUMBER_ALREADY_CONNECTED", "message": "هذا الرقم مرتبط بمنشأة أخرى."}) from exc
+    from src.shared.services import channel_health
+
+    await channel_health.clear(user.tenant_id, "whatsapp")
     logger.info("whatsapp_signup_completed", tenant_id=str(user.tenant_id), waba_id=body.waba_id)
     return {"connected": True, "phone_number_id": body.phone_number_id, "waba_id": body.waba_id, "display_phone_number": result["display_phone_number"] or None}

@@ -107,8 +107,28 @@ class FacebookOAuthTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(self.saved, [(self.tenant_id, "p1", "page-token", "ig1")])
         self.assertEqual(self.saved_fb_users, ["fb-user-77"])               # remembered so a Meta data-deletion request for this user can find it
         self.assertEqual(self.subscribed, ["p1/subscribed_apps"])
-        # "comments" is not a valid Page subscription field (Meta answers 500).
-        self.assertEqual(self.subscribed_params["subscribed_fields"], "messages,messaging_postbacks,feed")
+        # "comments" is not a valid Page subscription field (Meta answers 500); comments on posts arrive through "feed".
+        fields = self.subscribed_params["subscribed_fields"].split(",")
+        self.assertEqual(sorted(fields), sorted("messages,messaging_postbacks,message_deliveries,message_reads,message_reactions,feed,mention".split(",")))
+        self.assertNotIn("comments", fields)
+
+    async def test_if_meta_refuses_the_full_field_set_the_base_set_is_used_and_the_page_still_connects(self):
+        calls = []
+
+        async def refuse_once(client, path, params):
+            calls.append(params["subscribed_fields"])
+            if len(calls) == 1:
+                raise fo.FacebookOAuthError("(#200) permission missing for one field")
+            return {"success": True}
+
+        await fo._store_state("st", self.tenant_id)
+        pages = [{"id": "p1", "name": "Shop", "access_token": "page-token"}]
+        with self._graph_get(pages), patch.object(fo, "_graph_post", refuse_once):
+            async with self._client() as client:
+                response = await client.get(CALLBACK, params={"code": "c", "state": "st"})
+        self.assertIn('"status": "success"', response.text)
+        self.assertEqual(calls[1], "messages,messaging_postbacks,feed")
+        self.assertEqual(len(self.saved), 1)
 
     async def test_default_scopes_include_pages_read_engagement(self):
         scopes = fo.get_settings().__class__.model_fields["meta_oauth_scopes"].default.split(",")

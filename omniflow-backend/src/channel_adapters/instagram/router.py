@@ -58,7 +58,7 @@ from pydantic import BaseModel, Field, ValidationError
 
 from sqlalchemy import or_, select
 
-from src.channel_adapters.instagram import comment_policy
+from src.channel_adapters.instagram import comment_actions, comment_policy
 from src.shared.core.config import get_settings
 from src.shared.core.enums import Channel, MessageType
 from src.shared.db.models import Tenant
@@ -537,8 +537,9 @@ async def _process_comment_event(
         decision = await comment_policy.decide(
             tenant_id=tenant_id, comment_id=comment_id, sender_id=sender_id, own_ids=await _own_account_ids(tenant_id, page_id),
             thread_reply=comment_policy.is_thread_reply(parent_id=getattr(value, "parent_id", None), post_id=value.post_id), text=comment_text)
-        if not decision.replies:
-            logger.info("meta_comment_ignored", reason=decision.reason, page_id=page_id, comment_id=comment_id)
+        if not await comment_actions.handle_decision(decision, tenant_id=tenant_id, platform="facebook", comment_id=comment_id, text=comment_text,
+                                                     sender_name=sender_name):
+            logger.info("meta_comment_not_answered", action=decision.action, reason=decision.reason, page_id=page_id, comment_id=comment_id)
             return
         post_url = comment_policy.facebook_post_url(value.post_id)
 
@@ -564,7 +565,7 @@ async def _process_comment_event(
             event_timestamp=event_ts,
             message_type=MessageType.TEXT,
             text_content=comment_text or None,
-            reply_target_type="comment_private" if decision.action == "private_dm" else "comment",
+            reply_target_type="comment_private" if decision.action in ("private_dm", "public_and_private") else "comment",
             source_post_id=value.post_id,
             source_post_url=post_url,
         )
@@ -630,8 +631,9 @@ async def _process_instagram_comment_event(
         decision = await comment_policy.decide(
             tenant_id=tenant_id, comment_id=comment_id, sender_id=sender_id, own_ids=await _own_account_ids(tenant_id, account_id),
             thread_reply=comment_policy.is_thread_reply(parent_id=value.parent_id), text=text)
-        if not decision.replies:
-            log.info("ig_comment_ignored", reason=decision.reason)
+        if not await comment_actions.handle_decision(decision, tenant_id=tenant_id, platform="instagram", comment_id=comment_id, text=text,
+                                                     sender_name=username or None):
+            log.info("ig_comment_not_answered", action=decision.action, reason=decision.reason)
             return
         log.info(
             "ig_comment_received",
@@ -650,7 +652,7 @@ async def _process_instagram_comment_event(
             event_timestamp=datetime.now(tz=timezone.utc),
             message_type=MessageType.TEXT,
             text_content=text,
-            reply_target_type="comment_private" if decision.action == "private_dm" else "instagram_comment",
+            reply_target_type="comment_private" if decision.action in ("private_dm", "public_and_private") else "instagram_comment",
             source_post_id=media_id,
         )
 

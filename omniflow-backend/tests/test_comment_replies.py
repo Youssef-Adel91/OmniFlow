@@ -37,7 +37,9 @@ class PolicyUnitTests(unittest.TestCase):
         self.assertTrue(comment_policy.is_thread_reply(parent_id="1785"))                           # Instagram reply
 
     def test_preference_model_defaults_to_off_and_rejects_unknown_modes(self):
-        self.assertEqual(tenant_prefs.validate_section("social_comments", {}), {"enabled": False, "mode": "public_reply"})
+        defaults = tenant_prefs.validate_section("social_comments", {})
+        self.assertEqual((defaults["enabled"], defaults["mode"], defaults["only_business_hours"], defaults["allow_price_in_private"]), (False, "public_reply", False, False))
+        self.assertTrue(defaults["auto_hide_abusive"])
         self.assertEqual(tenant_prefs.validate_section("social_comments", {"enabled": True, "mode": "private_dm"})["mode"], "private_dm")
         with self.assertRaises(ValueError):
             tenant_prefs.validate_section("social_comments", {"mode": "shout"})

@@ -16,6 +16,9 @@ os.environ.update({
     "GEMINI_API_KEY": "",
     "CLERK_ISSUER_URL": "https://test.clerk.accounts.dev",
     "BILLING_GATE_ENABLED": "false",      # billing tests switch the gate on explicitly
+    # The API rate limiter counts per IP in Redis. With a real Redis reachable, ~600 tests share one IP and one minute-window, so the later ones got 429 and 24 tests failed
+    # in the full run (each passed alone). Tests that exercise the limiter switch it on explicitly (tests/test_security_middleware.py).
+    "RATE_LIMIT_ENABLED": "false",
 })
 
 from src.shared.core.config import Settings, get_settings

@@ -192,7 +192,7 @@ export const DEFAULT_SOCIAL_COMMENTS: SocialCommentsPrefs = {
 export interface SalesPrefs {
   enabled: boolean; ask_questions: boolean; max_questions: number; booking_enabled: boolean; slot_minutes: number; days_ahead: number; min_notice_hours: number;
   max_parallel_viewings: number; viewing_hours: { timezone: string; days: Record<string, string[][]> }; viewing_location_note: string; reminder_hours_before: number;
-  followup_enabled: boolean; followup_delays_hours: number[]; followup_messages: string[]; whatsapp_followup_template: string; whatsapp_followup_template_lang: string;
+  followup_enabled: boolean; followup_delays_hours: number[]; followup_messages: string[]; whatsapp_followup_template: string; whatsapp_followup_template_lang: string; whatsapp_reminder_template: string;
 }
 export type PrefSection = "business_hours" | "handoff" | "ai_behavior" | "identity" | "social_comments" | "sales";
 export interface PreferencesResponse {

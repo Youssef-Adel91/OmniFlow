@@ -15,6 +15,7 @@ class Channel(StrEnum):
     X = "x"
     SNAPCHAT = "snapchat"
     WEB = "web"
+    TELEGRAM = "telegram"
 
 
 class MessageType(StrEnum):

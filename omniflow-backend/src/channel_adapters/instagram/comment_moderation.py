@@ -33,7 +33,7 @@ _PRICE_BEFORE = re.compile(rf"(?<!\w){_CURRENCY}\s*[\d٠-٩][\d٠-٩,.٬٫]*", r
 _BIG_NUMBER = re.compile(r"(?<![\d٠-٩])[\d٠-٩]{1,3}(?:[,٬][\d٠-٩]{3})+(?![\d٠-٩])|(?<![\d٠-٩])[\d٠-٩]{5,}(?![\d٠-٩])")
 _PRICE_WORD_WITH_NUMBER = re.compile(r"(?:سعر|السعر|بسعر|يبدأ من|تبدأ من|price|starting from)[^.!؟?\n]{0,25}[\d٠-٩]", re.I)
 _PROMISE = re.compile(r"(نضمن|نضمن لك|مضمون|ضمان\s*(?:عائد|ربح|استثمار)|عائد\s*(?:مضمون|سنوي)|ربح\s*(?:مضمون|اكيد)|بدون\s*مخاطر|guarantee[ds]?|risk[- ]free|"
-                      r"عقد\s*ملزم|نتعهد|نلتزم\s*لك)", re.I)
+                      r"عقد\s*ملزم|نتعهد|نلتزم\s*لك|خصم|تخفيض|تنزيل|discount|price\s*cut)", re.I)
 
 
 # Posted publicly when the assistant's answer had to be withheld (price / promise) and NO private follow-up is sent: it invites the customer

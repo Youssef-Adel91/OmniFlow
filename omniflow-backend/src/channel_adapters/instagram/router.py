@@ -452,9 +452,10 @@ async def _process_messaging_event(
 
         # ── Determine channel: Instagram IGSID starts with a digit just like
         #    Facebook PSID — we cannot tell them apart at this layer.
-        #    For now we use INSTAGRAM for both since the Page may be IG-connected.
-        #    The platform_conversation_id (sender_id) is unique per channel anyway.
-        channel = Channel.INSTAGRAM
+        #    object="page" is Messenger (PSID), object="instagram" is Instagram (IGSID): they are different id spaces and different products, so they get
+        #    different channels (reports, analytics and the inbox filter can tell them apart). Old Messenger conversations stored as "instagram" are
+        #    adopted on their next message (see ConversationRepository.get_or_create_for_platform).
+        channel = Channel.MESSENGER if source_object == "page" else Channel.INSTAGRAM
 
         # ── Resolve tenant ────────────────────────────────────────────────────────
         tenant_id = await _resolve_tenant_id(entry_id)
@@ -557,7 +558,7 @@ async def _process_comment_event(
 
         canonical = CanonicalInboundEvent(
             tenant_id=tenant_id,
-            channel=Channel.INSTAGRAM,
+            channel=Channel.MESSENGER,
             platform_message_id=comment_id,
             platform_conversation_id=comment_id,   # comments are standalone threads
             platform_user_id=sender_id,
@@ -825,6 +826,10 @@ async def _persist_and_publish(
             text_content=(display_prefix + canonical.text_content) if display_prefix and canonical.text_content else canonical.text_content,
             s3_media_url=canonical.media_url,
         )
+        if _msg_id == uuid.UUID(int=0):
+            # Meta delivered the same message again (it retries slow webhooks): it is already stored AND already published — publishing again would make the assistant answer twice.
+            logger.info(f"{log_label}_duplicate_delivery_skipped", platform_msg_id=platform_msg_id)
+            return
     except Exception as exc:
         logger.error(
             f"{log_label}_persist_error",

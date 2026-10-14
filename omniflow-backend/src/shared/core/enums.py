@@ -12,6 +12,7 @@ class Channel(StrEnum):
     WHATSAPP = "whatsapp"
     TIKTOK = "tiktok"
     INSTAGRAM = "instagram"
+    MESSENGER = "messenger"      # Facebook Messenger DMs + Facebook Page comments (webhook object="page"); before this value they were stored as "instagram"
     X = "x"
     SNAPCHAT = "snapchat"
     WEB = "web"

@@ -21,7 +21,7 @@ from datetime import datetime, timedelta, timezone
 from typing import Any
 
 import structlog
-from sqlalchemy import select
+from sqlalchemy import select, text as sql_text
 
 from src.sales import booking, followup, intents, matcher, pipeline, qualification
 from src.shared.core.config import get_settings
@@ -52,18 +52,25 @@ def _key(tenant_id: uuid.UUID, conversation_id: uuid.UUID) -> str:
 
 
 async def _booking_state(tenant_id, conversation_id) -> dict[str, Any] | None:
-    raw = await redis_mgr.get_raw(_key(tenant_id, conversation_id))
+    """Best effort: with Redis down the viewing dialogue degrades (a new offer is made), but the safety rules in front of the model must keep working."""
     try:
+        raw = await redis_mgr.get_raw(_key(tenant_id, conversation_id))
         return json.loads(raw) if raw else None
     except json.JSONDecodeError:
+        return None
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("sales_booking_state_unavailable", op="get", error=type(exc).__name__)
         return None
 
 
 async def _set_booking_state(tenant_id, conversation_id, state: dict[str, Any] | None) -> None:
-    if state is None:
-        await redis_mgr.delete_raw(_key(tenant_id, conversation_id))
-    else:
-        await redis_mgr.set_raw(_key(tenant_id, conversation_id), json.dumps(state), ttl=BOOKING_TTL_S)
+    try:
+        if state is None:
+            await redis_mgr.delete_raw(_key(tenant_id, conversation_id))
+        else:
+            await redis_mgr.set_raw(_key(tenant_id, conversation_id), json.dumps(state), ttl=BOOKING_TTL_S)
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("sales_booking_state_unavailable", op="set", error=type(exc).__name__)
 
 
 async def _customer_texts(session, conversation_id: uuid.UUID, limit: int = 30) -> list[str]:
@@ -122,6 +129,8 @@ async def _before_llm(decision, now: datetime, qualify: bool = True) -> HookResu
         if route in ("injection", "other_data"):
             logger.warning("sales_guard_triggered", kind=route, tenant_id=str(tenant_id))
             return HookResult(reply=intents.REPLIES_AR["injection" if route == "injection" else "other_customers_data"], event=route)
+        if route == "advice":
+            return HookResult(reply=intents.REPLIES_AR["advice"], event="advice")
         if route in ("complaint", "negotiation"):
             deal = await pipeline.ensure_deal(session, tenant_id, customer_id, conversation_id=conversation_id, channel=channel)
             if route == "negotiation":
@@ -232,6 +241,8 @@ async def _book(session, sales, customer, conversation_id, channel, slot, now, *
 
     tenant_id = customer.tenant_id
     tz = sales["viewing_hours"].get("timezone", "Asia/Riyadh")
+    # serialize bookings per tenant (released at commit): without it two customers choosing the same slot at the same instant both pass the re-check below and both get it
+    await session.execute(sql_text("SELECT pg_advisory_xact_lock(hashtext(:k))"), {"k": f"sales_booking:{tenant_id}"})
     # last-moment re-check: someone else may have taken the slot since it was offered
     busy = await _busy_starts(session, tenant_id, now, sales["days_ahead"])
     if slot not in booking.generate_slots(now, {**sales, "days_ahead": sales["days_ahead"] + 2}, busy, exclude=[]):

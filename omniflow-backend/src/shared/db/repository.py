@@ -577,15 +577,20 @@ class ConversationRepository(
         Called by Channel Adapters when a new platform message arrives.
         Returns (conversation, created) — idempotent under concurrent events.
         """
+        # Messenger used to be stored as "instagram": adopt such a conversation (same customer, same page-scoped id) instead of starting a second thread.
+        accepted = [channel, Channel.INSTAGRAM] if channel == Channel.MESSENGER else [channel]
         stmt = select(Conversation).where(
             Conversation.customer_id == customer_id,
-            Conversation.channel == channel,
+            Conversation.channel.in_([str(c.value if hasattr(c, "value") else c) for c in accepted]),
             Conversation.platform_conversation_id == platform_conversation_id,
             Conversation.status != ConversationStatus.CLOSED,
         )
         result = await self.session.scalars(stmt)
         existing = result.first()
         if existing is not None:
+            if channel == Channel.MESSENGER and str(existing.channel) == Channel.INSTAGRAM.value:
+                existing.channel = Channel.MESSENGER.value
+                await self.session.flush()
             return existing, False
 
         conv = Conversation(

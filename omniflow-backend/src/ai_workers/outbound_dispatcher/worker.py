@@ -657,6 +657,11 @@ class OutboundDispatcherWorker(BaseKafkaConsumer):
                 )
             raise  # Triggers retry logic in BaseKafkaConsumer
 
+        # A send just worked: a stale "needs reconnect" alarm (fixed outside the app, or a one-off) must not keep nagging the tenant.
+        from src.shared.services import channel_health as _health
+
+        await _health.note_success(msg.tenant_id, _health.health_channel(msg.channel))
+
         # ── 6. Record wamid for traceability ──────────────────────────────────
         if result.wamid:
             await redis_mgr.set_raw(idem_key, result.wamid, ttl=_SENT_KEY_TTL)

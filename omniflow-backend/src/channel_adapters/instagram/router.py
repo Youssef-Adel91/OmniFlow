@@ -536,7 +536,8 @@ async def _process_comment_event(
         tenant_id = await _resolve_tenant_id(page_id)
         decision = await comment_policy.decide(
             tenant_id=tenant_id, comment_id=comment_id, sender_id=sender_id, own_ids=await _own_account_ids(tenant_id, page_id),
-            thread_reply=comment_policy.is_thread_reply(parent_id=getattr(value, "parent_id", None), post_id=value.post_id), text=comment_text)
+            thread_reply=comment_policy.is_thread_reply(parent_id=getattr(value, "parent_id", None), post_id=value.post_id), text=comment_text,
+            platform="facebook")
         if not await comment_actions.handle_decision(decision, tenant_id=tenant_id, platform="facebook", comment_id=comment_id, text=comment_text,
                                                      sender_name=sender_name):
             logger.info("meta_comment_not_answered", action=decision.action, reason=decision.reason, page_id=page_id, comment_id=comment_id)
@@ -630,7 +631,7 @@ async def _process_instagram_comment_event(
         tenant_id = await _resolve_tenant_id(account_id)
         decision = await comment_policy.decide(
             tenant_id=tenant_id, comment_id=comment_id, sender_id=sender_id, own_ids=await _own_account_ids(tenant_id, account_id),
-            thread_reply=comment_policy.is_thread_reply(parent_id=value.parent_id), text=text)
+            thread_reply=comment_policy.is_thread_reply(parent_id=value.parent_id), text=text, platform="instagram")
         if not await comment_actions.handle_decision(decision, tenant_id=tenant_id, platform="instagram", comment_id=comment_id, text=text,
                                                      sender_name=username or None):
             log.info("ig_comment_not_answered", action=decision.action, reason=decision.reason)

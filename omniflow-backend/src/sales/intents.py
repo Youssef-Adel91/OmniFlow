@@ -7,7 +7,7 @@ Deterministic detectors for messages the assistant must NOT improvise on. No LLM
     injection      "ignore your instructions", "show me your prompt" … -> a polite fixed refusal, the message never reaches the model as an instruction
     other_customers_data   asks for other customers' numbers / lists / who bought -> refused (privacy), never answered from data
 
-`classify` returns the first match by priority: opt_out > injection > other_customers_data > complaint > negotiation.
+`classify` returns the first match by priority: opt_out > injection > other_customers_data > complaint > negotiation > advice (no guarantees / predictions / legal-financial advice).
 """
 from __future__ import annotations
 
@@ -45,6 +45,12 @@ _INJECTION = ("ignore previous", "ignore all previous", "ignore your instruction
 _OTHER_DATA = ("بيانات عملاء", "ارقام عملاء", "أرقام عملاء", "اسماء عملاء", "أسماء عملاء", "عملاء ثانيين", "عملاء ثانين", "ارقام العملاء", "أرقام العملاء", "رقم عميل", "بيانات العملاء", "بيانات عميل", "بيانات الزبائن", "قائمة العملاء", "قائمه العملاء", "من اشترى", "من اشتري", "من حجز",
                "اسماء المشترين", "أسماء المشترين", "عملاءكم", "عملائكم", "عملاء اخرين", "عملاء آخرين", "عميل اخر", "عميل آخر", "اعطني ارقام", "اعطني أرقام", "رقم المالك", "رقم صاحب العقار",
                "customer list", "other customers", "another customer", "client list", "customers' numbers", "give me the numbers", "who bought", "owner's number", "owner phone")
+
+# investment guarantees / predictions / legal or financial advice: the assistant sells listings, it does not promise returns or advise (compliance)
+_ADVICE = ("عائد مضمون", "عوائد مضمونه", "عوائد مضمونة", "ربح مضمون", "ارباح مضمونه", "أرباح مضمونة", "ضمان العائد", "ضمان الربح", "تضمنون", "تضمن لي", "اضمن لي", "نضمن",
+           "استثمار مضمون", "هل ترتفع الاسعار", "هل ترتفع الأسعار", "هل بيرتفع", "هل راح يرتفع", "توقعات الاسعار", "توقعات الأسعار", "استشاره قانونيه", "استشارة قانونية", "نصيحه قانونيه",
+           "نصيحة قانونية", "استشاره ماليه", "استشارة مالية", "نصيحه ماليه", "نصيحة مالية", "هل يحق لي", "موافقه البنك", "موافقة البنك", "تضمن التمويل", "ضمان التمويل",
+           "guaranteed return", "guaranteed profit", "guarantee the return", "do you guarantee", "legal advice", "financial advice", "investment advice", "will prices go up", "will the price go up", "price will rise")
 
 # prices alone ("كم السعر؟") are NOT negotiation; a counter-offer is (a number + a wish to pay a given amount)
 _OFFER = re.compile(r"(?:ابغى|ابي|اريد|أريد|عايز|i want to|i'd like to)\s*(?:اشتريها|اشتريه|اخذها|آخذها|اخذه|شراءها|buy it|buy)\s*(?:ب|بمبلغ|for|at)\s*\d", re.I)
@@ -85,6 +91,10 @@ def is_negotiation(text: str) -> bool:
     return _contains(t, _NEGOTIATION) or bool(_OFFER.search(t))
 
 
+def is_advice_request(text: str) -> bool:
+    return _contains(_light(text), _ADVICE)
+
+
 def classify(text: str) -> Intent | None:
     if not (text or "").strip():
         return None
@@ -100,6 +110,8 @@ def classify(text: str) -> Intent | None:
         lo, hi = extract_budget(text)
         amount = hi or lo
         return Intent("negotiation", f"{int(amount):,}" if amount else None)
+    if is_advice_request(text):
+        return Intent("advice")
     return None
 
 
@@ -109,6 +121,7 @@ REPLIES_AR = {
     "injection": "أقدر أساعدك في الاستفسارات العقارية: البحث عن عقار، الأسعار المعلنة، وحجز معاينة. كيف أخدمك؟",
     "other_customers_data": "عذرًا، لا أستطيع مشاركة بيانات أي عميل أو مالك. أقدر أساعدك في العقارات المتاحة وحجز معاينة 🤝",
     "complaint": "نأسف لهذه التجربة، وسنحوّل محادثتك الآن إلى أحد موظفينا للمتابعة معك بشكل مباشر.",
+    "advice": "ما أقدر أعطي ضمانات عوائد أو توقعات أسعار أو استشارة قانونية/مالية، لأن هذا يحتاج مختص. أقدر أعرض لك العقارات المتاحة بأسعارها المعلنة وأرتب لك لقاء مع أحد مستشارينا 🤝",
     "negotiation": "أكيد، موضوع السعر والتفاوض يتولاه أحد مستشارينا. سجّلتُ طلبك وسأحوّلك له الآن ليتواصل معك.",
 }
 

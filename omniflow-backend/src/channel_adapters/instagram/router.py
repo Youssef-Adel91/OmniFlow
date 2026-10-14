@@ -826,6 +826,10 @@ async def _persist_and_publish(
             text_content=(display_prefix + canonical.text_content) if display_prefix and canonical.text_content else canonical.text_content,
             s3_media_url=canonical.media_url,
         )
+        if _msg_id == uuid.UUID(int=0):
+            # Meta delivered the same message again (it retries slow webhooks): it is already stored AND already published — publishing again would make the assistant answer twice.
+            logger.info(f"{log_label}_duplicate_delivery_skipped", platform_msg_id=platform_msg_id)
+            return
     except Exception as exc:
         logger.error(
             f"{log_label}_persist_error",

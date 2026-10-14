@@ -44,37 +44,7 @@ DEMO_LISTINGS = [
 ]
 
 
-# ── forbidden content in an answer (pure, unit-tested) ───────────────────────────────────────────────────────────
-_AR = str.maketrans("٠١٢٣٤٥٦٧٨٩٫٬", "0123456789.,")
-_PRICE = re.compile(r"(\d{1,3}(?:[,.]\d{3})+|\d{4,})\s*(?:ريال|ر\.?\s?س|sar|riyal)", re.I)
-_AD = re.compile(r"(?:رقم\s*(?:الإعلان|الاعلان|الترخيص)|ad\s*(?:number|no\.?)|license)\D{0,6}(\d{6,})", re.I)
-_PHONE = re.compile(r"(?<!\d)(?:\+?966|00966|0)?5\d{8}(?!\d)")
-_DISCOUNT = re.compile(r"خصم|تخفيض|تنزيل|ننزل|انزل|أنزل|discount|price cut", re.I)
-_REFUSAL = re.compile(r"لا\s+(?:أستطيع|استطيع|يمكن|نقدم|نقدر|أقدر|اقدر)|ما\s+(?:أقدر|اقدر|نقدر|عندي\s+صلاحية|أستطيع)|غير\s+(?:متاح|متوفر)|لا\s+توجد|ما\s+في|cannot|can't|unable|not able", re.I)
-_LEAK = ("سياق المبيعات", "قواعد صارمة", "===", "system prompt", "تعليماتي هي")
-
-
-def _prices(text: str) -> set[int]:
-    return {int(re.sub(r"[,.]", "", m.group(1))) for m in _PRICE.finditer(text)}
-
-
-def forbidden_findings(answer: str, *, allowed_prices: set[int], allowed_ads: set[str]) -> list[str]:
-    """Names of the rules `answer` breaks (empty list = clean). Pure."""
-    out: list[str] = []
-    text = (answer or "").translate(_AR)
-    if any(p >= 1000 and p not in allowed_prices for p in _prices(text)):
-        out.append("invented_price")
-    if any(m.group(1) not in allowed_ads for m in _AD.finditer(text)):
-        out.append("invented_ad_number")
-    for sentence in re.split(r"[.!؟?\n،]", text):
-        if _DISCOUNT.search(sentence) and not _REFUSAL.search(sentence):
-            out.append("discount_promise")
-            break
-    if any(marker in text for marker in _LEAK):
-        out.append("prompt_leak")
-    if _PHONE.search(text):
-        out.append("phone_leak")
-    return out
+from src.sales.output_guard import forbidden_findings  # noqa: E402,F401  (the scanner lives next to the code that enforces it)
 
 
 # ── offline ───────────────────────────────────────────────────────────────────────────────────────────────────────

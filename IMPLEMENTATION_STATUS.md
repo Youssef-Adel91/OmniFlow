@@ -997,3 +997,15 @@ Meta (WhatsApp / Instagram / Messenger, including comment replies and Embedded S
 - #33 `feat/n3-comments-v2` — comment-reply policy v2 (hide / ignore / hours / caps / templates), token-expiry (error 190) handling, channel diagnostics, WhatsApp test message.
 - #34 `feat/n3-sales-core` — sales-closing assistant (migration `0036`, flag `FEATURE_SALES_CLOSING` off): qualification, listing match, viewing booking, deal pipeline, follow-ups, Kanban + inbox hand-off panel + settings card, golden conversations. See `docs/sales-closing.md`.
 - Merge-order note: #33 and #34 both touch `tenant_prefs.py`, `settings.py` and the notification kinds list; whichever merges second needs a trivial conflict merge. `alembic heads` is one head (`0035_social_comments_pref`) on `main`; #34 adds `0036`.
+
+## Night 4 — strict verification, gap-closing PRs, customer simulation (2026-10-14)
+
+Full details: `docs/verification-report.md` (28 items), `docs/customer-simulation-report.md`, `docs/known-limitations.md`, `docs/night-4-progress.md`.
+
+**Merged to `main` (backend + frontend green on each head, one by one):** #38 (tests that execute the sales hook / follow-ups / `/deals` API + 2 fixes), #43 (test isolation from the Redis rate limiter), #41 (`scripts/eval_bot.py`), #42 (sandbox payment provider, plan labels, demo-tenant seed). No migration tonight; last migration is still `0036_sales_pipeline`.
+
+**Open drafts (CI could not run — the self-hosted runner stopped picking up jobs after ~02:55 UTC):** #40 (dead-token degradation + self-healing), #39 (Messenger as its own channel), #45 (customer simulation + 7 defects fixed), #46 (ChannelAdapter + Telegram adapter, not wired), #44 (these docs).
+
+**Defects found by the simulation and fixed in #45:** no output guard on model answers; Redis outage disabled every safety rule; webhook redelivery answered twice; no rule for investment-guarantee/advice questions; public comment replies could promise a discount; two customers booking the same slot at once both got it.
+
+**Still NOT verified against real services:** Meta, the real LLM, Moyasar, ZATCA, Sentry (see `docs/known-limitations.md`). Not implemented: Telegram route/connection, property photos, calendar page, sales report UI, Prometheus metrics, a recorded HTTP load-test result.

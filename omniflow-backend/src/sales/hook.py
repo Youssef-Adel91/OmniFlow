@@ -21,7 +21,7 @@ from datetime import datetime, timedelta, timezone
 from typing import Any
 
 import structlog
-from sqlalchemy import select
+from sqlalchemy import select, text as sql_text
 
 from src.sales import booking, followup, intents, matcher, pipeline, qualification
 from src.shared.core.config import get_settings
@@ -241,6 +241,8 @@ async def _book(session, sales, customer, conversation_id, channel, slot, now, *
 
     tenant_id = customer.tenant_id
     tz = sales["viewing_hours"].get("timezone", "Asia/Riyadh")
+    # serialize bookings per tenant (released at commit): without it two customers choosing the same slot at the same instant both pass the re-check below and both get it
+    await session.execute(sql_text("SELECT pg_advisory_xact_lock(hashtext(:k))"), {"k": f"sales_booking:{tenant_id}"})
     # last-moment re-check: someone else may have taken the slot since it was offered
     busy = await _busy_starts(session, tenant_id, now, sales["days_ahead"])
     if slot not in booking.generate_slots(now, {**sales, "days_ahead": sales["days_ahead"] + 2}, busy, exclude=[]):

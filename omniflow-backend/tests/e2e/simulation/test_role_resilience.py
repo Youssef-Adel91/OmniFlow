@@ -69,3 +69,26 @@ class WebhookRedeliveryTests(SimCase):
                                            platform_user_id="psid-1", message_type=MessageType.TEXT, text_content="ابغى شقة")
                 await ig._persist_and_publish(ev, self.tenant, "mid.REDELIVER1", "messenger")
         self.assertEqual(publish.await_count, 1)
+
+
+class ConcurrencyTests(SimCase):
+    """50 customers write at once (in-process, real PostgreSQL + RLS, scripted model). NOT the HTTP/Kafka load test: it measures the sales/DB path only."""
+
+    async def test_fifty_concurrent_customers_get_consistent_results_and_nobody_double_books(self):
+        import asyncio
+        import time
+        chats = [await self.customer(f"عميل {i}") for i in range(50)]
+        t0 = time.perf_counter()
+        turns = await asyncio.gather(*(c.say("ابغى شقة ٣ غرف في النرجس تحت مليون كاش للسكن") for c in chats))
+        first = time.perf_counter() - t0
+        self.assertTrue(all(t.source == "model" and not t.findings for t in turns))
+        self.assertEqual(len(await self.q("SELECT 1 FROM deals WHERE tenant_id=:t")), 50)
+        offers = await asyncio.gather(*(c.say("ابغى اشوفها بكره") for c in chats))
+        self.assertTrue(all(o.event == "booking_offer" for o in offers))
+        done = await asyncio.gather(*(c.say("1") for c in chats))                          # all 50 choose the SAME first slot
+        booked = [d for d in done if d.event == "booking_done"]
+        rows = await self.q("SELECT staff_user_id, scheduled_at FROM appointments WHERE tenant_id=:t AND status='scheduled'")
+        slots = [(r[0], r[1]) for r in rows]
+        self.assertEqual(len(slots), len(set(slots)), "two customers hold the same staff + time slot")
+        self.assertEqual(len(rows), len(booked))
+        print(f"\n[load] 50 concurrent first messages: {first:.2f}s total; booked {len(booked)} of 50 for the same first slot (the rest were re-offered or handed over)")

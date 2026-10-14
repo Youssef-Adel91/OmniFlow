@@ -14,7 +14,7 @@ import { apiClient } from "@/lib/api/client";
 
 // ── Types ──────────────────────────────────────────────────────────────────
 
-export type SubscriptionTier = "economic" | "professional" | "enterprise" | string;
+export type SubscriptionTier = "starter" | "pro" | "business" | "enterprise" | (string & {});
 
 export interface TenantSettings {
   business_name:             string;
@@ -56,7 +56,7 @@ export interface LogoUploadResponse {
 function normalizeSettings(raw: any): TenantSettings {
   return {
     business_name:            raw?.business_name ?? "",
-    subscription_tier:        raw?.subscription_tier ?? "economic",
+    subscription_tier:        raw?.subscription_tier ?? "starter",
     whatsapp_phone_number_id: raw?.whatsapp_phone_number_id ?? null,
     max_ai_conversations:
       typeof raw?.max_ai_conversations === "number" ? raw.max_ai_conversations : null,
@@ -124,9 +124,13 @@ export async function uploadLogo(file: File): Promise<LogoUploadResponse> {
 // ── Labels ─────────────────────────────────────────────────────────────────
 
 export const TIER_LABELS: Record<string, string> = {
-  economic:     "الباقة الاقتصادية",
-  professional: "الباقة الاحترافية",
-  enterprise:   "باقة المؤسسات",
+  starter:      "الأساسية (Starter)",
+  pro:          "الاحترافية (Pro)",
+  business:     "الأعمال (Business)",
+  enterprise:   "المؤسسات (Enterprise)",
+  // legacy placeholder tiers from before the real plans: shown as the plan they were replaced by, never as "الاقتصادية"
+  economic:     "الأساسية (Starter)",
+  professional: "الاحترافية (Pro)",
 };
 
 // ══════════════════════════════════════════════════════════════════════════════
@@ -188,7 +192,7 @@ export const DEFAULT_SOCIAL_COMMENTS: SocialCommentsPrefs = {
 export interface SalesPrefs {
   enabled: boolean; ask_questions: boolean; max_questions: number; booking_enabled: boolean; slot_minutes: number; days_ahead: number; min_notice_hours: number;
   max_parallel_viewings: number; viewing_hours: { timezone: string; days: Record<string, string[][]> }; viewing_location_note: string; reminder_hours_before: number;
-  followup_enabled: boolean; followup_delays_hours: number[]; followup_messages: string[]; whatsapp_followup_template: string; whatsapp_followup_template_lang: string;
+  followup_enabled: boolean; followup_delays_hours: number[]; followup_messages: string[]; whatsapp_followup_template: string; whatsapp_followup_template_lang: string; whatsapp_reminder_template: string;
 }
 export type PrefSection = "business_hours" | "handoff" | "ai_behavior" | "identity" | "social_comments" | "sales";
 export interface PreferencesResponse {

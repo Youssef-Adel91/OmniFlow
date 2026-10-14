@@ -161,7 +161,7 @@ async def process_due(session, producer, *, now: datetime | None = None, batch: 
 
 
 async def remind_viewings(session, producer, *, now: datetime | None = None, batch: int = 200) -> dict[str, int]:
-    """Remind customers `reminder_hours_before` hours before a booked viewing. Inside the 24-hour window: plain text. Outside it: the approved template if the tenant has one;
+    """Remind customers `reminder_hours_before` hours before a booked viewing. Inside the 24-hour window: plain text. Outside it: the approved REMINDER template (`whatsapp_reminder_template`, two variables: name + time) if the tenant has one;
     otherwise the STAFF member is notified instead (so the reminder is never silently lost). Marks `reminder_sent_at` either way."""
     from src.sales import booking
     from src.shared.services import tenant_prefs
@@ -187,7 +187,7 @@ async def remind_viewings(session, producer, *, now: datetime | None = None, bat
         text = f"تذكير بموعد المعاينة: {when}." + (f"\nالموقع: {ap.location_note}" if ap.location_note else "") + "\nإذا احتجت تغيير الموعد قل لي بس."
         last_in = await last_customer_message_at(session, ap.conversation_id)
         channel = str(conv.channel)
-        template = prefs.get("whatsapp_followup_template") if channel == "whatsapp" and not in_window(last_in, now) else None
+        template = (prefs.get("whatsapp_reminder_template") or None) if channel == "whatsapp" and not in_window(last_in, now) else None
         can_send = (not customer.is_processing_restricted and not customer.erased_at and not customer.opt_out_at
                     and (in_window(last_in, now) or bool(template)))
         if can_send:

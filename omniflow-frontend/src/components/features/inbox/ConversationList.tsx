@@ -33,6 +33,7 @@ import {
   Clock,
   Globe,
   CheckCheck,
+  MessageCircle,
 } from "lucide-react";
 
 // ── Channel definitions ───────────────────────────────────────────────────────
@@ -77,6 +78,7 @@ const CHANNEL_CONFIGS: ChannelConfig[] = [
   { value: "ALL",       label: "الكل",      icon: MessageSquare, color: "text-[var(--muted-foreground)]", bg: "bg-[var(--border)]" },
   { value: "whatsapp",  label: "WhatsApp",  icon: WhatsAppIcon,  color: "text-emerald-600",               bg: "bg-emerald-50" },
   { value: "instagram", label: "Instagram", icon: InstagramIcon, color: "text-pink-600",                  bg: "bg-pink-50"    },
+  { value: "messenger", label: "Messenger", icon: MessageCircle,  color: "text-blue-600",                  bg: "bg-blue-50"    },
   { value: "tiktok",    label: "TikTok",    icon: TikTokIcon,    color: "text-slate-900",                  bg: "bg-slate-100"  },
   { value: "x",         label: "X",         icon: XIcon,         color: "text-slate-800",                  bg: "bg-slate-50"   },
   { value: "web",       label: "Web",       icon: Globe,         color: "text-blue-600",                  bg: "bg-blue-50"    },

@@ -275,7 +275,7 @@ class OutboundDispatcherWorker(BaseKafkaConsumer):
         # pass; page/feed comment replies wired in the same pass via
         # msg.reply_target_type (see step 6 below). TikTok/Snapchat/X remain
         # fully unbuilt.
-        if msg.channel not in (Channel.WHATSAPP, Channel.INSTAGRAM):
+        if msg.channel not in (Channel.WHATSAPP, Channel.INSTAGRAM, Channel.MESSENGER):
             log.warning(
                 "outbound_unsupported_channel",
                 channel=msg.channel,
@@ -304,7 +304,7 @@ class OutboundDispatcherWorker(BaseKafkaConsumer):
                     f"No Meta credentials for tenant {msg.tenant_id}. "
                     "Message routed to DLQ."
                 )
-        else:  # Channel.INSTAGRAM
+        else:  # Channel.INSTAGRAM / Channel.MESSENGER (same Meta Page token)
             instagram_access_token = await _resolve_instagram_credentials(msg.tenant_id)
             if not instagram_access_token:
                 raise RuntimeError(
@@ -434,7 +434,7 @@ class OutboundDispatcherWorker(BaseKafkaConsumer):
 
         # ── 6. Dispatch (── route by channel, then by message_type) ─────────────
         try:
-            if msg.channel == Channel.INSTAGRAM:
+            if msg.channel in (Channel.INSTAGRAM, Channel.MESSENGER):
                 if msg.reply_target_type == "comment_private":
                     # Private reply to a comment (per-tenant "private_dm" mode): the comment_id goes in recipient.comment_id of
                     # POST /{page-id}/messages. Needs the connected Page id of this tenant.
@@ -615,7 +615,7 @@ class OutboundDispatcherWorker(BaseKafkaConsumer):
             from src.shared.services import channel_health
 
             await channel_health.mark_auth_failed(
-                msg.tenant_id, "whatsapp" if msg.channel == Channel.WHATSAPP else "facebook", str(exc))
+                msg.tenant_id, "whatsapp" if msg.channel == Channel.WHATSAPP else ("facebook" if msg.channel == Channel.MESSENGER else "instagram"), str(exc))
             log.error(
                 "outbound_auth_failure_no_retry",
                 error=str(exc),

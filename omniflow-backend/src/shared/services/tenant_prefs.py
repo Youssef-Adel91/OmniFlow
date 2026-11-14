@@ -213,6 +213,9 @@ class Sales(BaseModel):
         "{name}، هذي آخر رسالة متابعة مني حتى لا أزعجك. إذا احتجت أي شيء راسلنا في أي وقت 🤝"])
     whatsapp_followup_template: str = Field(default="", max_length=100)
     whatsapp_followup_template_lang: str = Field(default="ar", max_length=10)
+    # A WhatsApp template has a FIXED number of {{n}} variables. The follow-up template takes one ({{1}} = customer name); the viewing reminder needs two
+    # ({{1}} = name, {{2}} = the appointment time), so it is a different template. Empty = no template: outside the 24 h window only the staff member is told.
+    whatsapp_reminder_template: str = Field(default="", max_length=100)
 
     @field_validator("viewing_hours")
     @classmethod

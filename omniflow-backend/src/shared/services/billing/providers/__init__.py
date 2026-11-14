@@ -19,4 +19,8 @@ def get_provider() -> PaymentProvider:
         from src.shared.services.billing.providers.moyasar import MoyasarProvider
 
         return MoyasarProvider()
+    if name == "sandbox":
+        from src.shared.services.billing.providers.sandbox import SandboxProvider
+
+        return SandboxProvider()
     raise ProviderError(f"Unknown payment provider {name!r}", code="unknown_provider")

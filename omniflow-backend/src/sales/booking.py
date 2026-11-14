@@ -113,8 +113,13 @@ def _digits(text: str) -> str:
     return (text or "").translate(str.maketrans("٠١٢٣٤٥٦٧٨٩", "0123456789")).replace("️", "").replace("⃣", "")
 
 
+_DONT_KNOW = ("لا ادري", "ما ادري", "مدري", "لا اعرف", "ما اعرف", "مادري", "i dont know", "dont know", "not sure")
+
+
 def wants_other_slots(text: str) -> bool:
     t = _light(_digits(text)).strip(" .!؟?،,")
+    if any(t == _light(w) or t.startswith(_light(w) + " ") for w in _DONT_KNOW):
+        return False                          # "I don't know" is not "show me other times"
     return any(t == _light(w) or t.startswith(_light(w) + " ") for w in _NO) or any(w in t for w in ("غيرها", "غيرهم", "مواعيد ثانيه", "مواعيد اخرى", "مواعيد ثانية", "other times", "different time"))
 
 

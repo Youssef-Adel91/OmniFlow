@@ -57,6 +57,8 @@ _urls = service.default_urls
 
 def _payments_enabled() -> bool:
     cfg = get_settings()
+    if cfg.payment_provider == "sandbox":                       # demo / dev / simulation provider: no money, refuses to run in production (see providers/sandbox.py)
+        return cfg.app_env != "production"
     return cfg.payment_provider == "moyasar" and bool((cfg.moyasar_secret_key or "").strip())
 
 

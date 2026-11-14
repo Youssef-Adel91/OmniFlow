@@ -42,7 +42,7 @@ export function AuthSyncer() {
         if (cancelled) return;
         useTenantStore.getState().updateTenant({
           businessName: settings.business_name,
-          tier: settings.subscription_tier as "economic" | "professional" | "enterprise",
+          tier: settings.subscription_tier as string,
           falLicense: settings.fal_license_number ?? "",
           primaryPhone: settings.whatsapp_phone_number_id ?? undefined,
           logoUrl: settings.logo_url ?? undefined,

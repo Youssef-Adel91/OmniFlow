@@ -91,3 +91,13 @@ test("comment prefs: defaults are conservative and reconnect/diagnostics/test-me
   assert.deepEqual(r.calls.map((c) => c.slice(0, 2)), [["get", "/settings/channels/facebook/diagnostics"], ["get", "/settings/comments/activity"], ["post", "/settings/channels/whatsapp/test-message"]]);
   assert.deepEqual(plain(r.calls[2][2]), { to: "+966501234567" });
 });
+
+test("plan labels never show the placeholder «الاقتصادية» plan; legacy tiers map to the real plans", () => {
+  const m = load(recorder().api);
+  assert.equal(m.TIER_LABELS.starter, "الأساسية (Starter)");
+  assert.equal(m.TIER_LABELS.pro, "الاحترافية (Pro)");
+  assert.equal(m.TIER_LABELS.business, "الأعمال (Business)");
+  for (const label of Object.values(plain(m.TIER_LABELS))) assert.ok(!label.includes("الاقتصادية"), label);
+  assert.equal(m.TIER_LABELS.economic, m.TIER_LABELS.starter);
+  assert.equal(m.TIER_LABELS.professional, m.TIER_LABELS.pro);
+});

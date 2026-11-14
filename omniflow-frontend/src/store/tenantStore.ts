@@ -39,7 +39,7 @@ export interface TenantInfo {
   tenantId:     string;
   businessName: string;
   falLicense:   string;
-  tier:         "economic" | "professional" | "enterprise";
+  tier:         string;
   status:       "trial" | "active" | "suspended";
   logoUrl?:     string;
   primaryPhone?: string; // WhatsApp Phone Number ID

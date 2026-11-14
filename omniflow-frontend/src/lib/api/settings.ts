@@ -14,7 +14,7 @@ import { apiClient } from "@/lib/api/client";
 
 // ── Types ──────────────────────────────────────────────────────────────────
 
-export type SubscriptionTier = "economic" | "professional" | "enterprise" | string;
+export type SubscriptionTier = "starter" | "pro" | "business" | "enterprise" | (string & {});
 
 export interface TenantSettings {
   business_name:             string;
@@ -56,7 +56,7 @@ export interface LogoUploadResponse {
 function normalizeSettings(raw: any): TenantSettings {
   return {
     business_name:            raw?.business_name ?? "",
-    subscription_tier:        raw?.subscription_tier ?? "economic",
+    subscription_tier:        raw?.subscription_tier ?? "starter",
     whatsapp_phone_number_id: raw?.whatsapp_phone_number_id ?? null,
     max_ai_conversations:
       typeof raw?.max_ai_conversations === "number" ? raw.max_ai_conversations : null,
@@ -124,9 +124,13 @@ export async function uploadLogo(file: File): Promise<LogoUploadResponse> {
 // ── Labels ─────────────────────────────────────────────────────────────────
 
 export const TIER_LABELS: Record<string, string> = {
-  economic:     "الباقة الاقتصادية",
-  professional: "الباقة الاحترافية",
-  enterprise:   "باقة المؤسسات",
+  starter:      "الأساسية (Starter)",
+  pro:          "الاحترافية (Pro)",
+  business:     "الأعمال (Business)",
+  enterprise:   "المؤسسات (Enterprise)",
+  // legacy placeholder tiers from before the real plans: shown as the plan they were replaced by, never as "الاقتصادية"
+  economic:     "الأساسية (Starter)",
+  professional: "الاحترافية (Pro)",
 };
 
 // ══════════════════════════════════════════════════════════════════════════════

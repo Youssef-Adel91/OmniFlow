@@ -156,15 +156,15 @@ class LogoUploadResponse(BaseModel):
     logo_url: str = Field(..., description="Public URL of the uploaded logo.")
 
 
+_LEGACY_TIER = {"economic": "starter", "professional": "pro"}      # placeholder tiers from before the real plans (P10); a new tenant still carries "economic" by column default
+
+
 def _to_settings(tenant: Tenant) -> TenantSettings:
+    tier = str(tenant.subscription_tier.value if hasattr(tenant.subscription_tier, "value") else tenant.subscription_tier)
     return TenantSettings(
         tenant_id=tenant.tenant_id,
         business_name=tenant.business_name,
-        subscription_tier=str(
-            tenant.subscription_tier.value
-            if hasattr(tenant.subscription_tier, "value")
-            else tenant.subscription_tier
-        ),
+        subscription_tier=_LEGACY_TIER.get(tier, tier),
         whatsapp_phone_number_id=tenant.whatsapp_phone_number_id,
         max_ai_conversations=tenant.max_ai_conversations,
         meta_access_token=_mask_secret(reveal_secret(tenant.meta_access_token)),

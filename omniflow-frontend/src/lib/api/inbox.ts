@@ -85,7 +85,7 @@ export interface SendMessagePayload {
 }
 
 // ── Channel + sort_by filter params ──────────────────────────────────────────
-export type ChannelFilter = "ALL" | "whatsapp" | "instagram" | "tiktok" | "x" | "web";
+export type ChannelFilter = "ALL" | "whatsapp" | "instagram" | "messenger" | "tiktok" | "x" | "web";
 export type SortByOption  = "recent" | "hot_leads";
 
 // ── API functions ─────────────────────────────────────────────────────────────

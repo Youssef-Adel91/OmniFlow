@@ -45,7 +45,7 @@ export interface Conversation {
   customerPhone:   string;
   customerName:    string;
   customerAvatar?: string;
-  channel:         "whatsapp" | "tiktok" | "instagram" | "x" | "web";
+  channel:         "whatsapp" | "tiktok" | "instagram" | "messenger" | "x" | "web";
   status:          ConversationStatus;
   lastMessage:     string;
   lastMessageAt:   string;   // ISO string

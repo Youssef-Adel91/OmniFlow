@@ -84,7 +84,13 @@ export default function SalesCard() {
             </div>
             <label className="block text-sm text-gray-100">اسم قالب واتساب المعتمد للمتابعة بعد انتهاء نافذة 24 ساعة (اختياري — بدونه تُتخطى المتابعة خارج النافذة)
               <input className={`${input} mt-1 w-full`} maxLength={100} value={value.whatsapp_followup_template} onChange={(e) => set("whatsapp_followup_template", e.target.value)} /></label>
+            <p className="text-xs text-gray-300">يجب أن يحتوي قالب المتابعة على متغير واحد فقط: {"{{1}}"} = اسم العميل.</p>
           </div>
+        )}
+        {value.booking_enabled && (
+          <label className="block text-sm text-gray-100">اسم قالب واتساب المعتمد لتذكير المعاينة خارج نافذة 24 ساعة (اختياري — بدونه يُنبَّه الموظف فقط)
+            <input className={`${input} mt-1 w-full`} maxLength={100} value={value.whatsapp_reminder_template ?? ""} onChange={(e) => set("whatsapp_reminder_template", e.target.value)} />
+            <span className="block text-xs text-gray-300 mt-1">قالب مستقل بمتغيرين: {"{{1}}"} = اسم العميل، {"{{2}}"} = موعد المعاينة.</span></label>
         )}
       </fieldset>
       <div className="flex items-center gap-3">

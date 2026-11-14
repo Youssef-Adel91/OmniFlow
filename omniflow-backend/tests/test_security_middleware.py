@@ -50,7 +50,8 @@ class MiddlewareTests(unittest.IsolatedAsyncioTestCase):
         async def incr(key, ttl):
             counter["n"] += 1
             return counter["n"]
-        with patch.object(sm.redis_mgr, "incr_counter", side_effect=incr), patch.object(get_settings(), "rate_limit_api_per_min", 3):
+        with patch.object(sm.redis_mgr, "incr_counter", side_effect=incr), patch.object(get_settings(), "rate_limit_api_per_min", 3), \
+                patch.object(get_settings(), "rate_limit_enabled", True):
             async with client(create_app()) as c:
                 codes = [(await c.get("/api/v1/billing/status", headers={"Authorization": "Bearer abc", "Origin": "http://localhost:3000"})) for _ in range(5)]
         self.assertEqual([r.status_code for r in codes], [401, 401, 401, 429, 429])
@@ -64,7 +65,7 @@ class MiddlewareTests(unittest.IsolatedAsyncioTestCase):
         async def incr(key, ttl):
             keys.append(key)
             return 10_000
-        with patch.object(sm.redis_mgr, "incr_counter", side_effect=incr):
+        with patch.object(sm.redis_mgr, "incr_counter", side_effect=incr), patch.object(get_settings(), "rate_limit_enabled", True):
             async with client(create_app()) as c:
                 a = await c.get("/api/v1/billing/status", headers={"Authorization": "Bearer one"})
                 b = await c.get("/api/v1/billing/status", headers={"Authorization": "Bearer two"})
@@ -80,7 +81,7 @@ class MiddlewareTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(keys[2].startswith("rl:hook:ip:"))
 
     async def test_redis_outage_fails_open(self):
-        with patch.object(sm.redis_mgr, "incr_counter", AsyncMock(return_value=None)):
+        with patch.object(sm.redis_mgr, "incr_counter", AsyncMock(return_value=None)), patch.object(get_settings(), "rate_limit_enabled", True):
             async with client(create_app()) as c:
                 r = await c.get("/api/v1/billing/status", headers={"Authorization": "Bearer abc"})
         self.assertEqual(r.status_code, 401)

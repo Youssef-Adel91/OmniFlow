@@ -72,7 +72,7 @@ export default function SettingsPage() {
 
   const applySettings = useCallback((s: TenantSettings) => {
     setSettings(s);
-    updateTenant({ businessName: s.business_name, tier: s.subscription_tier as "economic" | "professional" | "enterprise" });
+    updateTenant({ businessName: s.business_name, tier: s.subscription_tier as string });
   }, [updateTenant]);
 
   const load = useCallback(async () => {

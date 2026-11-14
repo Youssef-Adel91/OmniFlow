@@ -19,7 +19,7 @@ from datetime import datetime, timezone
 from src.channel_adapters.instagram import comment_moderation
 from src.shared.core.config import get_settings
 from src.shared.redis_client import redis_mgr
-from src.shared.services import tenant_prefs
+from src.shared.services import channel_health, tenant_prefs
 
 SEEN_TTL_S = 7 * 24 * 3600          # Meta only allows a private reply within 7 days of the comment, so that is also how long we remember it
 
@@ -51,7 +51,7 @@ def is_thread_reply(*, parent_id: str | None, post_id: str | None = None) -> boo
 
 
 async def decide(*, tenant_id: uuid.UUID, comment_id: str, sender_id: str, own_ids: set[str], thread_reply: bool, text: str,
-                 now: datetime | None = None) -> Decision:
+                 now: datetime | None = None, platform: str | None = None) -> Decision:
     cfg = get_settings()
     if not cfg.feature_social_comment_replies:
         return Decision("ignore", "feature_off")
@@ -65,6 +65,10 @@ async def decide(*, tenant_id: uuid.UUID, comment_id: str, sender_id: str, own_i
     pref = tenant_prefs.with_defaults("social_comments", prefs_all.get("social_comments"))
     if not pref.get("enabled"):
         return Decision("ignore", "tenant_disabled")
+    if platform and await channel_health.get_failure(tenant_id, platform):
+        # The Page/Instagram token is known to be dead: every hide/reply would fail at Meta and (for answers) burn AI quota for nothing. The tenant already has the
+        # "reconnect" banner + notification; the decision stays visible in the recent-comments list. Cleared by a reconnect or by the next successful send.
+        return Decision("ignore", "channel_needs_reconnect")
     seen = await redis_mgr.incr_counter(f"comment:seen:{comment_id}", ttl=SEEN_TTL_S)
     if seen is None:
         return Decision("ignore", "dedupe_unavailable")

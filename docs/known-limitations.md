@@ -18,3 +18,7 @@
 - Existing Messenger conversations stored as `instagram` are relabelled lazily on the customer's next message.
 - No client-side 7-day check for Private Reply; Meta's rejection is handled as a failed send.
 - CI runs on a single self-hosted Windows runner; Linux-only tests are skipped there.
+
+## CI / dependencies
+- The CI runner is a single self-hosted Windows machine; when it is off, runs queue and GitHub cancels them after 24 h.
+- `npm audit` (frontend) still reports advisories in `follow-redirects` and `zod` (high) and several moderate ones; Next.js itself is on `^16.4.6` since #47. Not addressed tonight.

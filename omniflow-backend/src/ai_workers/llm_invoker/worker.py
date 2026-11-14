@@ -459,6 +459,15 @@ class LLMInvokerWorker(BaseKafkaConsumer):
                 "يرجى التواصل مع فريقنا للمساعدة. 🤝"
             )
 
+        # ── 6b. Output guard (sales-closing tenants): never send an invented price / listing number / discount promise / stray phone number / prompt leak ──
+        if sales_addendum is not None and not llm_response.was_blocked:
+            from src.sales import output_guard
+
+            findings = output_guard.vet_answer(llm_response.text, context=f"{system_prompt}\n{rag_context or ''}\n{gemini_messages}")
+            if findings:
+                log.warning("llm_invoker_output_guard_blocked", findings=findings)
+                llm_response.text = output_guard.SAFE_FALLBACK_AR
+
         total_latency_ms = int((asyncio.get_event_loop().time() - start_ns) * 1000)
 
         # ── 7. Publish OutboundMessage ────────────────────────────────────────

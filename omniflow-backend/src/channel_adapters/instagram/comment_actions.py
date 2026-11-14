@@ -71,6 +71,7 @@ async def hide_comment_for_tenant(tenant_id: uuid.UUID, *, platform: str, commen
             logger.warning("comment_hide_no_token", platform=platform)
             return False
         await meta_client.hide_comment(comment_id, platform=platform, access_token=token)
+        await channel_health.note_success(tenant_id, "instagram" if platform == "instagram" else "facebook")
         return True
     except meta_client.MetaAuthError as exc:
         await channel_health.mark_auth_failed(tenant_id, "instagram" if platform == "instagram" else "facebook", str(exc))
@@ -90,6 +91,7 @@ async def post_public_template(tenant_id: uuid.UUID, *, platform: str, comment_i
             return None
         send = meta_client.send_instagram_comment_reply if platform == "instagram" else meta_client.send_comment_reply
         await send(comment_id=comment_id, text=text, access_token=token)
+        await channel_health.note_success(tenant_id, "instagram" if platform == "instagram" else "facebook")
         return text
     except meta_client.MetaAuthError as exc:
         await channel_health.mark_auth_failed(tenant_id, "instagram" if platform == "instagram" else "facebook", str(exc))

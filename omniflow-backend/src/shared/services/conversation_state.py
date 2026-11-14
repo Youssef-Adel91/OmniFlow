@@ -25,7 +25,7 @@ async def load_conversation_state(
         elif platform_conversation_id and channel:
             stmt = stmt.where(
                 Conversation.platform_conversation_id == platform_conversation_id,
-                Conversation.channel == channel,
+                Conversation.channel.in_([str(channel), "instagram"] if str(channel) == "messenger" else [str(channel)]),   # legacy Messenger rows were "instagram"
                 Conversation.status != ConversationStatus.CLOSED,
             ).order_by(Conversation.created_at.desc()).limit(1)
         else:

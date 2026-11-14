@@ -228,6 +228,10 @@ async def _process_whatsapp_value(value: dict[str, Any]) -> None:
                     text_content=event.text_content,
                     s3_media_url=event.media_url,
                 )
+                if _msg_id == uuid.UUID(int=0):
+                    # Meta delivered the same wamid again (it retries slow webhooks): already stored AND already published — publishing again would make the assistant answer twice.
+                    logger.info("whatsapp_duplicate_delivery_skipped", platform_message_id=event.platform_message_id)
+                    continue
                 # Stamp the event with the resolved conversation_id so
                 # downstream workers (SemanticRouter, LLMInvoker) can use it
                 # without an additional DB round-trip.

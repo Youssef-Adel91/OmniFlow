@@ -27,6 +27,12 @@ NOTIFY_TTL_S = 24 * 3600
 CHANNEL_LABEL_AR = {"whatsapp": "واتساب", "facebook": "فيسبوك ماسنجر", "instagram": "إنستجرام", "telegram": "تيليجرام"}
 
 
+def health_channel(channel: object) -> str:
+    """Channel value of a conversation/message -> the key used for health alarms (Messenger and Facebook comments share the Facebook Page token)."""
+    value = str(getattr(channel, "value", channel))
+    return {"whatsapp": "whatsapp", "instagram": "instagram", "messenger": "facebook", "telegram": "telegram"}.get(value, "facebook")
+
+
 def _key(tenant_id: uuid.UUID | str, channel: str) -> str:
     return f"channel:auth_failed:{tenant_id}:{channel}"
 
@@ -72,3 +78,14 @@ async def clear(tenant_id: uuid.UUID | str, channel: str) -> None:
         await redis_mgr.delete_raw(f"channel:auth_notified:{tenant_id}:{channel}")
     except Exception as exc:  # noqa: BLE001
         logger.warning("channel_health_clear_failed", channel=channel, error=type(exc).__name__)
+
+
+async def note_success(tenant_id: uuid.UUID | str, channel: str) -> None:
+    """A send/reply over this channel just worked: if an old "needs reconnect" alarm is still up it was stale (token fixed outside the app, or a one-off), so drop it.
+    One cheap Redis GET on the normal path; never raises."""
+    try:
+        if await redis_mgr.get_raw(_key(tenant_id, channel)):
+            await clear(tenant_id, channel)
+            logger.info("channel_health_recovered", tenant_id=str(tenant_id), channel=channel)
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("channel_health_success_note_failed", channel=channel, error=type(exc).__name__)

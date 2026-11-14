@@ -22,7 +22,7 @@ from src.shared.events.canonical import CanonicalInboundEvent
 
 logger = structlog.get_logger(__name__)
 
-SECRET_HEADER = "x-telegram-bot-api-secret-token"
+WEBHOOK_AUTH_HEADER = "x-telegram-bot-api-secret-token"
 _API = "https://api.telegram.org"
 _TEXT_LIMIT = 4096                                    # Telegram's hard cap per message
 
@@ -37,7 +37,7 @@ class TelegramAdapter:
     def verify(self, headers: Mapping[str, str], raw_body: bytes) -> bool:
         if not self._secret:
             return False                              # not configured → nothing is trusted
-        got = {k.lower(): v for k, v in headers.items()}.get(SECRET_HEADER, "")
+        got = {k.lower(): v for k, v in headers.items()}.get(WEBHOOK_AUTH_HEADER, "")
         return hmac.compare_digest(got.encode(), self._secret)
 
     # ── inbound ──────────────────────────────────────────────────────────────────────────────────────────────────

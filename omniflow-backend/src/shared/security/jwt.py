@@ -191,13 +191,14 @@ def _clerk_issuer() -> str:
     return issuer
 
 
-def verify_clerk_token(token: str) -> dict[str, Any]:
+def verify_clerk_token(token: str, leeway: int | None = None) -> dict[str, Any]:
     """
     Validate and decode a Clerk JWT access token using PyJWT.
     
     1. Rejects issuers other than the configured Clerk instance before any I/O.
     2. Fetches keys only from that trusted instance (cached).
     3. Verifies the RSA signature, issuer, expiry and required subject.
+       Includes configurable clock-skew leeway (default 30s) to tolerate minor dev/server clock drift.
     """
     try:
         unverified_payload = pyjwt.decode(token, options={"verify_signature": False})
@@ -214,12 +215,14 @@ def verify_clerk_token(token: str) -> dict[str, Any]:
         jwks_client = _jwk_clients[jwks_url]
         signing_key = jwks_client.get_signing_key_from_jwt(token)
         
+        leeway_seconds = leeway if leeway is not None else getattr(_settings, "clerk_jwt_leeway_seconds", 30)
         payload = pyjwt.decode(
             token,
             signing_key.key,
             algorithms=["RS256"],
             issuer=issuer,
             options={"require": ["exp", "iat", "sub", "iss"]},
+            leeway=leeway_seconds,
         )
         if not payload.get("sub"):
             raise JWTError("Missing subject")

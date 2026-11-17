@@ -47,6 +47,7 @@ Generated from `omniflow-backend/src/shared/core/config.py` (the `Settings` clas
 | `BILLING_VAT_RATE_BP` | int | optional | yes |  |
 | `CLERK_API_BASE` | str | optional | no |  |
 | `CLERK_ISSUER_URL` | str | optional | no |  |
+| `CLERK_JWT_LEEWAY_SECONDS` | int | optional | yes | Clock-skew tolerance in seconds for Clerk JWT verification (0-120, default: 30) |
 | `CLERK_PUBLISHABLE_KEY` | secret | optional | yes |  |
 | `CLERK_SECRET_KEY` | secret | optional | yes |  |
 | `CLERK_WEBHOOK_SECRET` | secret | optional | yes | Clerk/Svix webhook signing secret — env: CLERK_WEBHOOK_SECRET |

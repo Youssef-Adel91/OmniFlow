@@ -53,6 +53,12 @@ class Settings(BaseSettings):
     clerk_secret_key: str = ""
     clerk_publishable_key: str = ""
     clerk_issuer_url: str = ""
+    clerk_jwt_leeway_seconds: int = Field(
+        default=30,
+        ge=0,
+        le=120,
+        description="Clock-skew tolerance in seconds for Clerk JWT verification (0-120)",
+    )
     # Svix signing secret for the Clerk webhook (env: CLERK_WEBHOOK_SECRET).
     # MANDATORY in production — see validate_production_settings below.
     clerk_webhook_secret: str = Field(

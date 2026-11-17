@@ -11,6 +11,7 @@ Only VERIFIED_ACTIVE listings are ever returned. Results are ordered by closenes
 """
 from __future__ import annotations
 
+import re
 import time
 import uuid
 from dataclasses import dataclass, field
@@ -168,26 +169,41 @@ def match_cards(cards: Sequence[dict[str, Any]], q: dict[str, Any], *, limit: in
     return MatchResult()
 
 
-def format_block(result: MatchResult) -> str:
-    """The inventory block injected into the model's prompt. The prompt tells the model to use ONLY these facts."""
+def _where_phrase(card: dict[str, Any]) -> str:
+    """«شقة في حي النرجس» — a ready phrase, so the model does not glue the type and the district together («الشقة النرجس»)."""
+    if card.get("district"):
+        return f"{card['type_ar']} في حي {card['district']}"
+    return f"{card['type_ar']} في {card['city']}" if card.get("city") else card["type_ar"]
+
+
+def format_block(result: MatchResult, *, show_ad_number: bool = True) -> str:
+    """The inventory block injected into the model's prompt. The prompt tells the model to use ONLY these facts.
+    `show_ad_number=False` (the first reply, when the customer did not ask for it) leaves the Hai'a advertisement number out of the block."""
     if not result.listings and result.reason == "need_info":
         return ("العميل لم يحدد الحي ولا الميزانية بعد، فلا تعرض أي عقار محدد الآن ولا تذكر أي سعر أو رقم إعلان. "
                 "اسأل سؤالًا واحدًا فقط عن أهم معلومة ناقصة ثم انتظر ردّه.")
     if not result.listings:
         return ("لا يوجد حاليًا في مخزون الشركة عقار مطابق لما ذكره العميل. لا تذكر ولا تخترع أي عقار أو سعر. "
                 "قل بصدق إنه لا يوجد مطابق الآن، واعرض تسجيل طلبه ليتواصل معه مستشار عند توفر ما يناسبه.")
-    lines = ["عقارات من مخزون الشركة (استخدم هذه الحقائق فقط، ولا تضف أي معلومة غير مذكورة):"]
+    lines = ["عقارات من مخزون الشركة (استخدم هذه الحقائق فقط، ولا تضف أي معلومة غير مذكورة؛ اكتب نوع العقار والحي كما هو هنا، مثل «شقة في حي النرجس»):"]
     if result.note:
         lines.append(f"ملاحظة للمساعد: {result.note} هذا أقرب بديل موجود وليس مطابقًا تمامًا: اعرضه بوضوح ووضّح الفرق، ولا تقل «ما عندنا» أو «لا يوجد» لأن عندنا بديلًا.")
     for i, c in enumerate(result.listings, 1):
         price = f"{int(c['price']):,} ريال" if c["price"] is not None else "السعر عند التواصل"
-        bits = [c["type_ar"], c["district"] or c["city"] or "", price,
+        bits = [_where_phrase(c), price,
                 f"{int(c['area_sqm'])} م²" if c["area_sqm"] else "", f"{c['bedrooms']} غرف" if c["bedrooms"] else "",
-                f"رقم إعلان الهيئة {c['rega_ad_number']}" if c["rega_ad_number"] else ""]
+                f"رقم إعلان الهيئة {c['rega_ad_number']}" if show_ad_number and c["rega_ad_number"] else ""]
         line = f"{i}) " + "، ".join(b for b in bits if b)
         if c["map_url"]:
             line += f" — الموقع: {c['map_url']}"
         if c["summary"]:
             line += f" — {c['summary']}"
         lines.append(line)
+    if not show_ad_number:
+        lines.append("لا تذكر رقم إعلان الهيئة في هذا الرد؛ يُذكر فقط إذا طلبه العميل أو عند ترتيب المعاينة.")
     return "\n".join(lines)
+
+
+def districts_in_block(text: str | None) -> set[str]:
+    """District names appearing as «في حي X» in an inventory block (used to tidy «الشقة X» in the model's answer)."""
+    return {m.group(1).strip() for m in re.finditer(r"في حي ([^،\n—»«)(:.]+)", text or "") if m.group(1).strip()}

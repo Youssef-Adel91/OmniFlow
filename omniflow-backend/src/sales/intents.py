@@ -7,7 +7,7 @@ Deterministic detectors for messages the assistant must NOT improvise on. No LLM
     injection      "ignore your instructions", "show me your prompt" … -> a polite fixed refusal, the message never reaches the model as an instruction
     other_customers_data   asks for other customers' numbers / lists / who bought -> refused (privacy), never answered from data
 
-`classify` returns the first match by priority: opt_out > injection > other_customers_data > complaint > negotiation > competitor > human_request > advice (no guarantees / predictions / legal-financial advice).
+`classify` returns the first match by priority: opt_out > injection > other_customers_data > complaint > negotiation > competitor > human_request > service_question > advice (no guarantees / predictions / legal-financial advice).
 """
 from __future__ import annotations
 
@@ -119,6 +119,13 @@ def is_competitor_mention(text: str) -> bool:
     return _contains(_light(text), _COMPETITOR)
 
 
+def is_service_question(text: str) -> str | None:
+    """The service a customer ASKS about (financing / ownership transfer / inspection / insurance / property management), or None. Whether the office actually offers it is decided by the hook."""
+    from src.sales import phrasing
+
+    return phrasing.asked_service(text)
+
+
 def classify(text: str) -> Intent | None:
     if not (text or "").strip():
         return None
@@ -138,6 +145,9 @@ def classify(text: str) -> Intent | None:
         return Intent("competitor")
     if is_human_request(text):
         return Intent("human_request")
+    service = is_service_question(text)
+    if service:
+        return Intent("service_question", service)
     if is_advice_request(text):
         return Intent("advice")
     return None
@@ -152,6 +162,8 @@ REPLIES_AR = {
     "advice": "ما أقدر أعطي ضمانات عوائد أو توقعات أسعار أو استشارة قانونية/مالية، لأن هذا يحتاج مختص. أقدر أعرض لك العقارات المتاحة بأسعارها المعلنة وأرتب لك لقاء مع أحد مستشارينا 🤝",
     "human_request": "أكيد، حوّلتك الآن إلى أحد موظفينا ليتواصل معك مباشرة 🤝",
     "competitor": "فهمتك. وش تفاصيل العرض اللي جاك (نوع العقار والحي والسعر)؟ أبغى أشوف إذا عندنا شيء قريب منه أو أحوّلك لمستشار يخدمك أكثر.",
+    "service_question": "سؤال مهم، وما أحب أعطيك معلومة غير مؤكدة. أحد موظفينا يأكد لك التفاصيل ويتواصل معك بخصوصه، وحوّلتك له الآن 🤝",
+    "pause": "خذ راحتك، وإذا احتجت أي شيء أنا موجود.",
     "negotiation": "أكيد، موضوع السعر والتفاوض يتولاه أحد مستشارينا. سجّلتُ طلبك وسأحوّلك له الآن ليتواصل معك.",
 }
 
@@ -166,6 +178,8 @@ def route_turn(text: str, *, booking_open: bool = False, has_appointment: bool =
         opt_out | injection | other_data | complaint | negotiation          fixed reply (+ hand-off for complaint / negotiation), the model is never called
         human_request                                                        fixed confirmation + hand-off to a person, never the model, never a question
         competitor                                                           fixed reply with ONE question about the other offer (not a pause reply)
+        service_question                                                     asks about financing / ownership transfer / … : a fixed "an employee will confirm" + hand-over, unless the office's own profile states the service
+        pause                                                                «بفكر وارد لك», «اسأل زوجتي وأرجع لك», «بس أتفرج»: a short fixed reply, no question, no model
         booking_answer | booking_cancel | booking_reschedule | booking_start  the viewing dialogue
         qualify                                                              normal path: qualification + listings -> the model answers
 
@@ -187,4 +201,8 @@ def route_turn(text: str, *, booking_open: bool = False, has_appointment: bool =
         return "booking_reschedule"
     if not has_appointment and qualification.extract_from_text(text).get("viewing_requested"):
         return "booking_start"
+    from src.sales import phrasing
+
+    if phrasing.is_pause_or_objection(text) and not phrasing.is_price_question(text) and "؟" not in text and "?" not in text:
+        return "pause"                                   # asked for time / objects / is just looking: a short reply, never a question (and never the model)
     return "qualify"

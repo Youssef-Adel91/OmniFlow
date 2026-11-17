@@ -50,3 +50,11 @@ Celery beat كل 5 دقائق (`omniflow.sales_followups`): خطوات بتأخ�
 
 ## ما ينقص
 واجهة Kanban وإعدادات المبيعات وملخص التسليم في الـ inbox (الـ API جاهز: `/deals/board`, `/deals/by-conversation/{id}`).
+
+## Round 3: deterministic services and pauses, budget question placement, wording
+
+- **Services** (financing, ownership transfer, inspection, insurance...) the office did not state in its settings route to `service_question`: a fixed reply says a staff member will confirm the details and hand over to the booking step. The model is not called.
+- **Pauses** («بفكر وارد لك», «اسأل زوجتي») route to `pause`: one short reply, varied, never a question.
+- **Budget question** (`وش ميزانيتك تقريبًا؟` / `كم تبي تصرف؟` / `وش الحدود اللي تناسبك؟`) is asked only when budget is the most important missing field and the turn is purchase-related. Never after out-of-scope (gold), financing, ownership transfer or a staff request; never repeated verbatim; «ما هي/ما هو الميزانية» is rewritten.
+- **Wording**: «الشقة النرجس» → «شقة النرجس»; the REGA ad number is left out of the first reply unless the customer asks or a viewing is being arranged.
+- **eval_bot**: `price_dodged` is not applied to out-of-scope questions; new findings `budget_question_misplaced`, `banned_budget_phrase`, `type_district_glued`, `ad_number_unprompted`, `service_question_not_handed_over`.

@@ -56,7 +56,7 @@ def fix_greeting(answer: str, customer_text: str | None) -> str:
 
 
 # ── 2. pauses / objections ───────────────────────────────────────────────────────────────────────────────────────
-_PAUSE = ("اسال زوجتي", "اسال زوجتى", "اسال اهلي", "اسال والدي", "اسال الوالد", "استشير", "اتشاور", "بشاور", "ارجع لك", "ارجعلك", "ارجع لكم", "برجع لك", "برجعلك",
+_PAUSE = ("اسال زوجتي", "اسال زوجتى", "اسال اهلي", "اسال والدي", "اسال الوالد", "استشير", "اتشاور", "بشاور", "ارجع لك", "ارجعلك", "ارجع لكم", "برجع لك", "برجعلك", "هفكر", "هشاور", "هرجع لك", "هرجعلك", "هرد عليك", "سافكر", "سأفكر",
           "بفكر", "خلني افكر", "خليني افكر", "افكر فيها", "افكر شوي", "بعدين", "لاحقا", "مو الحين", "مو الان", "مش دلوقتي", "مش دلوقت", "مو مقتنع", "مش مقتنع", "مب مقتنع",
           "بس ادور", "بس اتفرج", "ادور واتفرج", "بس شوف", "اتفرج بس",
           "let me think", "i'll think", "i will think", "ask my wife", "ask my husband", "talk to my wife", "get back to you", "come back to you", "not now", "maybe later",
@@ -74,7 +74,7 @@ PAUSE_REPLIES_AR = ("خذ راحتك، وإذا احتجت أي شيء أنا م
 
 # ── 3. variety ───────────────────────────────────────────────────────────────────────────────────────────────────
 QUESTION_VARIANTS_AR: dict[str, tuple[str, ...]] = {
-    "budget": ("كم الميزانية التقريبية اللي تفكر فيها؟", "وش الميزانية اللي تناسبك تقريبًا؟", "في أي حدود ميزانيتك عشان أرشّح لك الأنسب؟"),
+    "budget": ("وش ميزانيتك تقريبًا؟", "كم تبي تصرف؟", "وش الحدود اللي تناسبك؟"),
     "district": ("في أي حي أو منطقة تفضّل؟", "وين تحب يكون العقار؟", "عندك حي معين في بالك؟"),
     "property_type": ("تدوّر على شقة، فيلا، أرض، أو غير ذلك؟", "وش نوع العقار اللي تبغاه؟", "تفضّل شقة ولا فيلا ولا شيء ثاني؟"),
     "purpose": ("الشراء للسكن أو للاستثمار؟", "العقار لك تسكنه ولا للاستثمار؟", "تبغاه سكن لك ولا استثمار؟"),
@@ -109,14 +109,19 @@ def strip_repeated_sentences(answer: str, previous: Iterable[str]) -> str:
     return out or answer
 
 
-def polish(answer: str, *, customer_text: str | None, previous: Iterable[str] = (), context: str | None = "") -> str:
-    """Deterministic clean-up of the model's answer: no unprompted salam, no sentence repeated from earlier turns, one question at most, correct «ما هي الميزانية»,
-    and no promise of a service the office has not confirmed (`context` = the office's own persona/profile)."""
+def polish(answer: str, *, customer_text: str | None, previous: Iterable[str] = (), context: str | None = "", districts: Iterable[str] = (), first_reply: bool = False) -> str:
+    """Deterministic clean-up of the model's answer: no unprompted salam, no sentence repeated from earlier turns, no promise of a service the office has not confirmed
+    (`context` = the office's own persona/profile), one question at most, no «ما هي الميزانية», «شقة النرجس» not «الشقة النرجس», and no Hai'a ad number in a first reply
+    nobody asked it of."""
     text = fix_greeting(answer, customer_text)
     text = strip_repeated_sentences(text, previous)
     text = soften_service_claims(text, context)
     text = limit_questions(text)
-    return fix_grammar(text)
+    text = fix_grammar(text)
+    text = fix_type_district(text, districts)
+    if first_reply and not asks_for_ad_number(customer_text):
+        text = strip_ad_numbers(text)
+    return text
 
 
 # ── price questions: answer the price FIRST, from the inventory ──────────────────────────────────────────────────
@@ -126,8 +131,20 @@ _PRICE_Q = ("كم سعر", "كم السعر", "كام السعر", "كام سع�
 
 
 def is_price_question(text: str | None) -> bool:
+    """A question about the PRICE OF A PROPERTY. «كم سعر الذهب؟» has the same shape but is not ours: out-of-scope lines never count."""
     t = _norm(text)
-    return bool(t) and any(p in t for p in _PRICE_Q)
+    return bool(t) and any(p in t for p in _PRICE_Q) and not is_out_of_scope(text)
+
+
+_OUT_OF_SCOPE = ("ذهب", "فضه", "اسهم", "بورصه", "تداول", "عملات", "عمله رقميه", "بيتكوين", "دولار", "يورو", "طقس", "الجو ", "كوره", "مباراه", "دوري", "سياسه", "انتخابات", "وصفه", "طبخ",
+                 "سيارات", "سياره", "ايفون", "gold", "silver", "stock", "bitcoin", "crypto", "weather", "football", "soccer", "recipe", "politic")
+_PROPERTY_WORDS = ("شقه", "فيلا", "ارض", "عقار", "بيت", "منزل", "مكتب", "محل", "عماره", "استوديو", "مستودع", "apartment", "villa", "land", "property", "house", "office", "flat")
+
+
+def is_out_of_scope(text: str | None) -> bool:
+    """A line that has nothing to do with real estate (gold, stocks, weather…). A property word in the same line makes it ours."""
+    t = _norm(text)
+    return bool(t) and any(w in t for w in _OUT_OF_SCOPE) and not any(w in t for w in _PROPERTY_WORDS)
 
 
 _PRICE_IN_ANSWER = re.compile(r"\d[\d,.]*\s*(?:ريال|ر\.?\s?س|sar|riyal|الف|ألف|مليون|k\b|m\b)|(?:مليون|ملايين|الف|ألف)\s*ريال", re.I)
@@ -138,12 +155,43 @@ def answer_states_a_price(answer: str) -> bool:
 
 
 # ── grammar the model gets wrong ─────────────────────────────────────────────────────────────────────────────────
-_FEMININE_AFTER_MA_HO = re.compile(r"\bما هو(\s+(?:ال)?(?:ميزاني|منطق|مساح|طريق|فئ|غرف|مدين|صيغ|خطه|خطة))")
+_MA_HI_BUDGET = re.compile(r"ما\s+(?:هي|هو)\s+(?:ال)?ميزاني(?:تك|ه|ة)")
+_MA_HO_FEMININE = re.compile(r"\bما هو(\s+(?:ال)?(?:منطق|مساح|طريق|فئ|غرف|مدين|صيغ|خطه|خطة))")
 
 
 def fix_grammar(answer: str) -> str:
-    """«ما هو الميزانية» -> «ما هي الميزانية» (and the same for the other feminine nouns of the qualification questions)."""
-    return _FEMININE_AFTER_MA_HO.sub(r"ما هي\1", answer or "")
+    """«ما هي/ما هو الميزانية» is never used (stiff, and the model keeps getting its gender wrong): it becomes «وش ميزانيتك»; the other feminine nouns get «ما هي»."""
+    text = _MA_HI_BUDGET.sub("وش ميزانيتك", answer or "")
+    return _MA_HO_FEMININE.sub(r"ما هي\1", text)
+
+
+# ── «الشقة النرجس» -> «شقة النرجس» ──────────────────────────────────────────────────────────────────────────────
+_TYPE_NOUNS = "شقة|شقه|فيلا|ارض|أرض|مكتب|محل|عمارة|عماره|استوديو|مستودع"
+
+
+def fix_type_district(answer: str, districts: Iterable[str]) -> str:
+    """Drop the stray «ال» of a property type written right before a district name (the model copies the inventory line): «الشقة النرجس» -> «شقة النرجس»."""
+    text = answer or ""
+    for d in {x.strip().removeprefix("ال") for x in districts if x and x.strip()}:
+        text = re.sub(rf"(?<![ء-ي])(و?)ال({_TYPE_NOUNS})(\s+)(?=(?:حي\s+)?(?:ال)?{re.escape(d)})", r"\1\2\3", text)
+    return text
+
+
+# ── the Hai'a ad number is not for the first reply ───────────────────────────────────────────────────────────────
+_AD_ASK = ("رقم الاعلان", "رقم إعلان", "رقم الإعلان", "رقم الترخيص", "رقم الهيئه", "رقم الهيئة", "ترخيص", "ad number", "advertisement number", "license number", "licence number", "rega")
+_AD_MENTION = re.compile(r"(?:[،,\-–—(]\s*)?(?:رقم\s+(?:إعلان|اعلان|الإعلان|الاعلان)(?:\s+(?:الهيئة|الهيئه))?|ad(?:vertisement)?\s+(?:number|no\.?))\s*:?\s*\d{6,}\s*\)?[،,]?", re.I)
+
+
+def asks_for_ad_number(text: str | None) -> bool:
+    t = _norm(text)
+    return bool(t) and any(_norm(w) in t for w in _AD_ASK)
+
+
+def strip_ad_numbers(answer: str) -> str:
+    """Remove «رقم إعلان الهيئة 7100000001» from a first reply nobody asked it of."""
+    out = _AD_MENTION.sub(" ", answer or "")
+    out = re.sub(r"\s+([،,.؟?!])", r"\1", out)
+    return re.sub(r"\s{2,}", " ", out).strip() or answer
 
 
 # ── one question per reply ───────────────────────────────────────────────────────────────────────────────────────
@@ -166,7 +214,7 @@ _NEGATION = re.compile(r"(?:^|\s)(?:ما|لا|مو|مب|ليس|لن|not|can't|ca
 SERVICES: dict[str, tuple[str, tuple[str, ...]]] = {
     "financing": (r"(?:ال)?(?:تمويل|قرض|قروض|رهن)\w*|financ\w*|mortgage|loan\w*", ("تمويل", "قرض", "رهن", "financ", "mortgage", "loan")),
     "ownership_transfer": (r"(?:نقل (?:ال)?ملكي|افراغ|ترتيب (?:ال)?صك|ownership transfer|title transfer|deed transfer)", ("نقل الملكي", "افراغ", "الصك", "ownership", "deed")),
-    "inspection": (r"(?:فحص (?:ال)?(?:عقار|مبني|شقه)|inspection)", ("فحص", "inspection")),
+    "inspection": (r"(?:فحص\s+(?:ال|لل|ل)?(?:عقار|مبني|شقه|فيلا)|inspection)", ("فحص", "inspection")),
     "insurance": (r"(?:تامين|insurance)", ("تامين", "insurance")),
     "property_management": (r"(?:ادار[هة] (?:ال)?(?:املاك|عقار)|property management)", ("ادارة الاملاك", "ادارة العقار", "property management")),
 }
@@ -205,6 +253,32 @@ def soften_service_claims(answer: str, context: str | None = "") -> str:
     return text or answer
 
 
+# ── questions about services the office may not offer ────────────────────────────────────────────────────────────
+_INTERROGATIVE = ("هل", "تقدر", "تقدرون", "تقدرو", "تساعدون", "تساعد", "تسوون", "توفرون", "عندكم", "يقبل", "تقبل", "يمكن", "ممكن", "متوفر", "فيه", "كيف", "وش", "ايش", "شلون",
+                  "can you", "can i", "do you", "does", "is there", "are you", "is it", "how do", "how can", "will you", "could you", "?", "؟")
+
+
+def asked_service(text: str | None) -> str | None:
+    """The service (financing, ownership transfer, inspection, insurance, property management) the customer ASKS about — a question, not a statement or an answer like «تمويل بنكي»."""
+    t = _norm(text)
+    if not t or not any(_norm(w) in t for w in _INTERROGATIVE):
+        return None
+    for name, (noun, _ctx) in SERVICES.items():
+        if re.search(noun, t):
+            return name
+    return None
+
+
+def office_mentions_service(office_info: str | None, service: str) -> bool:
+    ctx = _norm(office_info)
+    return any(_norm(w) in ctx for w in SERVICES[service][1])
+
+
+def purchase_context(q: dict[str, Any]) -> bool:
+    """True once the customer has said anything about WHAT he wants (type, district, rooms, purpose, budget, viewing) — only then is a budget question natural."""
+    return bool(q.get("property_type") or q.get("district") or q.get("rooms") or q.get("purpose") or q.get("budget_min") or q.get("budget_max") or q.get("viewing_requested"))
+
+
 # ── 4 + checks ───────────────────────────────────────────────────────────────────────────────────────────────────
 def needs_focus(q: dict[str, Any]) -> bool:
     """True while the customer has given neither a district nor a budget (a property type alone is not enough to start recommending)."""
@@ -223,7 +297,8 @@ _PAUSE_REPLY_MARKERS = tuple(_norm(x) for x in ("خذ راحتك", "على را�
 _HANDOVER_MARKERS = ("موظف", "مستشار", "فريق", "اخصائي", "agent", "team member", "consultant", "colleague")
 
 
-def behaviour_findings(answer: str, *, customer_line: str, qual: dict[str, Any], first_contact: bool = False, inventory_has_listings: bool = False) -> list[str]:
+def behaviour_findings(answer: str, *, customer_line: str, qual: dict[str, Any], first_contact: bool = False, inventory_has_listings: bool = False,
+                       districts: Iterable[str] = ()) -> list[str]:
     """Behaviour defects in a reply (a model ANSWER or a fixed rule reply) — used by `scripts/eval_bot.py`."""
     from src.sales import intents
 
@@ -250,6 +325,17 @@ def behaviour_findings(answer: str, *, customer_line: str, qual: dict[str, Any],
         out.append("human_request_ignored")                                  # a person was asked for: confirm the hand-over, ask nothing
     if unverified_service_claims(answer, ""):
         out.append("unverified_service_claim")
+    if asked_service(customer_line) and not any(m in a for m in _HANDOVER_MARKERS):
+        out.append("service_question_not_handed_over")                       # «هل يقبل تمويل بنكي؟» must end with «أحد موظفينا يأكد لك»
+    budget_q = any(_FIELD_ASKED["budget"].search(_norm(s)) for s in questions)
+    if budget_q and (is_out_of_scope(customer_line) or asked_service(customer_line) or human or competitor or is_pause_or_objection(customer_line) or not purchase_context(qual)):
+        out.append("budget_question_misplaced")                               # pasted after gold / financing / ownership transfer / a person / a pause / before he said what he wants
+    if re.search(r"ما\s+(?:هي|هو)\s+(?:ال)?ميزاني", a):
+        out.append("banned_budget_phrase")
+    if districts and any(re.search(rf"(?<![ء-ي])(?:و?)ال(?:{_TYPE_NOUNS})\s+(?:حي\s+)?(?:ال)?{re.escape(d.removeprefix('ال'))}", answer) for d in districts):
+        out.append("type_district_glued")                                      # «الشقة النرجس»
+    if first_contact and not asks_for_ad_number(customer_line) and _AD_MENTION.search(answer.translate(_AR_DIGITS)):
+        out.append("ad_number_unprompted")
     if competitor and (any(m in a for m in _PAUSE_REPLY_MARKERS) or not questions and not any(m in a for m in _HANDOVER_MARKERS)):
         out.append("competitor_paused")                                      # a pause reply (or nothing at all) to «another company offered me less»
     return out
@@ -280,6 +366,14 @@ def addendum_violations(addendum: str, *, customer_line: str, qual: dict[str, An
         bad.append("missing_price_first_rule")
     if price_q and "لا تعرض أي عقار محدد" in addendum:
         bad.append("price_question_blocked_by_focus_rule")
+    if (is_out_of_scope(customer_line) or asked_service(customer_line)) and "في نهاية ردك اسأل" in addendum:
+        bad.append("question_requested_after_out_of_scope_or_service")
+    if not purchase_context(qual) and "في نهاية ردك اسأل" in addendum:
+        quoted_q = re.search(r"«([^»]+)»", addendum.split("في نهاية ردك اسأل", 1)[1])
+        if quoted_q and quoted_q.group(1) in QUESTION_VARIANTS_AR["budget"]:
+            bad.append("budget_asked_before_he_said_what_he_wants")
+    if "ما هي الميزانية" not in addendum or "وش ميزانيتك" not in addendum:
+        bad.append("missing_budget_phrase_rule")
     if "لا تكرر نفس الجملة" not in addendum:
         bad.append("missing_variety_rule")
     if "علامة استفهام واحدة" not in addendum:

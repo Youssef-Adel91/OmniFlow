@@ -474,8 +474,11 @@ class LLMInvokerWorker(BaseKafkaConsumer):
 
                 office_info = compose_system_prompt(base_prompt, company_block)                 # persona + company profile, WITHOUT the sales brief: what the office has actually said it offers
                 claimed = phrasing.unverified_service_claims(llm_response.text, office_info)
-                llm_response.text = phrasing.polish(llm_response.text, customer_text=event.text_content, context=office_info,
-                                                    previous=[str(m.get("content") or "") for m in history if m.get("role") == "model"])
+                from src.sales import matcher as sales_matcher
+
+                earlier = [str(m.get("content") or "") for m in history if m.get("role") == "model"]
+                llm_response.text = phrasing.polish(llm_response.text, customer_text=event.text_content, context=office_info, previous=earlier,
+                                                    districts=sales_matcher.districts_in_block(sales_addendum), first_reply=not earlier)
                 if claimed:
                     log.warning("llm_invoker_unverified_service_claim", services=claimed)
                     handoff_after_reply = "unverified_service"

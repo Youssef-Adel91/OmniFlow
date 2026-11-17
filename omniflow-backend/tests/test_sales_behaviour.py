@@ -184,8 +184,12 @@ class GoldenBehaviourTests(unittest.TestCase):
     def test_the_47_scenarios_are_untouched(self):
         self.assertEqual(tuple(s[0] for s in golden.SCENARIOS[:47]), self.ORIGINAL_47)
         self.assertGreater(len(golden.SCENARIOS), 47)                                                      # the new ones come after them
-        changed = {sid: route for sid, _d, lines, _w, _l in golden.SCENARIOS[:47] for _t, route in lines if sid in ("s09_competitor", "s26_human_request")}
-        self.assertEqual(changed, {"s09_competitor": "competitor", "s26_human_request": "human_request"})   # the only two whose expected route changed, on purpose
+        moved = {"s07_not_convinced": "pause", "s08_ask_wife": "pause", "s09_competitor": "competitor", "s24_financing_question": "service_question", "s26_human_request": "human_request",
+                 "s27_browsing": "pause"}
+        changed = {sid: {route for _t, route in lines} for sid, _d, lines, _w, _l in golden.SCENARIOS[:47] if sid in moved}
+        self.assertEqual(changed, {sid: {route} for sid, route in moved.items()})                          # the only six whose expected route changed, on purpose (each was asked for)
+        other = [sid for sid, _d, lines, _w, _l in golden.SCENARIOS[:47] if sid not in moved and any(r in ("pause", "service_question", "competitor", "human_request") for _t, r in lines)]
+        self.assertEqual(other, [])
 
     def test_every_model_answered_turn_gets_the_manners_rules_for_its_line(self):
         checked = 0
@@ -196,7 +200,7 @@ class GoldenBehaviourTests(unittest.TestCase):
             qual, text, first, _ = scenario_brief(texts)
             self.assertEqual(phrasing.addendum_violations(text, customer_line=texts[-1], qual=qual, first_contact=first), [], sid)
             checked += 1
-        self.assertGreaterEqual(checked, 15)
+        self.assertGreaterEqual(checked, 12)
 
     def test_price_questions_of_the_golden_set_get_the_price_first_rule_and_a_listing(self):
         for sid, _d, lines, _w, _l in golden.SCENARIOS:
@@ -279,8 +283,8 @@ class PriceFirstRules(unittest.TestCase):
         r = matcher.match_cards([{"listing_id": "a", "type": "villa", "district": "X", "price": 1.0, "bedrooms": 1}], {"property_type": "villa"}, require_focus=True)
         self.assertEqual(r.reason, "need_info")
 
-    def test_ma_huwa_al_mizaniya_is_fixed(self):
-        self.assertEqual(phrasing.fix_grammar("ما هو الميزانية التقريبية؟".replace("ما", "ما")), "ما هي الميزانية التقريبية؟")
+    def test_ma_hiya_ma_huwa_al_mizaniya_never_survives(self):
+        self.assertEqual(phrasing.fix_grammar("ما هو الميزانية التقريبية؟"), "وش ميزانيتك التقريبية؟")
         self.assertEqual(phrasing.fix_grammar("ما هو نوع العقار؟"), "ما هو نوع العقار؟")
 
 
@@ -305,7 +309,7 @@ class HumanRequestAndCompetitorRoutes(unittest.TestCase):
         for text in ("شركة ثانية عرضوا علي شقة أرخص", "لقيت عند شركة تانية أرخص", "عند غيركم أرخص", "another company offered me a cheaper one", "I found a cheaper one elsewhere".replace("elsewhere", "somewhere")):
             self.assertEqual(intents.route_turn(text), "competitor", text)
             self.assertFalse(phrasing.is_pause_or_objection(text), text)
-        self.assertEqual(intents.route_turn("بفكر وارد لك"), "qualify")                                         # a plain pause stays a pause
+        self.assertEqual(intents.route_turn("بفكر وارد لك"), "pause")                                           # a plain pause is its own (fixed-reply) route, not a competitor
 
     def test_the_fixed_replies(self):
         from src.sales import intents
@@ -379,6 +383,169 @@ class NearestAlternative(unittest.TestCase):
         self.assertTrue(DEMO_LISTINGS)
 
 
+# ══ ROUND 3: services as a route, pauses as a route, budget question only when it fits, wording, ad number ═══════════════════════════════
+class ServiceAndPauseRoutes(unittest.TestCase):
+    def test_service_questions_route_to_a_confirmation_in_every_dialect(self):
+        from src.sales import intents
+        for text in ("هل يقبل تمويل بنكي؟", "تقدرون ترتبون لي تمويل؟", "هل تساعدون في نقل الملكية؟", "هل تقدرون تسوون فحص للعقار؟", "هل في تمويل", "ممكن تساعدوني في التمويل؟",
+                     "do you offer financing?", "can you help with the ownership transfer?", "هل عندكم تأمين على العقار؟"):
+            self.assertEqual(intents.route_turn(text), "service_question", text)
+
+    def test_a_statement_or_an_answer_about_financing_is_not_a_service_question(self):
+        from src.sales import intents
+        for text in ("تمويل بنكي", "ادفع كاش", "ابغى تمويل بنكي", "بشتري كاش", "I will pay cash", "ابغى شقة"):
+            self.assertEqual(intents.route_turn(text), "qualify", text)
+
+    def test_the_service_reply_is_a_confirmation_with_no_promise_and_no_question(self):
+        from src.sales import intents
+        reply = intents.REPLIES_AR["service_question"]
+        self.assertIn("موظفينا", reply)
+        self.assertNotIn("؟", reply)
+        self.assertEqual(phrasing.unverified_service_claims(reply, ""), [])
+        self.assertEqual(phrasing.behaviour_findings(reply, customer_line="هل يقبل تمويل بنكي؟", qual={}), [])
+
+    def test_the_office_stating_the_service_is_detected(self):
+        self.assertTrue(phrasing.office_mentions_service("شركتنا تقدم خدمات التمويل العقاري", "financing"))
+        self.assertFalse(phrasing.office_mentions_service("شركة عقارية في الرياض", "financing"))
+        self.assertFalse(phrasing.office_mentions_service(None, "financing"))
+
+    def test_pauses_route_to_a_fixed_short_reply(self):
+        from src.sales import intents
+        for text in ("بفكر وارد لك", "اسأل زوجتي وأرجع لك", "مو مقتنع بالموقع", "بس ادور واتفرج", "let me think about it", "هفكر وارجعلك", "خلني أفكر", "I'll ask my wife and get back to you"):
+            self.assertEqual(intents.route_turn(text), "pause", text)
+        for text in ("بفكر بس كم سعر الشقة؟", "بفكر، هل في خصم؟", "ابغى اشوفها بكره بس بفكر"):                 # real content in the same line: the model / another rule handles it
+            self.assertNotEqual(intents.route_turn(text), "pause", text)
+
+    def test_the_pause_replies_are_short_varied_and_never_a_question(self):
+        self.assertGreaterEqual(len(set(phrasing.PAUSE_REPLIES_AR)), 3)
+        for reply in phrasing.PAUSE_REPLIES_AR:
+            self.assertNotIn("؟", reply)
+            self.assertLessEqual(len(reply.split()), 12)
+
+
+class BudgetQuestionOnlyWhenItFits(unittest.TestCase):
+    def test_three_saudi_wordings_and_the_old_script_is_gone(self):
+        self.assertEqual(phrasing.QUESTION_VARIANTS_AR["budget"], ("وش ميزانيتك تقريبًا؟", "كم تبي تصرف؟", "وش الحدود اللي تناسبك؟"))
+        every = [v for vs in phrasing.QUESTION_VARIANTS_AR.values() for v in vs]
+        self.assertNotIn("كم الميزانية التقريبية اللي تفكر فيها؟", every)
+        self.assertEqual(q.QUESTIONS_AR["budget"], "وش ميزانيتك تقريبًا؟")
+
+    def test_out_of_scope_lines_are_detected_and_are_not_price_questions(self):
+        for text in ("كم سعر الذهب اليوم؟", "what is the gold price today", "وش اخبار الاسهم", "كم سعر الدولار"):
+            self.assertTrue(phrasing.is_out_of_scope(text), text)
+            self.assertFalse(phrasing.is_price_question(text), text)
+        self.assertFalse(phrasing.is_out_of_scope("كم سعر الفيلا؟"))
+        self.assertFalse(phrasing.is_out_of_scope("ابغى شقة قريبة من سوق الذهب"))                          # a property word makes it ours
+        self.assertTrue(phrasing.is_price_question("كم سعر الفيلا؟"))
+
+    def test_no_question_after_gold_financing_ownership_transfer_or_a_person(self):
+        qual = q.qualify(["ابغى شقة"])
+        for line in ("كم سعر الذهب اليوم؟", "هل يقبل تمويل بنكي؟", "هل تساعدون في نقل الملكية؟", "تقدرون ترتبون لي تمويل؟"):
+            self.assertIsNone(q.next_question(qual, last_text=line), line)
+        self.assertIsNotNone(q.next_question(qual, last_text="في النرجس"))
+
+    def test_before_he_says_what_he_wants_the_first_question_is_the_type_not_the_budget(self):
+        qual = q.qualify(["السلام عليكم"])
+        self.assertEqual(q.next_question(qual)[0], "property_type")
+        qual = q.qualify(["ابغى شقة"])
+        self.assertEqual(q.next_question(qual)[0], "budget")
+        self.assertEqual(q.next_question(q.qualify(["ابغى شقة في النرجس"], known_districts=["النرجس"]))[0], "budget")
+
+    def test_findings_for_a_misplaced_budget_question(self):
+        qual = q.qualify(["ابغى شقة"])
+        for line in ("كم سعر الذهب اليوم؟", "هل يقبل تمويل بنكي؟", "ابغى اتكلم مع موظف"):
+            self.assertIn("budget_question_misplaced", phrasing.behaviour_findings("وش ميزانيتك تقريبًا؟", customer_line=line, qual=qual), line)
+        self.assertNotIn("budget_question_misplaced", phrasing.behaviour_findings("وش ميزانيتك تقريبًا؟", customer_line="ابغى شقة", qual=qual))
+        self.assertIn("budget_question_misplaced", phrasing.behaviour_findings("وش ميزانيتك تقريبًا؟", customer_line="مرحبا", qual=q.qualify(["مرحبا"])))
+
+    def test_the_budget_phrases_are_banned_and_rewritten(self):
+        for bad in ("ما هي الميزانية؟", "ما هو الميزانية اللي تفكر فيها؟", "ما هي ميزانيتك؟"):
+            self.assertIn("banned_budget_phrase", phrasing.behaviour_findings(bad, customer_line="ابغى شقة", qual=q.qualify(["ابغى شقة"])), bad)
+            self.assertNotRegex(phrasing.fix_grammar(bad), r"ما\s+(?:هي|هو)\s+(?:ال)?ميزاني")
+        self.assertEqual(phrasing.fix_grammar("ما هي الميزانية؟"), "وش ميزانيتك؟")
+
+    def test_the_prompt_for_those_lines_has_no_ask_and_says_why(self):
+        _, gold, _, _ = scenario_brief(["ابغى شقة", "كم سعر الذهب اليوم؟"])
+        self.assertNotIn("في نهاية ردك اسأل", gold)
+        self.assertIn("العميل سأل خارج العقارات", gold)
+        self.assertNotIn("العميل سأل عن السعر", gold)                                                       # the gold price is not a property price
+        _, service, _, _ = scenario_brief(["ابغى شقة", "هل يقبل تمويل بنكي؟"])
+        self.assertNotIn("في نهاية ردك اسأل", service)
+        self.assertIn("العميل سأل عن خدمة", service)
+        _, hello, _, _ = scenario_brief(["السلام عليكم"])
+        self.assertIn("«تدوّر على شقة، فيلا، أرض، أو غير ذلك؟»", hello)                                                  # the type first
+        self.assertNotIn("«وش ميزانيتك تقريبًا؟»", hello)
+        for text in (gold, service, hello):
+            self.assertIn("وش ميزانيتك", text)
+            self.assertIn("لا تكتب «ما هي الميزانية»", text)
+
+
+class WordingAndAdNumber(unittest.TestCase):
+    DISTRICTS = ["النرجس", "الياسمين"]
+
+    def test_the_type_is_not_glued_to_the_district(self):
+        self.assertEqual(phrasing.fix_type_district("عندنا الشقة النرجس بسعر 850,000 ريال والفيلا الياسمين بسعر 1,950,000", self.DISTRICTS),
+                         "عندنا شقة النرجس بسعر 850,000 ريال وفيلا الياسمين بسعر 1,950,000")
+        self.assertEqual(phrasing.fix_type_district("الشقة في حي النرجس", self.DISTRICTS), "الشقة في حي النرجس")          # correct Arabic is untouched
+        self.assertEqual(phrasing.fix_type_district("الشقة الجديدة مناسبة", self.DISTRICTS), "الشقة الجديدة مناسبة")
+        self.assertIn("type_district_glued", phrasing.behaviour_findings("عندنا الشقة النرجس", customer_line="ابغى شقة", qual={}, districts=self.DISTRICTS))
+        self.assertNotIn("type_district_glued", phrasing.behaviour_findings("عندنا شقة النرجس", customer_line="ابغى شقة", qual={}, districts=self.DISTRICTS))
+
+    def test_the_inventory_line_hands_the_model_a_ready_phrase(self):
+        card = {"listing_id": "1", "rega_ad_number": "7100000001", "type": "apartment", "type_ar": "شقة", "city": "الرياض", "district": "النرجس", "price": 850000.0, "area_sqm": None,
+                "bedrooms": 3, "bathrooms": None, "map_url": None, "summary": ""}
+        block = matcher.format_block(matcher.MatchResult([card], 1, ""))
+        self.assertIn("1) شقة في حي النرجس، 850,000 ريال", block)
+        self.assertEqual(matcher.districts_in_block(block), {"النرجس"})
+
+    def test_the_ad_number_is_left_out_of_the_first_reply_unless_asked(self):
+        card = {"listing_id": "1", "rega_ad_number": "7100000001", "type": "apartment", "type_ar": "شقة", "city": "الرياض", "district": "النرجس", "price": 850000.0, "area_sqm": None,
+                "bedrooms": 3, "bathrooms": None, "map_url": None, "summary": ""}
+        res = matcher.MatchResult([card], 1, "")
+        self.assertIn("7100000001", matcher.format_block(res))
+        hidden = matcher.format_block(res, show_ad_number=False)
+        self.assertNotIn("7100000001", hidden)
+        self.assertIn("لا تذكر رقم إعلان الهيئة", hidden)
+        for text in ("ما رقم الإعلان؟", "ابغى رقم الترخيص", "what's the ad number?"):
+            self.assertTrue(phrasing.asks_for_ad_number(text), text)
+        self.assertFalse(phrasing.asks_for_ad_number("كم السعر؟"))
+
+    def test_polish_strips_an_unprompted_ad_number_only_in_a_first_reply(self):
+        answer = "عندنا شقة في حي النرجس بسعر 850,000 ريال، رقم إعلان الهيئة 7100000001، تناسبك؟"
+        first = phrasing.polish(answer, customer_text="كم سعر الشقة؟", first_reply=True)
+        self.assertNotIn("7100000001", first)
+        self.assertIn("850,000", first)
+        self.assertIn("7100000001", phrasing.polish(answer, customer_text="كم سعر الشقة؟", first_reply=False))
+        self.assertIn("7100000001", phrasing.polish(answer, customer_text="كم سعر الشقة ورقم الإعلان؟", first_reply=True))
+        self.assertIn("ad_number_unprompted", phrasing.behaviour_findings(answer, customer_line="ابغى شقة", qual={}, first_contact=True))
+        self.assertNotIn("ad_number_unprompted", phrasing.behaviour_findings(answer, customer_line="ما رقم الإعلان؟", qual={}, first_contact=True))
+
+
+class GoldenRound3(unittest.TestCase):
+    def test_every_deterministic_reply_of_the_golden_set_passes_its_checks(self):
+        from src.sales import intents
+        seen = set()
+        for sid, _d, lines, _w, _l in golden.SCENARIOS:
+            for text, route in lines:
+                if route in ("human_request", "competitor", "pause", "service_question"):
+                    seen.add(route)
+                    self.assertEqual(phrasing.behaviour_findings(intents.REPLIES_AR[route], customer_line=text, qual={}), [], (sid, route))
+        self.assertEqual(seen, {"human_request", "competitor", "pause", "service_question"})
+
+    def test_gold_and_financing_and_a_person_never_get_the_budget_question_in_the_golden_set(self):
+        for sid in ("s10_out_of_scope", "s24_financing_question", "s26_human_request", "f01_financing_service", "f02_ownership_transfer", "f03_inspection", "f04_financing_english"):
+            lines = next(s[2] for s in golden.SCENARIOS if s[0] == sid)
+            texts = [t for t, r in lines]
+            qual, text, _first, _res = scenario_brief(texts)
+            self.assertEqual(q.next_question(qual, last_text=texts[-1]) is None or sid == "s26_human_request", True, sid)
+            self.assertNotIn("«وش ميزانيتك تقريبًا؟»", text, sid)
+
+    def test_gold_is_answered_by_the_model_without_a_question_or_a_listing(self):
+        _, text, _, result = scenario_brief(["كم سعر الذهب اليوم؟"])
+        self.assertNotIn("في نهاية ردك اسأل", text)
+        self.assertTrue(result.listings == [] and result.reason == "need_info")                           # not a price question: first message, nothing known
+
+
 try:
     from tests.test_credits import CreditsBase, InvokerQuotaTests
     HAVE_DB = True
@@ -431,7 +598,23 @@ class PolishInInvokerTests(CreditsBase):
     async def test_the_invoker_keeps_one_question_and_fixes_the_grammar(self):
         text = await self.invoke("حياك. تحب نرتب معاينة؟ ما هو الميزانية اللي تفكر فيها؟")
         self.assertEqual(text.count("؟"), 1)
-        self.assertIn("ما هي الميزانية", text)
+        self.assertNotRegex(text, r"ما\s+(?:هي|هو)\s+(?:ال)?ميزاني")
+        self.assertIn("وش ميزانيتك", text)
+
+    async def test_the_invoker_tidies_the_type_the_budget_phrase_and_the_first_reply_ad_number(self):
+        addendum = "عقارات: 1) شقة في حي النرجس، 850,000 ريال، رقم إعلان الهيئة 7100000001"
+        text = await self.invoke("عندنا الشقة النرجس بسعر 850,000 ريال، رقم إعلان الهيئة 7100000001. ما هي الميزانية اللي تناسبك؟", addendum=addendum)
+        self.assertIn("شقة النرجس", text)
+        self.assertNotIn("الشقة النرجس", text)
+        self.assertNotIn("7100000001", text)                                                        # a first reply nobody asked the ad number of
+        self.assertIn("وش ميزانيتك", text)
+        self.assertNotRegex(text, r"ما\s+(?:هي|هو)")
+
+    async def test_the_ad_number_stays_in_a_later_reply(self):
+        addendum = "عقارات: 1) شقة في حي النرجس، 850,000 ريال، رقم إعلان الهيئة 7100000001"
+        history = [{"role": "model", "content": "أهلًا فيك", "sender_type": "ai_bot"}]
+        text = await self.invoke("عندنا شقة في حي النرجس بسعر 850,000 ريال، رقم إعلان الهيئة 7100000001.", history=history, addendum=addendum)
+        self.assertIn("7100000001", text)
 
     async def test_the_invoker_drops_a_question_it_already_asked(self):
         history = [{"role": "model", "content": "كم الميزانية التقريبية اللي تفكر فيها؟", "sender_type": "ai_bot"}]

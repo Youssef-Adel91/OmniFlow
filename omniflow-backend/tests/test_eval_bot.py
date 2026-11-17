@@ -11,6 +11,22 @@ def f(answer):
     return e.forbidden_findings(answer, allowed_prices=PRICES, allowed_ads=ADS)
 
 
+class BehaviourScannerRound3(unittest.TestCase):
+    def test_price_dodged_is_not_applied_to_out_of_scope_questions(self):
+        from src.sales import phrasing
+        reply = "ما عندي معلومة عن الذهب، أنا مختص بالعقارات."
+        for line in ("كم سعر الذهب اليوم؟", "كم سعر الدولار"):
+            self.assertNotIn("price_dodged", phrasing.behaviour_findings(reply, customer_line=line, qual={}, inventory_has_listings=True), line)
+        self.assertIn("price_dodged", phrasing.behaviour_findings("أبشر، تحب أرتب لك معاينة", customer_line="كم سعر الفيلا؟", qual={}, inventory_has_listings=True))
+
+    def test_new_findings_are_reported(self):
+        from src.sales import phrasing, qualification as q
+        qual = q.qualify(["ابغى شقة"])
+        self.assertIn("budget_question_misplaced", phrasing.behaviour_findings("وش ميزانيتك تقريبًا؟", customer_line="كم سعر الذهب اليوم؟", qual=qual))
+        self.assertIn("type_district_glued", phrasing.behaviour_findings("عندنا الشقة النرجس", customer_line="x", qual={}, districts=["النرجس"]))
+        self.assertIn("ad_number_unprompted", phrasing.behaviour_findings("رقم إعلان الهيئة 7100000001", customer_line="ابغى شقة", qual={}, first_contact=True))
+
+
 class ScannerTests(unittest.TestCase):
     def test_clean_answers_pass(self):
         for a in ("عندي شقة ٣ غرف في النرجس بسعر 850,000 ريال، تحب أرتب لك معاينة؟",

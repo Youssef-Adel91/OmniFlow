@@ -31,6 +31,7 @@ class MatchResult:
     listings: list[dict[str, Any]] = field(default_factory=list)
     tier: int = 0                      # 0 = nothing found, 1 = exact … 4 = slightly over budget
     note: str = ""
+    reason: str = ""                   # "need_info": nothing was searched because the customer gave neither a district nor a budget yet ("" = a search ran)
 
     @property
     def exact(self) -> bool:
@@ -84,10 +85,14 @@ def _where(tenant_id, q: dict[str, Any], *, district: bool, rooms: bool, ceiling
     return and_(*conds)
 
 
-async def match(session, tenant_id: uuid.UUID, q: dict[str, Any], *, limit: int = 3) -> MatchResult:
-    """Nothing to match on (no type, district or budget known) -> empty result: we do not dump the whole inventory on a customer who has said nothing."""
+async def match(session, tenant_id: uuid.UUID, q: dict[str, Any], *, limit: int = 3, require_focus: bool = False) -> MatchResult:
+    """Nothing to match on (no type, district or budget known) -> empty result: we do not dump the whole inventory on a customer who has said nothing.
+    `require_focus` (the assistant's first reply in a conversation): a property type alone is not enough either — without a district or a budget no specific listing is
+    shown, the assistant asks one question first (reason="need_info")."""
     if not (q.get("property_type") or q.get("district") or q.get("budget_max") or q.get("budget_min")):
-        return MatchResult()
+        return MatchResult(reason="need_info")
+    if require_focus and not (q.get("district") or q.get("budget_max") or q.get("budget_min")):
+        return MatchResult(reason="need_info")
     ceiling = float(q["budget_max"]) if q.get("budget_max") else None
     tiers = (
         (1, dict(district=True, rooms=True, ceiling_factor=1.0), ""),
@@ -110,6 +115,9 @@ async def match(session, tenant_id: uuid.UUID, q: dict[str, Any], *, limit: int 
 
 def format_block(result: MatchResult) -> str:
     """The inventory block injected into the model's prompt. The prompt tells the model to use ONLY these facts."""
+    if not result.listings and result.reason == "need_info":
+        return ("العميل لم يحدد الحي ولا الميزانية بعد، فلا تعرض أي عقار محدد الآن ولا تذكر أي سعر أو رقم إعلان. "
+                "اسأل سؤالًا واحدًا فقط عن أهم معلومة ناقصة ثم انتظر ردّه.")
     if not result.listings:
         return ("لا يوجد حاليًا في مخزون الشركة عقار مطابق لما ذكره العميل. لا تذكر ولا تخترع أي عقار أو سعر. "
                 "قل بصدق إنه لا يوجد مطابق الآن، واعرض تسجيل طلبه ليتواصل معه مستشار عند توفر ما يناسبه.")

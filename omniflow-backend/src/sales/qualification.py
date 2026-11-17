@@ -17,6 +17,7 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Any, Iterable
 
+from src.sales import phrasing
 from src.shared.services.bulk_import.text import norm_text
 
 WEIGHTS = {"budget": 20, "district": 15, "property_type": 10, "rooms": 5, "purpose": 5, "financing_cash": 10, "financing_bank": 6,
@@ -25,14 +26,7 @@ HOT_AT, WARM_AT = 65, 35
 FIELDS = ("budget_min", "budget_max", "district", "property_type", "rooms", "purpose", "financing", "urgency")
 ASK_ORDER = ("budget", "district", "property_type", "purpose", "financing", "rooms")
 
-QUESTIONS_AR = {
-    "budget": "كم الميزانية التقريبية اللي تفكر فيها؟",
-    "district": "في أي حي أو منطقة تفضّل؟",
-    "property_type": "تدوّر على شقة، فيلا، أرض، أو غير ذلك؟",
-    "purpose": "الشراء للسكن أو للاستثمار؟",
-    "financing": "الدفع كاش أو عن طريق تمويل بنكي؟",
-    "rooms": "كم عدد الغرف اللي تحتاجها؟",
-}
+QUESTIONS_AR = {key: variants[0] for key, variants in phrasing.QUESTION_VARIANTS_AR.items()}      # first phrasing of each (kept for older callers); next_question rotates all of them
 
 _AR_DIGITS = str.maketrans("٠١٢٣٤٥٦٧٨٩٫٬", "0123456789.,")
 
@@ -274,14 +268,29 @@ def qualify(messages: list[str], previous: dict[str, Any] | None = None, *, know
     return q
 
 
-def next_question(q: dict[str, Any], *, already_asked: Iterable[str] = (), max_per_conversation: int = 3) -> tuple[str, str] | None:
-    """(field, question) for the single most useful thing to ask next, or None when nothing is missing / we have already asked enough."""
+_NO_ROOMS_FOR = {"land", "office", "commercial", "warehouse"}
+
+
+def _have_field(q: dict[str, Any], key: str) -> bool:
+    return bool(q.get("budget_min") or q.get("budget_max")) if key == "budget" else bool(q.get(key))
+
+
+def next_question(q: dict[str, Any], *, already_asked: Iterable[str] = (), max_per_conversation: int = 3, last_text: str | None = None) -> tuple[str, str] | None:
+    """(field, question) for the single most useful thing still unknown, or None.
+
+    None when: enough questions were already asked; the customer's last message asks for time / objects / is just browsing (a short reply, never a question);
+    or nothing is missing. A field the customer already gave is never asked, whatever `q["missing"]` says. The phrasing rotates (3 wordings per field) with the number
+    of questions already asked, so consecutive questions never read the same.
+    """
     asked = list(already_asked)
-    if len(asked) >= max_per_conversation:
+    if len(asked) >= max_per_conversation or phrasing.is_pause_or_objection(last_text):
         return None
-    for key in q.get("missing") or []:
-        if key not in asked:
-            return key, QUESTIONS_AR[key]
+    for key in ASK_ORDER:
+        if key in asked or _have_field(q, key):
+            continue
+        if key == "rooms" and q.get("property_type") in _NO_ROOMS_FOR:
+            continue
+        return key, phrasing.pick_question(key, len(asked))
     return None
 
 

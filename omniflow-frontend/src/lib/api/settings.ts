@@ -169,6 +169,7 @@ export interface AiBehavior {
   welcome_message: string;
   quick_replies: string[];
   constraints: AiConstraints;
+  voice_replies_enabled?: boolean;
 }
 export interface IdentityPrefs { language: "ar" | "en"; timezone: string; currency: string }
 

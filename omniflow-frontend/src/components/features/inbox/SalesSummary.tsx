@@ -5,6 +5,7 @@
  * the deal stage, a booked viewing, and the listings it would suggest. Renders nothing while the sales feature is off (the API answers 404).
  */
 import { useEffect, useState } from "react";
+import { formatOfficeTime } from "@/lib/officeTime";
 import { LABEL_TEXT, STAGE_LABELS, fetchHandoff, type HandoffSummary } from "@/lib/api/deals";
 
 const MISSING_AR: Record<string, string> = { budget: "الميزانية", district: "الحي", property_type: "نوع العقار", purpose: "الغرض (سكن/استثمار)", financing: "طريقة الدفع", rooms: "عدد الغرف" };
@@ -33,7 +34,7 @@ export function SalesSummary({ conversationId }: { conversationId: string }) {
         <p className="text-[var(--foreground)]">{data.summary || "لم تتضح متطلبات العميل بعد."}</p>
         {data.missing.length > 0 && <p className="text-[var(--muted-foreground)]">ينقص: {data.missing.map((k) => MISSING_AR[k] ?? k).join("، ")}</p>}
         {data.appointment && (
-          <p className="text-[var(--foreground)]">معاينة: {new Date(data.appointment.scheduled_at).toLocaleString("ar-SA", { dateStyle: "medium", timeStyle: "short" })}</p>
+          <p className="text-[var(--foreground)]">معاينة: {formatOfficeTime(data.appointment.scheduled_at, data.appointment.timezone)}</p>
         )}
         {data.suggested_listings.length > 0 && (
           <div>

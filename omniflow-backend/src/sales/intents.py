@@ -181,6 +181,7 @@ def route_turn(text: str, *, booking_open: bool = False, has_appointment: bool =
         service_question                                                     asks about financing / ownership transfer / … : a fixed "an employee will confirm" + hand-over, unless the office's own profile states the service
         pause                                                                «بفكر وارد لك», «اسأل زوجتي وأرجع لك», «بس أتفرج»: a short fixed reply, no question, no model
         booking_answer | booking_cancel | booking_reschedule | booking_start  the viewing dialogue
+        booking_existing                                                     asks to see a property while a viewing is ALREADY booked: show that booking and offer keep / change
         qualify                                                              normal path: qualification + listings -> the model answers
 
     While an offer of viewing slots is open, a bare "إلغاء" means "cancel this booking", not "stop messaging me" — that is the only context-dependent rule.
@@ -199,8 +200,8 @@ def route_turn(text: str, *, booking_open: bool = False, has_appointment: bool =
         return "booking_cancel"
     if has_appointment and booking.wants_to_reschedule(text):
         return "booking_reschedule"
-    if not has_appointment and qualification.extract_from_text(text).get("viewing_requested"):
-        return "booking_start"
+    if qualification.extract_from_text(text).get("viewing_requested"):
+        return "booking_existing" if has_appointment else "booking_start"       # a booked viewing exists: show it (keep / change); otherwise the slot list opens every time
     from src.sales import phrasing
 
     if phrasing.is_pause_or_objection(text) and not phrasing.is_price_question(text) and "؟" not in text and "?" not in text:

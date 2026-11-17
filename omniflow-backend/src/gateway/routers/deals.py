@@ -91,11 +91,15 @@ async def by_conversation(conversation_id: uuid.UUID, user: CurrentUser, session
     ap = await session.scalar(select(Appointment).where(Appointment.tenant_id == user.tenant_id, Appointment.conversation_id == conversation_id,
                                                         Appointment.status == "scheduled").order_by(Appointment.scheduled_at))
     match = await matcher.match(session, user.tenant_id, q, limit=3)
+    from src.shared.services import tenant_prefs
+
+    tz = await tenant_prefs.office_timezone(user.tenant_id)
     return {
         "label": q.get("label"), "score": q.get("score"), "summary": qualification.public_summary(q), "missing": q.get("missing", []),
         "qualification": {k: q.get(k) for k in ("budget_min", "budget_max", "district", "property_type", "rooms", "purpose", "financing", "urgency", "viewing_requested")},
         "deal": pipeline._card(deal, customer) if deal else None,
-        "appointment": {"appointment_id": str(ap.appointment_id), "scheduled_at": ap.scheduled_at.isoformat(), "location_note": ap.location_note, "source": ap.source} if ap else None,
+        "appointment": {"appointment_id": str(ap.appointment_id), "scheduled_at": ap.scheduled_at.isoformat(), "location_note": ap.location_note, "source": ap.source,
+                        "timezone": tz} if ap else None,
         "suggested_listings": match.listings, "match_note": match.note, "match_exact": match.exact,
     }
 

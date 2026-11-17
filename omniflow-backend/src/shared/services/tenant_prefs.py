@@ -115,6 +115,8 @@ class AiBehavior(BaseModel):
     welcome_message: str = Field(default="", max_length=500)
     quick_replies: list[str] = Field(default_factory=list, max_length=8)
     constraints: Constraints = Field(default_factory=Constraints)
+    # Voice-note replies (TTS) are OFF unless the office turns them on here; a customer who wrote text gets text.
+    voice_replies_enabled: bool = False
 
     @field_validator("quick_replies")
     @classmethod
@@ -253,6 +255,15 @@ class Sales(BaseModel):
 
 
 MODELS["sales"] = Sales
+
+
+async def office_timezone(tenant_id: str | uuid.UUID | None) -> str:
+    """The office's own timezone (settings -> sales -> viewing hours; default Asia/Riyadh). Every viewing time shown to staff is rendered in THIS zone, never the browser's."""
+    try:
+        sales = with_defaults("sales", (await get_prefs(tenant_id)).get("sales"))
+        return str((sales.get("viewing_hours") or {}).get("timezone") or "Asia/Riyadh")
+    except Exception:  # noqa: BLE001
+        return "Asia/Riyadh"
 
 
 def validate_section(section: str, payload: dict[str, Any]) -> dict[str, Any]:

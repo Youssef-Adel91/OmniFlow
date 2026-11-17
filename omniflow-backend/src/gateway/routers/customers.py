@@ -454,7 +454,11 @@ async def customer_detail(user: CurrentUser, session: AuthTenantSession,
     audit = (await session.execute(
         select(AuditLog).where(AuditLog.entity_type == "customer", AuditLog.entity_id == str(customer_id))
         .order_by(AuditLog.created_at.desc()).limit(50))).scalars().all()
+    from src.shared.services import tenant_prefs
+
+    tz = await tenant_prefs.office_timezone(user.tenant_id)
     return {
+        "office_timezone": tz,
         "customer": _customer_item_with_score(customer, scores.get(customer_id)).model_dump(mode="json"),
         "conversations": [{"conversation_id": str(c.conversation_id), "channel": str(c.channel), "status": str(c.status),
                            "message_count": c.message_count, "last_message_at": c.last_message_at.isoformat() if c.last_message_at else None,

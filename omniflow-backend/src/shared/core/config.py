@@ -447,8 +447,8 @@ class Settings(BaseSettings):
 
     # ── Feature Flags ─────────────────────────────────────────────────────────
     # Item 14 (launch readiness): no Whisper/Vision worker was ever built
-    # (see ai_workers/multimodal/__init__.py — a docstring-only stub, and no
-    # consumer on multimodal.audio.v1 / multimodal.vision.v1). Explicitly
+    # (the docstring-only ai_workers/multimodal stub has been removed; nothing
+    # consumes multimodal.audio.v1 / multimodal.vision.v1). Explicitly
     # disabled for v1 rather than left as a silent gap; flipping either flag
     # to True requires a real STT/vision pipeline to exist, not just a key.
     feature_multimodal_voice: bool = False

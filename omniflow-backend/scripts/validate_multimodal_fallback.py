@@ -6,8 +6,8 @@ caption) fell through to LLMInvokerWorker._build_current_message()'s
 placeholder branch — the LLM received a string like
 "[audio message — media: waid:123]" as "the customer's message" and
 generated a confident-sounding reply to content it never actually saw.
-No Whisper/vision worker exists anywhere in this codebase (see
-ai_workers/multimodal/__init__.py, a docstring-only stub) — this was a
+No Whisper/vision worker exists anywhere in this codebase (the
+docstring-only ai_workers/multimodal stub has since been removed) — this was a
 silent gap, not a documented v1 limitation.
 
 This script exercises the REAL LLMInvokerWorker.process_message() (not a

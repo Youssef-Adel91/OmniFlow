@@ -456,6 +456,7 @@ def _register_routers(app: FastAPI) -> None:
 
     # ── Sprint 12: Conversations, Messages & SSE Stream ───────────────────────
     app.include_router(conversations_router.router, dependencies=_GATE)
+    app.include_router(conversations_router.stream_router)               # /api/v1/stream/dashboard — no gate: EventSource sends no headers; the route verifies `?token=` itself
 
     # ── Auth (DEPRECATED) ─────────────────────────────────────────────────────
     # Clerk is the only supported identity provider. This router now serves

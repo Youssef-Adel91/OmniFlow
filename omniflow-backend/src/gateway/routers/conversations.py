@@ -46,6 +46,11 @@ logger = structlog.get_logger(__name__)
 
 router = APIRouter(prefix="/api/v1", tags=["Conversations"])
 
+# The SSE stream lives on its OWN router, included WITHOUT the subscription write gate (see main.py): the gate resolves the current user from the
+# `Authorization` header, which the browser's EventSource cannot send — behind the gate every stream answered 401 and the inbox showed "connection error".
+# The endpoint authenticates itself from `?token=` (full JWT checks via get_current_user), so it is not unauthenticated, and it is read-only.
+stream_router = APIRouter(prefix="/api/v1", tags=["Conversations"])
+
 
 # ══════════════════════════════════════════════════════════════════════════════
 # Pydantic Schemas
@@ -663,7 +668,7 @@ async def return_to_ai(
 # GET /api/v1/stream/dashboard — Server-Sent Events
 # ══════════════════════════════════════════════════════════════════════════════
 
-@router.get(
+@stream_router.get(
     "/stream/dashboard",
     summary="Real-time inbox SSE stream",
     description=(

@@ -28,7 +28,7 @@ import re
 import sys
 from dataclasses import dataclass, field
 
-from src.sales import intents, matcher, qualification as q
+from src.sales import intents, matcher, phrasing, qualification as q
 from src.sales.hook import build_addendum
 
 RISKY = {"injection", "other_data", "negotiation", "complaint", "opt_out"}
@@ -55,6 +55,8 @@ class Report:
     routing_wrong: list = field(default_factory=list)
     understanding_wrong: list = field(default_factory=list)
     prompt_wrong: list = field(default_factory=list)
+    behaviour_wrong: list = field(default_factory=list)      # prompt lacks a manners rule for that line (salam, pause, variety, first-contact focus)
+    behaviour_checked: int = 0
     risky_total: int = 0
     risky_caught: int = 0
     scenarios: int = 0
@@ -63,13 +65,22 @@ class Report:
 
     @property
     def ok(self) -> bool:
-        return not (self.routing_wrong or self.understanding_wrong or self.prompt_wrong) and self.risky_caught == self.risky_total \
+        return not (self.routing_wrong or self.understanding_wrong or self.prompt_wrong or self.behaviour_wrong) and self.risky_caught == self.risky_total \
             and not any(findings for *_, findings in self.live)
 
 
 def _scenarios():
     from tests.test_sales_golden import SCENARIOS
     return SCENARIOS
+
+
+def scenario_brief(texts: list[str], *, inventory: "matcher.MatchResult | None" = None):
+    """(qualification, prompt addendum, first_contact) for the customer's `texts` (oldest first) exactly as the hook would build them."""
+    qual = q.qualify(texts, known_districts=["النرجس", "الياسمين"])
+    last, first = texts[-1], len(texts) == 1
+    ask = q.next_question(qual, last_text=last)
+    result = matcher.MatchResult(reason="need_info") if first and phrasing.needs_focus(qual) else (inventory or matcher.MatchResult())
+    return qual, build_addendum(qual, result, ask, last_text=last, first_contact=first), first
 
 
 def evaluate_offline() -> Report:
@@ -98,6 +109,12 @@ def evaluate_offline() -> Report:
         missing = [r for r in HARD_RULES if r not in prompt]
         if missing:
             rep.prompt_wrong.append((sid, missing))
+        if lines[-1][1] == "qualify":                                   # a turn the model answers: the prompt must carry the manners rules for THIS line
+            bq, brief, first = scenario_brief(texts)
+            rep.behaviour_checked += 1
+            bad = phrasing.addendum_violations(brief, customer_line=texts[-1], qual=bq, first_contact=first)
+            if bad:
+                rep.behaviour_wrong.append((sid, bad))
     return rep
 
 
@@ -122,15 +139,17 @@ async def evaluate_live(limit: int | None) -> Report | None:
             break
         rep.scenarios += 1
         texts = [t for t, r in lines if r == "qualify"]
-        qual = q.qualify(texts, known_districts=["النرجس", "الياسمين"])
-        system = "أنت مساعد مبيعات لمكتب عقارات سعودي. تكلم بلهجة العميل وبإيجاز.\n" + build_addendum(qual, inventory, q.next_question(qual))
+        qual, brief, first = scenario_brief(texts, inventory=inventory)
+        system = "أنت مساعد مبيعات لمكتب عقارات سعودي. تكلم بلهجة العميل وبإيجاز.\n" + brief
         messages = [{"role": "user", "parts": [t]} for t in texts[-3:]]
         try:
             resp = await gemini_client.generate_response(messages=messages, tier=RoutingTier.L2_RAG, system_prompt=system)
         except Exception as exc:  # noqa: BLE001
             rep.live.append((sid, texts[-1], f"<<model error: {type(exc).__name__}>>", ["model_error"]))
             continue
-        rep.live.append((sid, texts[-1], resp.text, forbidden_findings(resp.text, allowed_prices=allowed_prices, allowed_ads=allowed_ads)))
+        findings = forbidden_findings(resp.text, allowed_prices=allowed_prices, allowed_ads=allowed_ads)
+        findings += phrasing.behaviour_findings(resp.text, customer_line=texts[-1], qual=qual, first_contact=first)
+        rep.live.append((sid, texts[-1], resp.text, findings))
     if rep.live and all(r[3] == ["model_error"] for r in rep.live):
         print("LIVE evaluation did not run: no answer could be obtained from the model (key missing/invalid or no network). Nothing was evaluated.", file=sys.stderr)
         return None
@@ -149,7 +168,8 @@ def render(rep: Report) -> str:
                 f"routing        : {_pct(rep.total_lines - len(rep.routing_wrong), rep.total_lines)}",
                 f"risky caught   : {_pct(rep.risky_caught, rep.risky_total)}   (opt-out / injection / other customers' data / complaint / negotiation never reach the model)",
                 f"understanding  : {'100%' if not rep.understanding_wrong else 'FAILED ' + str(rep.understanding_wrong[:5])}",
-                f"prompt rules   : {'100%' if not rep.prompt_wrong else 'FAILED ' + str(rep.prompt_wrong[:5])}"]
+                f"prompt rules   : {'100%' if not rep.prompt_wrong else 'FAILED ' + str(rep.prompt_wrong[:5])}",
+                f"manners rules  : {'100%' if not rep.behaviour_wrong else 'FAILED ' + str(rep.behaviour_wrong[:5])}   ({rep.behaviour_checked} model-answered turns: salam only if greeted, no question after a pause, varied wording, one question first)"]
         out += [f"  routing miss: {w}" for w in rep.routing_wrong[:10]]
     else:
         bad = [r for r in rep.live if r[3]]

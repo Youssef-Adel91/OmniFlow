@@ -23,7 +23,7 @@ from typing import Any
 import structlog
 from sqlalchemy import select, text as sql_text
 
-from src.sales import booking, followup, intents, matcher, pipeline, qualification
+from src.sales import phrasing, booking, followup, intents, matcher, pipeline, qualification
 from src.shared.core.config import get_settings
 from src.shared.db.models import Appointment, Conversation, Customer, Message
 from src.shared.db.session import get_tenant_session
@@ -159,17 +159,18 @@ async def _before_llm(decision, now: datetime, qualify: bool = True) -> HookResu
         known_count = sum([bool(q.get("budget_min") or q.get("budget_max")), bool(q.get("district")), bool(q.get("property_type")), bool(q.get("purpose"))])
         deal = await pipeline.ensure_deal(session, tenant_id, customer_id, conversation_id=conversation_id, channel=channel, label=q["label"], score=q["score"],
                                           qualified=known_count >= 2)
-        ask = qualification.next_question(q, already_asked=asked, max_per_conversation=sales["max_questions"]) if sales["ask_questions"] else None
+        ask = qualification.next_question(q, already_asked=asked, max_per_conversation=sales["max_questions"], last_text=text) if sales["ask_questions"] else None
         if ask:
             asked.append(ask[0])
-        match = await matcher.match(session, tenant_id, q)
+        first_contact = not before                                    # nothing recorded about this customer yet = the first message: no specific listing without a district or a budget
+        match = await matcher.match(session, tenant_id, q, require_focus=first_contact)
         if match.listings:
             q["last_listing_id"] = match.listings[0]["listing_id"]
         if q["label"] == "hot" and not before.get("hot_notified"):
             q["hot_notified"] = True
             await _notify_hot(session, tenant_id, conversation_id, customer, q)
         customer.qualification = q
-        return HookResult(system_addendum=build_addendum(q, match, ask), event="qualified")
+        return HookResult(system_addendum=build_addendum(q, match, ask, last_text=text, first_contact=first_contact), event="qualified")
 
 
 async def _notify_hot(session, tenant_id, conversation_id, customer, q) -> None:
@@ -180,7 +181,16 @@ async def _notify_hot(session, tenant_id, conversation_id, customer, q) -> None:
                       dedupe_key=f"hot:{customer.customer_id}")
 
 
-def build_addendum(q: dict[str, Any], match: matcher.MatchResult, ask: tuple[str, str] | None) -> str:
+def _greeting_rule(last_text: str | None) -> str:
+    if phrasing.opens_with_salam(last_text):
+        return "- العميل بدأ بالسلام: ابدأ ردك بـ«وعليكم السلام» ثم ادخل في الموضوع مباشرة."
+    if phrasing.opens_with_greeting(last_text):
+        return "- العميل بدأ بتحية (مرحبا/هلا/صباح الخير…): ردّ بتحية قصيرة مثلها ثم الموضوع. لا تقل «وعليكم السلام» لأنه لم يسلّم."
+    return "- العميل لم يبدأ بسلام ولا بتحية: لا تبدأ ردك بسلام ولا بـ«وعليكم السلام» ولا بأي تحية، وادخل مباشرة في الموضوع."
+
+
+def build_addendum(q: dict[str, Any], match: matcher.MatchResult, ask: tuple[str, str] | None, *, last_text: str | None = None, first_contact: bool = False) -> str:
+    pause = phrasing.is_pause_or_objection(last_text)
     lines = ["=== سياق المبيعات (للاستخدام الداخلي، لا تنسخه حرفيًا للعميل) ===",
              f"ما قاله العميل حتى الآن: {qualification.public_summary(q)}.",
              matcher.format_block(match),
@@ -191,8 +201,18 @@ def build_addendum(q: dict[str, Any], match: matcher.MatchResult, ask: tuple[str
              "- لا تذكر المنافسين بسوء ولا تقارن أسعارهم؛ ركّز على ما تقدمه الشركة.",
              "- إذا كان السؤال خارج العقارات وخدمات الشركة فاعتذر بلطف وأعد الحديث إلى العقارات.",
              "- إذا أبدى العميل اهتمامًا حقيقيًا بعقار فاقترح عليه حجز معاينة وقل له يكتب «أبغى معاينة».",
-             "- اجعل ردك قصيرًا وطبيعيًا بلهجة العميل."]
-    lines.append(f"- في نهاية ردك اسأل سؤالًا واحدًا فقط وبصياغة طبيعية: «{ask[1]}»" if ask else "- لا تطرح أسئلة تأهيل إضافية الآن.")
+             "- اجعل ردك قصيرًا وطبيعيًا بلهجة العميل.",
+             _greeting_rule(last_text),
+             "- نوّع صياغتك: لا تكرر نفس الجملة أو السؤال حرفيًا مرتين في المحادثة، ولا تبدأ كل ردّ بالافتتاحية نفسها."]
+    if first_contact and phrasing.needs_focus(q):
+        lines.append("- هذا أول ردّ والعميل لم يذكر حيًّا ولا ميزانية: لا تعرض أي عقار محدد ولا سعرًا الآن؛ اسأل سؤالًا واحدًا فقط.")
+    if pause:
+        lines.append("- العميل طلب مهلة أو عنده تردد/اعتراض أو يتفرج فقط: ردّ بجملة أو جملتين قصيرتين تحترمان قراره واترك الباب مفتوحًا "
+                     f"(مثل: «{phrasing.PAUSE_REPLIES_AR[0]}»)، ولا تطرح أي سؤال ولا تعرض عقارًا جديدًا.")
+    elif ask:
+        lines.append(f"- في نهاية ردك اسأل سؤالًا واحدًا فقط، بكلماتك أنت وبلهجة العميل ودون نسخ هذا النص حرفيًا: «{ask[1]}». ولا تسأل عن أي شيء ذكره العميل بالفعل.")
+    else:
+        lines.append("- لا تطرح أسئلة تأهيل إضافية الآن.")
     return "\n".join(lines)
 
 

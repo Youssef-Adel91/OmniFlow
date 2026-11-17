@@ -467,6 +467,12 @@ class LLMInvokerWorker(BaseKafkaConsumer):
             if findings:
                 log.warning("llm_invoker_output_guard_blocked", findings=findings)
                 llm_response.text = output_guard.SAFE_FALLBACK_AR
+            else:
+                # deterministic manners: no unprompted salam, no sentence repeated word for word from earlier turns of this conversation
+                from src.sales import phrasing
+
+                llm_response.text = phrasing.polish(llm_response.text, customer_text=event.text_content,
+                                                    previous=[str(m.get("content") or "") for m in history if m.get("role") == "model"])
 
         total_latency_ms = int((asyncio.get_event_loop().time() - start_ns) * 1000)
 

@@ -77,3 +77,106 @@ class ClerkIssuerTests(unittest.TestCase):
         with patch.object(jwt._settings, "clerk_issuer_url", ""), \
                 patch.object(jwt._settings, "clerk_publishable_key", "pk_test_" + encoded):
             self.assertEqual(jwt._clerk_issuer(), "https://" + domain)
+
+
+class ClerkTokenLeewayTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        from cryptography.hazmat.primitives.asymmetric import rsa
+        from cryptography.hazmat.primitives import serialization
+        cls.rsa_key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+        cls.priv_pem = cls.rsa_key.private_bytes(
+            serialization.Encoding.PEM,
+            serialization.PrivateFormat.PKCS8,
+            serialization.NoEncryption(),
+        )
+        cls.pub_pem = cls.rsa_key.public_key().public_bytes(
+            serialization.Encoding.PEM,
+            serialization.PublicFormat.SubjectPublicKeyInfo,
+        )
+        cls.issuer = "https://test.clerk.accounts.dev"
+
+    def _sign_token(self, payload):
+        import jwt as pyjwt
+        return pyjwt.encode(payload, self.priv_pem, algorithm="RS256")
+
+    def _mock_jwk_client(self):
+        signing_key_mock = MagicMock()
+        signing_key_mock.key = self.pub_pem
+        jwks_client_mock = MagicMock()
+        jwks_client_mock.get_signing_key_from_jwt.return_value = signing_key_mock
+        return jwks_client_mock
+
+    def test_token_with_future_iat_within_leeway_accepted(self):
+        import time
+        now = int(time.time())
+        token = self._sign_token({
+            "iss": self.issuer,
+            "sub": "user_future_10",
+            "exp": now + 3600,
+            "iat": now + 10,
+        })
+        with patch.object(jwt._settings, "clerk_issuer_url", self.issuer), \
+                patch.dict(jwt._jwk_clients, {f"{self.issuer}/.well-known/jwks.json": self._mock_jwk_client()}):
+            payload = jwt.verify_clerk_token(token, leeway=30)
+            self.assertEqual(payload["sub"], "user_future_10")
+
+    def test_token_with_future_iat_beyond_leeway_rejected(self):
+        import time
+        now = int(time.time())
+        token = self._sign_token({
+            "iss": self.issuer,
+            "sub": "user_future_300",
+            "exp": now + 3600,
+            "iat": now + 300,
+        })
+        with patch.object(jwt._settings, "clerk_issuer_url", self.issuer), \
+                patch.dict(jwt._jwk_clients, {f"{self.issuer}/.well-known/jwks.json": self._mock_jwk_client()}):
+            with self.assertRaises(JWTError) as ctx:
+                jwt.verify_clerk_token(token, leeway=30)
+            self.assertIn("The token is not yet valid", str(ctx.exception))
+
+    def test_expired_token_rejected(self):
+        import time
+        now = int(time.time())
+        token = self._sign_token({
+            "iss": self.issuer,
+            "sub": "user_expired",
+            "exp": now - 60,
+            "iat": now - 120,
+        })
+        with patch.object(jwt._settings, "clerk_issuer_url", self.issuer), \
+                patch.dict(jwt._jwk_clients, {f"{self.issuer}/.well-known/jwks.json": self._mock_jwk_client()}):
+            with self.assertRaises(JWTError) as ctx:
+                jwt.verify_clerk_token(token, leeway=30)
+            self.assertIn("Signature has expired", str(ctx.exception))
+
+    def test_token_with_different_iss_rejected(self):
+        import time
+        now = int(time.time())
+        token = self._sign_token({
+            "iss": "https://different.clerk.accounts.dev",
+            "sub": "user_wrong_iss",
+            "exp": now + 3600,
+            "iat": now,
+        })
+        with patch.object(jwt._settings, "clerk_issuer_url", self.issuer):
+            with self.assertRaises(JWTError) as ctx:
+                jwt.verify_clerk_token(token, leeway=30)
+            self.assertIn("Unexpected token issuer", str(ctx.exception))
+
+    def test_default_leeway_from_settings(self):
+        import time
+        now = int(time.time())
+        token = self._sign_token({
+            "iss": self.issuer,
+            "sub": "user_default_leeway",
+            "exp": now + 3600,
+            "iat": now + 10,
+        })
+        with patch.object(jwt._settings, "clerk_issuer_url", self.issuer), \
+                patch.object(jwt._settings, "clerk_jwt_leeway_seconds", 30), \
+                patch.dict(jwt._jwk_clients, {f"{self.issuer}/.well-known/jwks.json": self._mock_jwk_client()}):
+            payload = jwt.verify_clerk_token(token)
+            self.assertEqual(payload["sub"], "user_default_leeway")
+

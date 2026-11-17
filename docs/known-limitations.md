@@ -18,6 +18,7 @@
 - Existing Messenger conversations stored as `instagram` are relabelled lazily on the customer's next message.
 - No client-side 7-day check for Private Reply; Meta's rejection is handled as a failed send.
 - CI runs on a single self-hosted Windows runner; Linux-only tests are skipped there.
+- Clock skew on development machines: Local system clocks that drift behind Clerk's server clock by even a few seconds cause PyJWT to reject tokens with "The token is not yet valid (iat)". Mitigated by `CLERK_JWT_LEEWAY_SECONDS` (default: 30s, max: 120s). Developers experiencing repeated 401s should also sync their system clock.
 
 ## CI / dependencies
 - The CI runner is a single self-hosted Windows machine; when it is off, runs queue and GitHub cancels them after 24 h.

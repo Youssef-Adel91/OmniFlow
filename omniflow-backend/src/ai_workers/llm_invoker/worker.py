@@ -459,6 +459,7 @@ class LLMInvokerWorker(BaseKafkaConsumer):
                 "يرجى التواصل مع فريقنا للمساعدة. 🤝"
             )
 
+        handoff_after_reply: str | None = None
         # ── 6b. Output guard (sales-closing tenants): never send an invented price / listing number / discount promise / stray phone number / prompt leak ──
         if sales_addendum is not None and not llm_response.was_blocked:
             from src.sales import output_guard
@@ -471,8 +472,13 @@ class LLMInvokerWorker(BaseKafkaConsumer):
                 # deterministic manners: no unprompted salam, no sentence repeated word for word from earlier turns of this conversation
                 from src.sales import phrasing
 
-                llm_response.text = phrasing.polish(llm_response.text, customer_text=event.text_content,
+                office_info = compose_system_prompt(base_prompt, company_block)                 # persona + company profile, WITHOUT the sales brief: what the office has actually said it offers
+                claimed = phrasing.unverified_service_claims(llm_response.text, office_info)
+                llm_response.text = phrasing.polish(llm_response.text, customer_text=event.text_content, context=office_info,
                                                     previous=[str(m.get("content") or "") for m in history if m.get("role") == "model"])
+                if claimed:
+                    log.warning("llm_invoker_unverified_service_claim", services=claimed)
+                    handoff_after_reply = "unverified_service"
 
         total_latency_ms = int((asyncio.get_event_loop().time() - start_ns) * 1000)
 
@@ -483,6 +489,8 @@ class LLMInvokerWorker(BaseKafkaConsumer):
             llm_response=llm_response,
             latency_ms=total_latency_ms,
         )
+        if handoff_after_reply and conversation_id:                                         # the reply said an employee will confirm the service: make that true
+            await self._handoff_to_human(decision, handoff_after_reply, log, send_text=False)
 
         # ── 7b. Real cost of this reply (idempotent on the source event; never blocks the reply) ──
         asyncio.create_task(llm_cost.record(

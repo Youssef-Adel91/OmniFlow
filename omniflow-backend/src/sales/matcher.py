@@ -85,31 +85,86 @@ def _where(tenant_id, q: dict[str, Any], *, district: bool, rooms: bool, ceiling
     return and_(*conds)
 
 
-async def match(session, tenant_id: uuid.UUID, q: dict[str, Any], *, limit: int = 3, require_focus: bool = False) -> MatchResult:
-    """Nothing to match on (no type, district or budget known) -> empty result: we do not dump the whole inventory on a customer who has said nothing.
-    `require_focus` (the assistant's first reply in a conversation): a property type alone is not enough either — without a district or a budget no specific listing is
-    shown, the assistant asks one question first (reason="need_info")."""
+_TIERS = (
+    (1, dict(district=True, rooms=True, ceiling_factor=1.0), ""),
+    (2, dict(district=True, rooms=False, ceiling_factor=1.0), "لم نجد بنفس عدد الغرف، هذه الأقرب."),
+    (3, dict(district=False, rooms=False, ceiling_factor=1.0), "لم نجد في الحي المطلوب، هذه بدائل في مناطق أخرى ضمن ميزانيتك."),
+    (4, dict(district=False, rooms=False, ceiling_factor=OVER_BUDGET_FACTOR), "لم نجد ضمن الميزانية بالضبط، هذه أعلى منها بقليل."),
+)
+
+
+def _gate(q: dict[str, Any], *, require_focus: bool, price_question: bool) -> MatchResult | None:
+    """An empty MatchResult(reason="need_info") when nothing may be searched yet, else None. A price question is always answered from the inventory (cheapest first),
+    even when the customer has not said the type, district or budget — «كم السعر؟» must get a price, not a counter-question."""
+    if price_question:
+        return None
     if not (q.get("property_type") or q.get("district") or q.get("budget_max") or q.get("budget_min")):
         return MatchResult(reason="need_info")
     if require_focus and not (q.get("district") or q.get("budget_max") or q.get("budget_min")):
         return MatchResult(reason="need_info")
+    return None
+
+
+async def match(session, tenant_id: uuid.UUID, q: dict[str, Any], *, limit: int = 3, require_focus: bool = False, price_question: bool = False) -> MatchResult:
+    """Nothing to match on (no type, district or budget known) -> empty result: we do not dump the whole inventory on a customer who has said nothing.
+    `require_focus` (the assistant's first reply in a conversation): a property type alone is not enough either — without a district or a budget no specific listing is
+    shown, the assistant asks one question first (reason="need_info"). `price_question`: the customer asked «كم السعر؟» — both gates are lifted and, with no budget given,
+    the cheapest listings of the asked type (any type when none was named) come first."""
+    gate = _gate(q, require_focus=require_focus, price_question=price_question)
+    if gate is not None:
+        return gate
     ceiling = float(q["budget_max"]) if q.get("budget_max") else None
-    tiers = (
-        (1, dict(district=True, rooms=True, ceiling_factor=1.0), ""),
-        (2, dict(district=True, rooms=False, ceiling_factor=1.0), "لم نجد بنفس عدد الغرف، هذه الأقرب."),
-        (3, dict(district=False, rooms=False, ceiling_factor=1.0), "لم نجد في الحي المطلوب، هذه بدائل في مناطق أخرى ضمن ميزانيتك."),
-        (4, dict(district=False, rooms=False, ceiling_factor=OVER_BUDGET_FACTOR), "لم نجد ضمن الميزانية بالضبط، هذه أعلى منها بقليل."),
-    )
+    tiers = _TIERS
     for tier, kw, note in tiers:
         if tier == 4 and ceiling is None:
             break
         if (tier == 2 and not q.get("rooms")) or (tier == 3 and not q.get("district")):
             continue                      # nothing was dropped -> identical to the previous tier
         stmt = select(PropertyListing).where(_where(tenant_id, q, **kw))
-        stmt = stmt.order_by(PropertyListing.price.desc().nulls_last()) if ceiling else stmt.order_by(PropertyListing.updated_at.desc())
+        if ceiling:
+            stmt = stmt.order_by(PropertyListing.price.desc().nulls_last())
+        elif price_question:
+            stmt = stmt.order_by(PropertyListing.price.asc().nulls_last())          # no budget: the cheapest (best entry point) first
+        else:
+            stmt = stmt.order_by(PropertyListing.updated_at.desc())
         rows = (await session.execute(stmt.limit(limit))).scalars().all()
         if rows:
             return MatchResult([_card(r) for r in rows], tier, note)
+    return MatchResult()
+
+
+def match_cards(cards: Sequence[dict[str, Any]], q: dict[str, Any], *, limit: int = 3, require_focus: bool = False, price_question: bool = False) -> MatchResult:
+    """The same tiers as `match`, over listing cards held in memory (used by `scripts/eval_bot.py` so the live evaluation sees what the database would return)."""
+    gate = _gate(q, require_focus=require_focus, price_question=price_question)
+    if gate is not None:
+        return gate
+    ceiling = float(q["budget_max"]) if q.get("budget_max") else None
+
+    def fits(c: dict[str, Any], *, district: bool, rooms: bool, ceiling_factor: float) -> bool:
+        price = c.get("price")
+        if q.get("property_type") and c.get("type") != q["property_type"]:
+            return False
+        if district and q.get("district"):
+            needle = str(q["district"]).strip().removeprefix("ال").lower()
+            if needle not in str(c.get("district") or "").lower():
+                return False
+        if rooms and q.get("rooms") and c.get("bedrooms") != int(q["rooms"]):
+            return False
+        if q.get("budget_max") and (price is None or price > float(q["budget_max"]) * ceiling_factor):
+            return False
+        if q.get("budget_min") and (price is None or price < float(q["budget_min"])):
+            return False
+        return True
+
+    for tier, kw, note in _TIERS:
+        if tier == 4 and ceiling is None:
+            break
+        if (tier == 2 and not q.get("rooms")) or (tier == 3 and not q.get("district")):
+            continue
+        rows = [c for c in cards if fits(c, **kw)]
+        if rows:
+            rows.sort(key=lambda c: (c.get("price") is None, -(c.get("price") or 0) if ceiling else (c.get("price") or 0)))
+            return MatchResult(list(rows[:limit]), tier, note)
     return MatchResult()
 
 
@@ -123,7 +178,7 @@ def format_block(result: MatchResult) -> str:
                 "قل بصدق إنه لا يوجد مطابق الآن، واعرض تسجيل طلبه ليتواصل معه مستشار عند توفر ما يناسبه.")
     lines = ["عقارات من مخزون الشركة (استخدم هذه الحقائق فقط، ولا تضف أي معلومة غير مذكورة):"]
     if result.note:
-        lines.append(f"ملاحظة للمساعد: {result.note}")
+        lines.append(f"ملاحظة للمساعد: {result.note} هذا أقرب بديل موجود وليس مطابقًا تمامًا: اعرضه بوضوح ووضّح الفرق، ولا تقل «ما عندنا» أو «لا يوجد» لأن عندنا بديلًا.")
     for i, c in enumerate(result.listings, 1):
         price = f"{int(c['price']):,} ريال" if c["price"] is not None else "السعر عند التواصل"
         bits = [c["type_ar"], c["district"] or c["city"] or "", price,

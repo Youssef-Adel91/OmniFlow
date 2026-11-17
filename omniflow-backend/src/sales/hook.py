@@ -131,6 +131,15 @@ async def _before_llm(decision, now: datetime, qualify: bool = True) -> HookResu
             return HookResult(reply=intents.REPLIES_AR["injection" if route == "injection" else "other_customers_data"], event=route)
         if route == "advice":
             return HookResult(reply=intents.REPLIES_AR["advice"], event="advice")
+        if route == "human_request":                       # the customer asked for a person: confirm and hand over — never the model, never a question
+            await pipeline.ensure_deal(session, tenant_id, customer_id, conversation_id=conversation_id, channel=channel)
+            await pipeline.cancel_followups(session, tenant_id, conversation_id=conversation_id, reason=route)
+            await _set_booking_state(tenant_id, conversation_id, None)
+            return HookResult(reply=intents.REPLIES_AR["human_request"], handoff_reason="human_request", event="human_request")
+        if route == "competitor":                          # another company / a cheaper offer: ONE question about that offer; no discount, no price comparison, no pause reply
+            await pipeline.ensure_deal(session, tenant_id, customer_id, conversation_id=conversation_id, channel=channel)
+            customer.qualification = {**(customer.qualification or {}), "competitor_mentioned": True}
+            return HookResult(reply=intents.REPLIES_AR["competitor"], event="competitor")
         if route in ("complaint", "negotiation"):
             deal = await pipeline.ensure_deal(session, tenant_id, customer_id, conversation_id=conversation_id, channel=channel)
             if route == "negotiation":
@@ -163,7 +172,8 @@ async def _before_llm(decision, now: datetime, qualify: bool = True) -> HookResu
         if ask:
             asked.append(ask[0])
         first_contact = not before                                    # nothing recorded about this customer yet = the first message: no specific listing without a district or a budget
-        match = await matcher.match(session, tenant_id, q, require_focus=first_contact)
+        price_q = phrasing.is_price_question(text)
+        match = await matcher.match(session, tenant_id, q, require_focus=first_contact, price_question=price_q)
         if match.listings:
             q["last_listing_id"] = match.listings[0]["listing_id"]
         if q["label"] == "hot" and not before.get("hot_notified"):
@@ -203,8 +213,16 @@ def build_addendum(q: dict[str, Any], match: matcher.MatchResult, ask: tuple[str
              "- إذا أبدى العميل اهتمامًا حقيقيًا بعقار فاقترح عليه حجز معاينة وقل له يكتب «أبغى معاينة».",
              "- اجعل ردك قصيرًا وطبيعيًا بلهجة العميل.",
              _greeting_rule(last_text),
-             "- نوّع صياغتك: لا تكرر نفس الجملة أو السؤال حرفيًا مرتين في المحادثة، ولا تبدأ كل ردّ بالافتتاحية نفسها."]
-    if first_contact and phrasing.needs_focus(q):
+             "- نوّع صياغتك: لا تكرر نفس الجملة أو السؤال حرفيًا مرتين في المحادثة، ولا تبدأ كل ردّ بالافتتاحية نفسها.",
+             "- في ردك كله علامة استفهام واحدة فقط (سؤال واحد على الأكثر)، وإن سألت فليكن في آخره.",
+             "- لا تعد بأي خدمة غير مذكورة في معلومات الشركة أعلاه (مثل ترتيب التمويل، نقل الملكية، الفحص، التأمين، إدارة الأملاك). "
+             "إذا سأل العميل عن خدمة أو شرط غير مؤكد فقل إن أحد موظفينا سيؤكد له التفاصيل ويتواصل معه، ولا تقل «نقدر نرتب» ولا «عندنا» لها.",
+             "- الميزانية والمنطقة والمساحة مؤنثة: قل «ما هي ميزانيتك» لا «ما هو الميزانية»."]
+    price_q = phrasing.is_price_question(last_text)
+    if price_q:
+        lines.append("- العميل سأل عن السعر: ابدأ بذكر السعر المعلن لأرخص/أنسب خيار من النوع المذكور من العقارات أعلاه (السعر كما هو بلا تعديل)، ثم اسأل سؤالًا واحدًا إن لزم. "
+                     "لا تردّ على سؤال السعر بسؤال عن الميزانية دون أن تذكر السعر أولًا. وإن لم يوجد عقار من هذا النوع فقل ذلك بصدق.")
+    if first_contact and phrasing.needs_focus(q) and not price_q:
         lines.append("- هذا أول ردّ والعميل لم يذكر حيًّا ولا ميزانية: لا تعرض أي عقار محدد ولا سعرًا الآن؛ اسأل سؤالًا واحدًا فقط.")
     if pause:
         lines.append("- العميل طلب مهلة أو عنده تردد/اعتراض أو يتفرج فقط: ردّ بجملة أو جملتين قصيرتين تحترمان قراره واترك الباب مفتوحًا "

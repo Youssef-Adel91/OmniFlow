@@ -7,7 +7,7 @@ Deterministic detectors for messages the assistant must NOT improvise on. No LLM
     injection      "ignore your instructions", "show me your prompt" … -> a polite fixed refusal, the message never reaches the model as an instruction
     other_customers_data   asks for other customers' numbers / lists / who bought -> refused (privacy), never answered from data
 
-`classify` returns the first match by priority: opt_out > injection > other_customers_data > complaint > negotiation > advice (no guarantees / predictions / legal-financial advice).
+`classify` returns the first match by priority: opt_out > injection > other_customers_data > complaint > negotiation > competitor > human_request > advice (no guarantees / predictions / legal-financial advice).
 """
 from __future__ import annotations
 
@@ -52,6 +52,22 @@ _ADVICE = ("عائد مضمون", "عوائد مضمونه", "عوائد مضم�
            "نصيحة قانونية", "استشاره ماليه", "استشارة مالية", "نصيحه ماليه", "نصيحة مالية", "هل يحق لي", "موافقه البنك", "موافقة البنك", "تضمن التمويل", "ضمان التمويل",
            "guaranteed return", "guaranteed profit", "guarantee the return", "do you guarantee", "legal advice", "financial advice", "investment advice", "will prices go up", "will the price go up", "price will rise")
 
+# the customer asks for a person: a deterministic hand-off, the model is never called and nothing is asked
+_HUMAN_REQUEST = ("اتكلم مع موظف", "اكلم موظف", "اكلم الموظف", "اتكلم مع الموظف", "اتكلم مع شخص", "اكلم شخص", "اتكلم مع احد", "اكلم احد", "اتكلم مع انسان", "اكلم انسان",
+                  "ابغى موظف", "ابي موظف", "ابغى شخص حقيقي", "ابي شخص حقيقي", "ابغى مستشار", "ابي مستشار", "ابغى احد يكلمني", "ابي احد يكلمني", "كلموني موظف", "حولني لموظف", "حوّلني لموظف",
+                  "حولوني لموظف", "تحويل لموظف", "تحويلي لموظف", "ابغى خدمة العملاء", "ابي خدمة العملاء", "ممثل خدمة العملاء", "ابغى بشر", "ابغى مسؤول",
+                  "عايز اكلم موظف", "عايز اكلم حد", "عايز حد يكلمني", "عايز موظف", "عاوز اكلم موظف", "عاوز اكلم حد", "عاوز موظف", "ممكن اكلم حد", "ممكن اكلم موظف", "كلمني حد", "وصلني بموظف",
+                  "اريد التحدث مع موظف", "أريد التحدث مع موظف", "اود التحدث مع موظف", "أود التحدث مع موظف", "اريد التحدث الى موظف", "اريد موظف", "اريد التحدث مع شخص", "اريد التواصل مع موظف",
+                  "talk to a human", "talk to a person", "talk to someone", "talk to an agent", "speak to a human", "speak to a person", "speak to someone", "speak with an agent",
+                  "speak to an agent", "speak with a human", "real person", "human agent", "customer service", "customer support", "connect me to an agent", "i want an agent", "i need a human")
+
+# another company / a cheaper offer elsewhere: ONE question about that offer (never a pause reply, never an invented discount or price comparison)
+_COMPETITOR = ("شركة ثانية", "شركه ثانيه", "شركة اخرى", "شركة أخرى", "مكتب ثاني", "مكتب اخر", "مكتب آخر", "مكتب تاني", "شركة تانية", "عند غيركم", "عند غيرك", "عند منافسكم",
+               "عند الشركة الثانية", "عرضوا علي", "عرضو علي", "لقيت ارخص", "لقيت أرخص", "لقيت عند", "عرض ارخص", "عرض أرخص", "عروض ارخص", "اقل من عندكم", "أقل من عندكم",
+               "ارخص من عندكم", "أرخص من عندكم",
+               "another company", "other company", "another agency", "other agency", "different agency", "another agent offered", "cheaper elsewhere", "cheaper somewhere", "competitor",
+               "found cheaper", "found a cheaper", "offered me a cheaper", "offered me cheaper")
+
 # prices alone ("كم السعر؟") are NOT negotiation; a counter-offer is (a number + a wish to pay a given amount)
 _OFFER = re.compile(r"(?:ابغى|ابي|اريد|أريد|عايز|i want to|i'd like to)\s*(?:اشتريها|اشتريه|اخذها|آخذها|اخذه|شراءها|buy it|buy)\s*(?:ب|بمبلغ|for|at)\s*\d", re.I)
 
@@ -95,6 +111,14 @@ def is_advice_request(text: str) -> bool:
     return _contains(_light(text), _ADVICE)
 
 
+def is_human_request(text: str) -> bool:
+    return _contains(_light(text), _HUMAN_REQUEST)
+
+
+def is_competitor_mention(text: str) -> bool:
+    return _contains(_light(text), _COMPETITOR)
+
+
 def classify(text: str) -> Intent | None:
     if not (text or "").strip():
         return None
@@ -110,6 +134,10 @@ def classify(text: str) -> Intent | None:
         lo, hi = extract_budget(text)
         amount = hi or lo
         return Intent("negotiation", f"{int(amount):,}" if amount else None)
+    if is_competitor_mention(text):
+        return Intent("competitor")
+    if is_human_request(text):
+        return Intent("human_request")
     if is_advice_request(text):
         return Intent("advice")
     return None
@@ -122,6 +150,8 @@ REPLIES_AR = {
     "other_customers_data": "عذرًا، لا أستطيع مشاركة بيانات أي عميل أو مالك. أقدر أساعدك في العقارات المتاحة وحجز معاينة 🤝",
     "complaint": "نأسف لهذه التجربة، وسنحوّل محادثتك الآن إلى أحد موظفينا للمتابعة معك بشكل مباشر.",
     "advice": "ما أقدر أعطي ضمانات عوائد أو توقعات أسعار أو استشارة قانونية/مالية، لأن هذا يحتاج مختص. أقدر أعرض لك العقارات المتاحة بأسعارها المعلنة وأرتب لك لقاء مع أحد مستشارينا 🤝",
+    "human_request": "أكيد، حوّلتك الآن إلى أحد موظفينا ليتواصل معك مباشرة 🤝",
+    "competitor": "فهمتك. وش تفاصيل العرض اللي جاك (نوع العقار والحي والسعر)؟ أبغى أشوف إذا عندنا شيء قريب منه أو أحوّلك لمستشار يخدمك أكثر.",
     "negotiation": "أكيد، موضوع السعر والتفاوض يتولاه أحد مستشارينا. سجّلتُ طلبك وسأحوّلك له الآن ليتواصل معك.",
 }
 
@@ -133,7 +163,9 @@ def route_turn(text: str, *, booking_open: bool = False, has_appointment: bool =
     """
     The single place that decides what kind of turn this is (used by the sales hook AND by the golden-conversation tests, so they cannot drift apart):
 
-        opt_out | injection | other_data | complaint | negotiation          fixed reply (+ hand-off for the last two), the model is never called
+        opt_out | injection | other_data | complaint | negotiation          fixed reply (+ hand-off for complaint / negotiation), the model is never called
+        human_request                                                        fixed confirmation + hand-off to a person, never the model, never a question
+        competitor                                                           fixed reply with ONE question about the other offer (not a pause reply)
         booking_answer | booking_cancel | booking_reschedule | booking_start  the viewing dialogue
         qualify                                                              normal path: qualification + listings -> the model answers
 

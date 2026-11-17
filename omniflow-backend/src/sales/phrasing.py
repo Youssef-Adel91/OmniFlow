@@ -58,9 +58,9 @@ def fix_greeting(answer: str, customer_text: str | None) -> str:
 # ── 2. pauses / objections ───────────────────────────────────────────────────────────────────────────────────────
 _PAUSE = ("اسال زوجتي", "اسال زوجتى", "اسال اهلي", "اسال والدي", "اسال الوالد", "استشير", "اتشاور", "بشاور", "ارجع لك", "ارجعلك", "ارجع لكم", "برجع لك", "برجعلك",
           "بفكر", "خلني افكر", "خليني افكر", "افكر فيها", "افكر شوي", "بعدين", "لاحقا", "مو الحين", "مو الان", "مش دلوقتي", "مش دلوقت", "مو مقتنع", "مش مقتنع", "مب مقتنع",
-          "شركه ثانيه", "شركه اخرى", "عند غيركم", "عرضوا علي", "عرضو علي", "بس ادور", "بس اتفرج", "ادور واتفرج", "بس شوف", "اتفرج بس",
+          "بس ادور", "بس اتفرج", "ادور واتفرج", "بس شوف", "اتفرج بس",
           "let me think", "i'll think", "i will think", "ask my wife", "ask my husband", "talk to my wife", "get back to you", "come back to you", "not now", "maybe later",
-          "not convinced", "another company", "other company", "just browsing", "just looking")
+          "not convinced", "just browsing", "just looking")
 
 
 def is_pause_or_objection(text: str | None) -> bool:
@@ -109,9 +109,100 @@ def strip_repeated_sentences(answer: str, previous: Iterable[str]) -> str:
     return out or answer
 
 
-def polish(answer: str, *, customer_text: str | None, previous: Iterable[str] = ()) -> str:
-    """Deterministic clean-up of the model's answer: no unprompted salam, no sentence repeated from earlier turns."""
-    return strip_repeated_sentences(fix_greeting(answer, customer_text), previous)
+def polish(answer: str, *, customer_text: str | None, previous: Iterable[str] = (), context: str | None = "") -> str:
+    """Deterministic clean-up of the model's answer: no unprompted salam, no sentence repeated from earlier turns, one question at most, correct «ما هي الميزانية»,
+    and no promise of a service the office has not confirmed (`context` = the office's own persona/profile)."""
+    text = fix_greeting(answer, customer_text)
+    text = strip_repeated_sentences(text, previous)
+    text = soften_service_claims(text, context)
+    text = limit_questions(text)
+    return fix_grammar(text)
+
+
+# ── price questions: answer the price FIRST, from the inventory ──────────────────────────────────────────────────
+_PRICE_Q = ("كم سعر", "كم السعر", "كام السعر", "كام سعر", "كم اسعار", "بكم", "بكام", "وش سعر", "وش السعر", "ايش سعر", "ايش السعر", "شو سعر", "شو السعر", "سعرها كم", "سعره كم", "سعرها", "سعره",
+            "الاسعار", "معرفه سعر", "معرفه السعر", "اعرف السعر", "اعرف سعر", "كم تكلف", "كم ثمن", "كم يبلغ سعر", "how much", "what is the price", "what's the price", "whats the price", "price of",
+            "how much does", "how much is")
+
+
+def is_price_question(text: str | None) -> bool:
+    t = _norm(text)
+    return bool(t) and any(p in t for p in _PRICE_Q)
+
+
+_PRICE_IN_ANSWER = re.compile(r"\d[\d,.]*\s*(?:ريال|ر\.?\s?س|sar|riyal|الف|ألف|مليون|k\b|m\b)|(?:مليون|ملايين|الف|ألف)\s*ريال", re.I)
+
+
+def answer_states_a_price(answer: str) -> bool:
+    return bool(_PRICE_IN_ANSWER.search((answer or "").translate(_AR_DIGITS)))
+
+
+# ── grammar the model gets wrong ─────────────────────────────────────────────────────────────────────────────────
+_FEMININE_AFTER_MA_HO = re.compile(r"\bما هو(\s+(?:ال)?(?:ميزاني|منطق|مساح|طريق|فئ|غرف|مدين|صيغ|خطه|خطة))")
+
+
+def fix_grammar(answer: str) -> str:
+    """«ما هو الميزانية» -> «ما هي الميزانية» (and the same for the other feminine nouns of the qualification questions)."""
+    return _FEMININE_AFTER_MA_HO.sub(r"ما هي\1", answer or "")
+
+
+# ── one question per reply ───────────────────────────────────────────────────────────────────────────────────────
+def limit_questions(answer: str) -> str:
+    """Keep ONE question: the last one. Earlier question sentences are dropped unless they carry a number (a price, an ad number is information)."""
+    sentences = _SENTENCE.findall(answer or "")
+    q_idx = [i for i, s in enumerate(sentences) if s.strip().endswith(("؟", "?"))]
+    if len(q_idx) <= 1:
+        return answer
+    keep_last = q_idx[-1]
+    kept = [s for i, s in enumerate(sentences) if not (i in q_idx and i != keep_last and not re.search(r"\d", s.translate(_AR_DIGITS)))]
+    out = " ".join(x.strip() for x in kept).strip()
+    return out or answer
+
+
+# ── services the office has not confirmed ────────────────────────────────────────────────────────────────────────
+_PROMISE_VERB = (r"(?:نقدر|نستطيع|نوفر|نقدم|نرتب|نسوي|نسهل|نتكفل|نتولي|عندنا|لدينا|نساعدك في|نساعدكم في|نمشي لك|نخلص لك|نعطيك|"
+                 r"we can|we will|we'll|we offer|we provide|we arrange|we help|we handle|we have|we do)")
+_NEGATION = re.compile(r"(?:^|\s)(?:ما|لا|مو|مب|ليس|لن|not|can't|cannot|don't|won't|no)\s")
+SERVICES: dict[str, tuple[str, tuple[str, ...]]] = {
+    "financing": (r"(?:ال)?(?:تمويل|قرض|قروض|رهن)\w*|financ\w*|mortgage|loan\w*", ("تمويل", "قرض", "رهن", "financ", "mortgage", "loan")),
+    "ownership_transfer": (r"(?:نقل (?:ال)?ملكي|افراغ|ترتيب (?:ال)?صك|ownership transfer|title transfer|deed transfer)", ("نقل الملكي", "افراغ", "الصك", "ownership", "deed")),
+    "inspection": (r"(?:فحص (?:ال)?(?:عقار|مبني|شقه)|inspection)", ("فحص", "inspection")),
+    "insurance": (r"(?:تامين|insurance)", ("تامين", "insurance")),
+    "property_management": (r"(?:ادار[هة] (?:ال)?(?:املاك|عقار)|property management)", ("ادارة الاملاك", "ادارة العقار", "property management")),
+}
+
+
+def unverified_service_claims(answer: str, context: str | None = "") -> list[str]:
+    """Services the ANSWER promises that the office's own information (`context`: persona + company profile, NOT the sales brief) never mentions."""
+    ctx = _norm(context)
+    found: list[str] = []
+    for sentence in _SENTENCE.findall(answer or ""):
+        s = _norm(sentence)
+        if _NEGATION.search(" " + s):
+            continue
+        for name, (noun, ctx_words) in SERVICES.items():
+            if name in found or any(_norm(w) in ctx for w in ctx_words):
+                continue
+            if re.search(_PROMISE_VERB + r"[^.!؟?\n]{0,30}?(?:" + noun + ")", s):
+                found.append(name)
+    return found
+
+
+SERVICE_HANDOVER_AR = "أحد موظفينا يأكد لك تفاصيل هذي الخدمة ويتواصل معك بخصوصها."
+
+
+def soften_service_claims(answer: str, context: str | None = "") -> str:
+    """Replace each sentence that promises an unconfirmed service by ONE hand-over sentence."""
+    out, replaced = [], False
+    for sentence in _SENTENCE.findall(answer or ""):
+        if unverified_service_claims(sentence, context):
+            if not replaced:
+                out.append(SERVICE_HANDOVER_AR)
+                replaced = True
+            continue
+        out.append(sentence)
+    text = " ".join(x.strip() for x in out).strip()
+    return text or answer
 
 
 # ── 4 + checks ───────────────────────────────────────────────────────────────────────────────────────────────────
@@ -128,22 +219,39 @@ def _known(q: dict[str, Any], field: str) -> bool:
     return bool(q.get("budget_min") or q.get("budget_max")) if field == "budget" else bool(q.get(field))
 
 
-def behaviour_findings(answer: str, *, customer_line: str, qual: dict[str, Any], first_contact: bool = False) -> list[str]:
-    """Behaviour defects in a model ANSWER (used by `scripts/eval_bot.py --live`)."""
+_PAUSE_REPLY_MARKERS = tuple(_norm(x) for x in ("خذ راحتك", "على راحتك", "فكر على راحتك", "فكّر على راحتك", "لا استعجال", "خذ وقتك", "take your time", "no rush"))
+_HANDOVER_MARKERS = ("موظف", "مستشار", "فريق", "اخصائي", "agent", "team member", "consultant", "colleague")
+
+
+def behaviour_findings(answer: str, *, customer_line: str, qual: dict[str, Any], first_contact: bool = False, inventory_has_listings: bool = False) -> list[str]:
+    """Behaviour defects in a reply (a model ANSWER or a fixed rule reply) — used by `scripts/eval_bot.py`."""
+    from src.sales import intents
+
     out: list[str] = []
     a = _norm(answer)
     if _SALAM_OPENER.match(a) and not opens_with_salam(customer_line):
         out.append("salam_unprompted")
     questions = [s for s in _SENTENCE.findall(answer) if s.strip().endswith(("؟", "?"))]
-    if is_pause_or_objection(customer_line) and questions:
+    competitor = intents.is_competitor_mention(customer_line)
+    human = intents.is_human_request(customer_line)
+    if is_pause_or_objection(customer_line) and not competitor and questions:
         out.append("question_after_pause")
     for field, rx in _FIELD_ASKED.items():
         if _known(qual, field) and any(rx.search(_norm(s)) for s in questions):
             out.append(f"asked_known_{field}")
-    if first_contact and needs_focus(qual) and re.search(r"\d[\d,.]*\s*(?:ريال|sar)", answer.translate(_AR_DIGITS), re.I):
+    price_q = is_price_question(customer_line)
+    if first_contact and needs_focus(qual) and not price_q and answer_states_a_price(answer):
         out.append("premature_listing")
     if len(questions) > 1:
         out.append("more_than_one_question")
+    if price_q and inventory_has_listings and not answer_states_a_price(answer):
+        out.append("price_dodged")                                           # asked «كم السعر؟», the inventory has an answer, the reply gives none
+    if human and (questions or not any(m in a for m in _HANDOVER_MARKERS)):
+        out.append("human_request_ignored")                                  # a person was asked for: confirm the hand-over, ask nothing
+    if unverified_service_claims(answer, ""):
+        out.append("unverified_service_claim")
+    if competitor and (any(m in a for m in _PAUSE_REPLY_MARKERS) or not questions and not any(m in a for m in _HANDOVER_MARKERS)):
+        out.append("competitor_paused")                                      # a pause reply (or nothing at all) to «another company offered me less»
     return out
 
 
@@ -158,6 +266,7 @@ def addendum_violations(addendum: str, *, customer_line: str, qual: dict[str, An
     if greeted and not salam and "لا تقل «وعليكم السلام»" not in addendum:
         bad.append("missing_no_salam_for_plain_greeting")
     pause = is_pause_or_objection(customer_line)
+    price_q = is_price_question(customer_line)
     if pause and ("ولا تطرح أي سؤال" not in addendum or "في نهاية ردك اسأل" in addendum):
         bad.append("question_requested_after_pause")
     if not pause and "في نهاية ردك اسأل" in addendum:
@@ -165,8 +274,16 @@ def addendum_violations(addendum: str, *, customer_line: str, qual: dict[str, An
         for field, variants in QUESTION_VARIANTS_AR.items():
             if _known(qual, field) and quoted and quoted.group(1) in variants:
                 bad.append(f"asks_known_{field}")
-    if first_contact and needs_focus(qual) and "لا تعرض أي عقار محدد" not in addendum:
+    if first_contact and needs_focus(qual) and not price_q and "لا تعرض أي عقار محدد" not in addendum:
         bad.append("missing_focus_rule")
+    if price_q and "العميل سأل عن السعر" not in addendum:
+        bad.append("missing_price_first_rule")
+    if price_q and "لا تعرض أي عقار محدد" in addendum:
+        bad.append("price_question_blocked_by_focus_rule")
     if "لا تكرر نفس الجملة" not in addendum:
         bad.append("missing_variety_rule")
+    if "علامة استفهام واحدة" not in addendum:
+        bad.append("missing_one_question_rule")
+    if "لا تعد بأي خدمة" not in addendum:
+        bad.append("missing_unverified_service_rule")
     return bad

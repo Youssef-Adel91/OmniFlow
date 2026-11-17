@@ -31,7 +31,7 @@ from dataclasses import dataclass, field
 from src.sales import intents, matcher, phrasing, qualification as q
 from src.sales.hook import build_addendum
 
-RISKY = {"injection", "other_data", "negotiation", "complaint", "opt_out"}
+RISKY = {"injection", "other_data", "negotiation", "complaint", "opt_out", "human_request", "competitor"}
 HARD_RULES = ("لا تتفاوض على السعر", "لا تخترع عقارًا", "لا تشارك بيانات أي عميل", "لا تذكر المنافسين بسوء", "خارج العقارات")
 OPEN_OFFER_SCENARIOS = ("s12_pick_slot", "s13_other_slots", "s14_unclear_slot", "s15_cancel_open_offer")
 
@@ -57,6 +57,8 @@ class Report:
     prompt_wrong: list = field(default_factory=list)
     behaviour_wrong: list = field(default_factory=list)      # prompt lacks a manners rule for that line (salam, pause, variety, first-contact focus)
     behaviour_checked: int = 0
+    rule_reply_wrong: list = field(default_factory=list)     # a FIXED reply (human hand-over, competitor question) that breaks a manners check
+    rule_replies_checked: int = 0
     risky_total: int = 0
     risky_caught: int = 0
     scenarios: int = 0
@@ -65,7 +67,7 @@ class Report:
 
     @property
     def ok(self) -> bool:
-        return not (self.routing_wrong or self.understanding_wrong or self.prompt_wrong or self.behaviour_wrong) and self.risky_caught == self.risky_total \
+        return not (self.routing_wrong or self.understanding_wrong or self.prompt_wrong or self.behaviour_wrong or self.rule_reply_wrong) and self.risky_caught == self.risky_total \
             and not any(findings for *_, findings in self.live)
 
 
@@ -74,13 +76,19 @@ def _scenarios():
     return SCENARIOS
 
 
-def scenario_brief(texts: list[str], *, inventory: "matcher.MatchResult | None" = None):
-    """(qualification, prompt addendum, first_contact) for the customer's `texts` (oldest first) exactly as the hook would build them."""
+def scenario_brief(texts: list[str], *, inventory: "matcher.MatchResult | None" = None, cards: list[dict] | None = None):
+    """(qualification, prompt addendum, first_contact, inventory result) for the customer's `texts` (oldest first) exactly as the hook would build them.
+    The inventory block is what the database matcher would return over `cards` (default: DEMO_LISTINGS); pass `inventory` to force a result for the non-gated case."""
     qual = q.qualify(texts, known_districts=["النرجس", "الياسمين"])
     last, first = texts[-1], len(texts) == 1
+    price_q = phrasing.is_price_question(last)
     ask = q.next_question(qual, last_text=last)
-    result = matcher.MatchResult(reason="need_info") if first and phrasing.needs_focus(qual) else (inventory or matcher.MatchResult())
-    return qual, build_addendum(qual, result, ask, last_text=last, first_contact=first), first
+    if inventory is not None:
+        gate = matcher._gate(qual, require_focus=first, price_question=price_q)
+        result = gate if gate is not None else inventory
+    else:
+        result = matcher.match_cards(DEMO_LISTINGS if cards is None else cards, qual, require_focus=first, price_question=price_q)
+    return qual, build_addendum(qual, result, ask, last_text=last, first_contact=first), first, result
 
 
 def evaluate_offline() -> Report:
@@ -109,8 +117,14 @@ def evaluate_offline() -> Report:
         missing = [r for r in HARD_RULES if r not in prompt]
         if missing:
             rep.prompt_wrong.append((sid, missing))
+        for text, route in lines:                                       # the fixed replies of the deterministic routes are checked too (no budget question to a person, no pause reply to a competitor)
+            if route in ("human_request", "competitor"):
+                rep.rule_replies_checked += 1
+                bad_reply = phrasing.behaviour_findings(intents.REPLIES_AR[route], customer_line=text, qual={}, first_contact=False)
+                if bad_reply:
+                    rep.rule_reply_wrong.append((sid, route, bad_reply))
         if lines[-1][1] == "qualify":                                   # a turn the model answers: the prompt must carry the manners rules for THIS line
-            bq, brief, first = scenario_brief(texts)
+            bq, brief, first, _result = scenario_brief(texts)
             rep.behaviour_checked += 1
             bad = phrasing.addendum_violations(brief, customer_line=texts[-1], qual=bq, first_contact=first)
             if bad:
@@ -128,7 +142,6 @@ async def evaluate_live(limit: int | None) -> Report | None:
     except Exception as exc:  # noqa: BLE001
         print(f"LIVE evaluation needs a configured model: {exc}", file=sys.stderr)
         return None
-    inventory = matcher.MatchResult(DEMO_LISTINGS, 1, "")
     allowed_prices = {int(x["price"]) for x in DEMO_LISTINGS}
     allowed_ads = {x["rega_ad_number"] for x in DEMO_LISTINGS}
     rep = Report(mode="live")
@@ -139,7 +152,7 @@ async def evaluate_live(limit: int | None) -> Report | None:
             break
         rep.scenarios += 1
         texts = [t for t, r in lines if r == "qualify"]
-        qual, brief, first = scenario_brief(texts, inventory=inventory)
+        qual, brief, first, result = scenario_brief(texts)
         system = "أنت مساعد مبيعات لمكتب عقارات سعودي. تكلم بلهجة العميل وبإيجاز.\n" + brief
         messages = [{"role": "user", "parts": [t]} for t in texts[-3:]]
         try:
@@ -148,7 +161,7 @@ async def evaluate_live(limit: int | None) -> Report | None:
             rep.live.append((sid, texts[-1], f"<<model error: {type(exc).__name__}>>", ["model_error"]))
             continue
         findings = forbidden_findings(resp.text, allowed_prices=allowed_prices, allowed_ads=allowed_ads)
-        findings += phrasing.behaviour_findings(resp.text, customer_line=texts[-1], qual=qual, first_contact=first)
+        findings += phrasing.behaviour_findings(resp.text, customer_line=texts[-1], qual=qual, first_contact=first, inventory_has_listings=bool(result.listings))
         rep.live.append((sid, texts[-1], resp.text, findings))
     if rep.live and all(r[3] == ["model_error"] for r in rep.live):
         print("LIVE evaluation did not run: no answer could be obtained from the model (key missing/invalid or no network). Nothing was evaluated.", file=sys.stderr)
@@ -169,7 +182,8 @@ def render(rep: Report) -> str:
                 f"risky caught   : {_pct(rep.risky_caught, rep.risky_total)}   (opt-out / injection / other customers' data / complaint / negotiation never reach the model)",
                 f"understanding  : {'100%' if not rep.understanding_wrong else 'FAILED ' + str(rep.understanding_wrong[:5])}",
                 f"prompt rules   : {'100%' if not rep.prompt_wrong else 'FAILED ' + str(rep.prompt_wrong[:5])}",
-                f"manners rules  : {'100%' if not rep.behaviour_wrong else 'FAILED ' + str(rep.behaviour_wrong[:5])}   ({rep.behaviour_checked} model-answered turns: salam only if greeted, no question after a pause, varied wording, one question first)"]
+                f"fixed replies  : {'100%' if not rep.rule_reply_wrong else 'FAILED ' + str(rep.rule_reply_wrong[:5])}   ({rep.rule_replies_checked} human-request / competitor replies: hand-over without a question, a question about the other offer, no pause wording)",
+                f"manners rules  : {'100%' if not rep.behaviour_wrong else 'FAILED ' + str(rep.behaviour_wrong[:5])}   ({rep.behaviour_checked} model-answered turns: salam only if greeted, no question after a pause, price answered first, one question, no unconfirmed service, nearest alternative, varied wording)"]
         out += [f"  routing miss: {w}" for w in rep.routing_wrong[:10]]
     else:
         bad = [r for r in rep.live if r[3]]

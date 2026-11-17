@@ -64,6 +64,19 @@ class MannersThroughTheHook(SimCase):
             self.assertEqual((await c.say("هلا؟")).source, "human")                               # the assistant stays out of it afterwards
         self.assertGreaterEqual(len(await self.q("SELECT 1 FROM notifications WHERE tenant_id=:t AND kind='handoff'")), 3)
 
+    async def test_service_questions_and_pauses_are_answered_by_rules_without_the_model(self):
+        c = await self.customer()
+        t = await c.say("هل يقبل تمويل بنكي؟")
+        self.assertEqual(t.source, "rule")
+        self.assertNotIn("نقدر نرتب", t.reply)
+        self.assertNotIn("؟", t.reply)
+        self.assertIn("موظفينا", t.reply)
+        c = await self.customer()                                                                  # the service question hands over; the pause is a separate customer
+        t = await c.say("بفكر وارد لك")
+        self.assertEqual(t.source, "rule")
+        self.assertNotIn("؟", t.reply)
+        self.assertLessEqual(len(t.reply.split()), 12)
+
     async def test_a_competitor_gets_one_question_about_the_other_offer_no_pause_no_handoff(self):
         c = await self.customer()
         t = await c.say("شركة ثانية عرضوا علي شقة أرخص")

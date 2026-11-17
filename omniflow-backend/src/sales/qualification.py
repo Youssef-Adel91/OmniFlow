@@ -278,15 +278,20 @@ def _have_field(q: dict[str, Any], key: str) -> bool:
 def next_question(q: dict[str, Any], *, already_asked: Iterable[str] = (), max_per_conversation: int = 3, last_text: str | None = None) -> tuple[str, str] | None:
     """(field, question) for the single most useful thing still unknown, or None.
 
-    None when: enough questions were already asked; the customer's last message asks for time / objects / is just browsing (a short reply, never a question);
-    or nothing is missing. A field the customer already gave is never asked, whatever `q["missing"]` says. The phrasing rotates (3 wordings per field) with the number
-    of questions already asked, so consecutive questions never read the same.
+    None when: enough questions were already asked; the customer's last message asks for time / objects / is just browsing, is out of scope (gold, stocks…), or asks about a
+    service (financing, ownership transfer…) — a qualification question there reads as a pasted script; or nothing is missing. A field the customer already gave is never asked,
+    whatever `q["missing"]` says. The budget is asked only once the customer has said WHAT he wants (type, district, rooms, purpose…); before that the first question is the type.
+    The phrasing rotates (3 wordings per field) with the number of questions already asked.
     """
     asked = list(already_asked)
-    if len(asked) >= max_per_conversation or phrasing.is_pause_or_objection(last_text):
+    if len(asked) >= max_per_conversation or phrasing.is_pause_or_objection(last_text) or phrasing.is_out_of_scope(last_text) or phrasing.asked_service(last_text):
         return None
+    if not phrasing.purchase_context(q) and "property_type" not in asked:
+        return "property_type", phrasing.pick_question("property_type", len(asked))
     for key in ASK_ORDER:
         if key in asked or _have_field(q, key):
+            continue
+        if key == "budget" and not phrasing.purchase_context(q):
             continue
         if key == "rooms" and q.get("property_type") in _NO_ROOMS_FOR:
             continue

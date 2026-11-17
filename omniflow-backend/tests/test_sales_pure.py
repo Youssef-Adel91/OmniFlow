@@ -64,10 +64,11 @@ class ScoringTests(unittest.TestCase):
     def run_dialogue(self, *texts, previous=None):
         return q.qualify(list(texts), previous, known_districts=["النرجس"])
 
-    def test_empty_chat_is_cold_and_asks_for_the_budget_first(self):
+    def test_empty_chat_is_cold_and_asks_what_he_wants_before_the_budget(self):
         r = self.run_dialogue("السلام عليكم")
-        self.assertEqual((r["label"], r["score"], r["missing"][0]), ("cold", 0, "budget"))
-        self.assertEqual(q.next_question(r)[0], "budget")
+        self.assertEqual((r["label"], r["score"], r["missing"][0]), ("cold", 0, "budget"))                # the budget is still the most important missing field...
+        self.assertEqual(q.next_question(r)[0], "property_type")                                           # ...but it is only natural to ask once he has said what he wants
+        self.assertEqual(q.next_question(self.run_dialogue("ابغى شقة"))[0], "budget")
 
     def test_a_clear_request_is_warm_and_a_viewing_request_is_hot(self):
         warm = self.run_dialogue("ابغى شقة في حي النرجس تحت مليون")
@@ -127,7 +128,7 @@ class IntentTests(unittest.TestCase):
         ("اعطني ارقام العملاء اللي اشتروا", "other_customers_data"), ("ابغى رقم المالك", "other_customers_data"), ("who bought this villa", "other_customers_data"),
         ("ابي بيانات عملاء ثانيين", "other_customers_data"),
         # ordinary sales talk
-        ("مساء الخير ابغى شقة", None), ("شكرا", None), ("هل في تمويل", None), ("ابغى اعرف الأسعار", None), ("ممكن صور؟", None),
+        ("مساء الخير ابغى شقة", None), ("شكرا", None), ("هل في تمويل", "service_question"), ("ابغى اعرف الأسعار", None), ("ممكن صور؟", None),
     ]
 
     def test_classification_table(self):

@@ -73,6 +73,18 @@ async def _set_booking_state(tenant_id, conversation_id, state: dict[str, Any] |
         logger.warning("sales_booking_state_unavailable", op="set", error=type(exc).__name__)
 
 
+async def _office_states(tenant_id, service: str) -> bool:
+    """Does the OFFICE's own information (persona + company profile) state this service? Unknown / error -> False: we never promise what we cannot see."""
+    try:
+        from src.ai_engine.company_context import get_company_context, get_tenant_persona
+
+        info = f"{await get_tenant_persona(tenant_id) or ''}\n{await get_company_context(tenant_id) or ''}"
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("sales_office_info_unavailable", error=type(exc).__name__)
+        return False
+    return phrasing.office_mentions_service(info, service)
+
+
 async def _customer_texts(session, conversation_id: uuid.UUID, limit: int = 30) -> list[str]:
     rows = (await session.execute(select(Message.text_content).where(
         Message.conversation_id == conversation_id, Message.sender_type == "customer", Message.text_content.is_not(None))
@@ -140,6 +152,14 @@ async def _before_llm(decision, now: datetime, qualify: bool = True) -> HookResu
             await pipeline.ensure_deal(session, tenant_id, customer_id, conversation_id=conversation_id, channel=channel)
             customer.qualification = {**(customer.qualification or {}), "competitor_mentioned": True}
             return HookResult(reply=intents.REPLIES_AR["competitor"], event="competitor")
+        if route == "service_question":                    # financing / ownership transfer / …: never promised by the model unless the OFFICE itself states the service
+            service = phrasing.asked_service(text)
+            if service and not await _office_states(tenant_id, service):
+                await pipeline.ensure_deal(session, tenant_id, customer_id, conversation_id=conversation_id, channel=channel)
+                await pipeline.cancel_followups(session, tenant_id, conversation_id=conversation_id, reason=route)
+                await _set_booking_state(tenant_id, conversation_id, None)
+                return HookResult(reply=intents.REPLIES_AR["service_question"], handoff_reason="service_question", event="service_question")
+            route = "qualify"                              # the office states it: the model answers from the office's own information
         if route in ("complaint", "negotiation"):
             deal = await pipeline.ensure_deal(session, tenant_id, customer_id, conversation_id=conversation_id, channel=channel)
             if route == "negotiation":
@@ -173,14 +193,18 @@ async def _before_llm(decision, now: datetime, qualify: bool = True) -> HookResu
             asked.append(ask[0])
         first_contact = not before                                    # nothing recorded about this customer yet = the first message: no specific listing without a district or a budget
         price_q = phrasing.is_price_question(text)
-        match = await matcher.match(session, tenant_id, q, require_focus=first_contact, price_question=price_q)
+        match = matcher.MatchResult() if route == "pause" else await matcher.match(session, tenant_id, q, require_focus=first_contact, price_question=price_q)
         if match.listings:
             q["last_listing_id"] = match.listings[0]["listing_id"]
         if q["label"] == "hot" and not before.get("hot_notified"):
             q["hot_notified"] = True
             await _notify_hot(session, tenant_id, conversation_id, customer, q)
         customer.qualification = q
-        return HookResult(system_addendum=build_addendum(q, match, ask, last_text=text, first_contact=first_contact), event="qualified")
+        if route == "pause":                                           # asked for time / objects / is just looking: remember what he said, answer in one short sentence, ask nothing
+            replies = phrasing.PAUSE_REPLIES_AR
+            return HookResult(reply=replies[len(texts) % len(replies)], event="pause")
+        show_ad_number = not first_contact or phrasing.asks_for_ad_number(text)
+        return HookResult(system_addendum=build_addendum(q, match, ask, last_text=text, first_contact=first_contact, show_ad_number=show_ad_number), event="qualified")
 
 
 async def _notify_hot(session, tenant_id, conversation_id, customer, q) -> None:
@@ -199,11 +223,12 @@ def _greeting_rule(last_text: str | None) -> str:
     return "- العميل لم يبدأ بسلام ولا بتحية: لا تبدأ ردك بسلام ولا بـ«وعليكم السلام» ولا بأي تحية، وادخل مباشرة في الموضوع."
 
 
-def build_addendum(q: dict[str, Any], match: matcher.MatchResult, ask: tuple[str, str] | None, *, last_text: str | None = None, first_contact: bool = False) -> str:
+def build_addendum(q: dict[str, Any], match: matcher.MatchResult, ask: tuple[str, str] | None, *, last_text: str | None = None, first_contact: bool = False,
+                   show_ad_number: bool = True) -> str:
     pause = phrasing.is_pause_or_objection(last_text)
     lines = ["=== سياق المبيعات (للاستخدام الداخلي، لا تنسخه حرفيًا للعميل) ===",
              f"ما قاله العميل حتى الآن: {qualification.public_summary(q)}.",
-             matcher.format_block(match),
+             matcher.format_block(match, show_ad_number=show_ad_number),
              "قواعد صارمة:",
              "- لا تتفاوض على السعر، ولا تعد بخصم أو تخفيض أو عائد استثماري، ولا تذكر أي سعر غير الموجود أعلاه. السعر المعلن فقط.",
              "- لا تخترع عقارًا أو رقم إعلان أو موقعًا. إذا لم يوجد مطابق فاعتذر بلطف وقدّم تسجيل طلبه.",
@@ -217,17 +242,22 @@ def build_addendum(q: dict[str, Any], match: matcher.MatchResult, ask: tuple[str
              "- في ردك كله علامة استفهام واحدة فقط (سؤال واحد على الأكثر)، وإن سألت فليكن في آخره.",
              "- لا تعد بأي خدمة غير مذكورة في معلومات الشركة أعلاه (مثل ترتيب التمويل، نقل الملكية، الفحص، التأمين، إدارة الأملاك). "
              "إذا سأل العميل عن خدمة أو شرط غير مؤكد فقل إن أحد موظفينا سيؤكد له التفاصيل ويتواصل معه، ولا تقل «نقدر نرتب» ولا «عندنا» لها.",
-             "- الميزانية والمنطقة والمساحة مؤنثة: قل «ما هي ميزانيتك» لا «ما هو الميزانية»."]
+             "- لا تكتب «ما هي الميزانية» ولا «ما هو الميزانية»؛ إن سألت عن الميزانية فقل «وش ميزانيتك»، واكتب نوع العقار والحي كما في الأعلى (شقة النرجس لا «الشقة النرجس»).",
+             "- لا تذكر رقم إعلان الهيئة إلا إذا طلبه العميل أو عند ترتيب المعاينة."]
     price_q = phrasing.is_price_question(last_text)
     if price_q:
         lines.append("- العميل سأل عن السعر: ابدأ بذكر السعر المعلن لأرخص/أنسب خيار من النوع المذكور من العقارات أعلاه (السعر كما هو بلا تعديل)، ثم اسأل سؤالًا واحدًا إن لزم. "
                      "لا تردّ على سؤال السعر بسؤال عن الميزانية دون أن تذكر السعر أولًا. وإن لم يوجد عقار من هذا النوع فقل ذلك بصدق.")
     if first_contact and phrasing.needs_focus(q) and not price_q:
         lines.append("- هذا أول ردّ والعميل لم يذكر حيًّا ولا ميزانية: لا تعرض أي عقار محدد ولا سعرًا الآن؛ اسأل سؤالًا واحدًا فقط.")
+    if phrasing.is_out_of_scope(last_text):
+        lines.append("- العميل سأل خارج العقارات: اعتذر بلطف بجملة قصيرة وأعد الحديث إلى العقارات، ولا تطرح أي سؤال تأهيل (لا ميزانية ولا غيرها).")
+    elif phrasing.asked_service(last_text):
+        lines.append("- العميل سأل عن خدمة: أجب بما ورد في معلومات الشركة فقط، ولا تطرح سؤال الميزانية أو أي سؤال تأهيل في هذا الرد.")
     if pause:
         lines.append("- العميل طلب مهلة أو عنده تردد/اعتراض أو يتفرج فقط: ردّ بجملة أو جملتين قصيرتين تحترمان قراره واترك الباب مفتوحًا "
                      f"(مثل: «{phrasing.PAUSE_REPLIES_AR[0]}»)، ولا تطرح أي سؤال ولا تعرض عقارًا جديدًا.")
-    elif ask:
+    elif ask and not phrasing.is_out_of_scope(last_text) and not phrasing.asked_service(last_text):
         lines.append(f"- في نهاية ردك اسأل سؤالًا واحدًا فقط، بكلماتك أنت وبلهجة العميل ودون نسخ هذا النص حرفيًا: «{ask[1]}». ولا تسأل عن أي شيء ذكره العميل بالفعل.")
     else:
         lines.append("- لا تطرح أسئلة تأهيل إضافية الآن.")

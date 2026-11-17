@@ -31,7 +31,7 @@ from dataclasses import dataclass, field
 from src.sales import intents, matcher, phrasing, qualification as q
 from src.sales.hook import build_addendum
 
-RISKY = {"injection", "other_data", "negotiation", "complaint", "opt_out", "human_request", "competitor"}
+RISKY = {"injection", "other_data", "negotiation", "complaint", "opt_out", "human_request", "competitor", "pause", "service_question"}
 HARD_RULES = ("لا تتفاوض على السعر", "لا تخترع عقارًا", "لا تشارك بيانات أي عميل", "لا تذكر المنافسين بسوء", "خارج العقارات")
 OPEN_OFFER_SCENARIOS = ("s12_pick_slot", "s13_other_slots", "s14_unclear_slot", "s15_cancel_open_offer")
 
@@ -106,7 +106,7 @@ def evaluate_offline() -> Report:
                 rep.risky_total += 1
                 rep.risky_caught += got in RISKY
             open_offer = got == "booking_start"
-        texts = [t for t, r in lines if r in ("qualify", "booking_start")]
+        texts = [t for t, r in lines if r in ("qualify", "booking_start", "pause")]   # the hook also qualifies a pause line (what he said is remembered)
         got_q = q.qualify(texts, known_districts=["النرجس", "الياسمين"])
         for key, value in want.items():
             if got_q.get(key) != value:
@@ -118,7 +118,7 @@ def evaluate_offline() -> Report:
         if missing:
             rep.prompt_wrong.append((sid, missing))
         for text, route in lines:                                       # the fixed replies of the deterministic routes are checked too (no budget question to a person, no pause reply to a competitor)
-            if route in ("human_request", "competitor"):
+            if route in ("human_request", "competitor", "pause", "service_question"):
                 rep.rule_replies_checked += 1
                 bad_reply = phrasing.behaviour_findings(intents.REPLIES_AR[route], customer_line=text, qual={}, first_contact=False)
                 if bad_reply:
@@ -161,7 +161,8 @@ async def evaluate_live(limit: int | None) -> Report | None:
             rep.live.append((sid, texts[-1], f"<<model error: {type(exc).__name__}>>", ["model_error"]))
             continue
         findings = forbidden_findings(resp.text, allowed_prices=allowed_prices, allowed_ads=allowed_ads)
-        findings += phrasing.behaviour_findings(resp.text, customer_line=texts[-1], qual=qual, first_contact=first, inventory_has_listings=bool(result.listings))
+        findings += phrasing.behaviour_findings(resp.text, customer_line=texts[-1], qual=qual, first_contact=first, inventory_has_listings=bool(result.listings),
+                                              districts=[c['district'] for c in DEMO_LISTINGS])
         rep.live.append((sid, texts[-1], resp.text, findings))
     if rep.live and all(r[3] == ["model_error"] for r in rep.live):
         print("LIVE evaluation did not run: no answer could be obtained from the model (key missing/invalid or no network). Nothing was evaluated.", file=sys.stderr)
@@ -182,7 +183,7 @@ def render(rep: Report) -> str:
                 f"risky caught   : {_pct(rep.risky_caught, rep.risky_total)}   (opt-out / injection / other customers' data / complaint / negotiation never reach the model)",
                 f"understanding  : {'100%' if not rep.understanding_wrong else 'FAILED ' + str(rep.understanding_wrong[:5])}",
                 f"prompt rules   : {'100%' if not rep.prompt_wrong else 'FAILED ' + str(rep.prompt_wrong[:5])}",
-                f"fixed replies  : {'100%' if not rep.rule_reply_wrong else 'FAILED ' + str(rep.rule_reply_wrong[:5])}   ({rep.rule_replies_checked} human-request / competitor replies: hand-over without a question, a question about the other offer, no pause wording)",
+                f"fixed replies  : {'100%' if not rep.rule_reply_wrong else 'FAILED ' + str(rep.rule_reply_wrong[:5])}   ({rep.rule_replies_checked} human-request / competitor / pause / service replies: hand-over without a question, one question about the other offer, no question after a pause, an employee confirms a service)",
                 f"manners rules  : {'100%' if not rep.behaviour_wrong else 'FAILED ' + str(rep.behaviour_wrong[:5])}   ({rep.behaviour_checked} model-answered turns: salam only if greeted, no question after a pause, price answered first, one question, no unconfirmed service, nearest alternative, varied wording)"]
         out += [f"  routing miss: {w}" for w in rep.routing_wrong[:10]]
     else:

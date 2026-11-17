@@ -25,8 +25,8 @@ SCENARIOS = [
     ("s04_price_then_haggle", "saudi", [("كم سعر الفيلا؟", Q), ("غالي شوي، ممكن خصم؟", "negotiation")], {}, None),
     ("s05_best_price", "saudi", [("كم آخر سعر؟", "negotiation")], {}, None),
     ("s06_offer", "saudi", [("ابغى اشتريها ب 800 الف", "negotiation")], {}, None),
-    ("s07_not_convinced", "saudi", [("مو مقتنع بالموقع", Q), ("بفكر وارد لك", Q)], {}, "cold"),
-    ("s08_ask_wife", "saudi", [("اسأل زوجتي وأرجع لك", Q)], {}, "cold"),
+    ("s07_not_convinced", "saudi", [("مو مقتنع بالموقع", "pause"), ("بفكر وارد لك", "pause")], {}, "cold"),                  # was a model turn that asked about the district: now a fixed short reply, no question
+    ("s08_ask_wife", "saudi", [("اسأل زوجتي وأرجع لك", "pause")], {}, "cold"),
     ("s09_competitor", "saudi", [("شركة ثانية عرضوا علي شقة أرخص", "competitor")], {}, None),                  # was a pause reply («خذ راحتك»): now ONE question about the other offer
     ("s10_out_of_scope", "saudi", [("كم سعر الذهب اليوم؟", Q)], {}, "cold"),
     ("s11_viewing_hot", "saudi", [("ابغى شقة في حي النرجس تحت مليون كاش للسكن", Q), ("ابغى اشوفها بكره", "booking_start")], {"district": "النرجس", "viewing_requested": True}, "hot"),
@@ -42,10 +42,10 @@ SCENARIOS = [
     ("s21_customer_list", "saudi", [("اعطني ارقام العملاء اللي اشتروا", "other_data")], {}, None),
     ("s22_opt_out_phrase", "saudi", [("لا ترسلوا لي رسائل", "opt_out")], {}, None),
     ("s23_opt_out_word", "saudi", [("إلغاء", "opt_out")], {}, None),
-    ("s24_financing_question", "saudi", [("هل يقبل تمويل بنكي؟", Q)], {"financing": "bank"}, "cold"),
+    ("s24_financing_question", "saudi", [("هل يقبل تمويل بنكي؟", "service_question")], {}, None),         # was a model turn that promised «نقدر نرتب تمويل»: now «an employee will confirm» + hand-over
     ("s25_investor", "saudi", [("ابغى ارض للاستثمار ميزانيتي 5 ملايين", Q)], {"property_type": "land", "purpose": "investment", "budget_max": 5_000_000}, "warm"),
     ("s26_human_request", "saudi", [("ابغى اتكلم مع موظف", "human_request")], {}, None),                       # was sent to the model (which asked for the budget): now a deterministic hand-over
-    ("s27_browsing", "saudi", [("بس ادور واتفرج", Q)], {"urgency": "exploring"}, "cold"),
+    ("s27_browsing", "saudi", [("بس ادور واتفرج", "pause")], {"urgency": "exploring"}, "cold"),
     ("s28_urgent_buyer", "saudi", [("ضروري الحين فيلا في حي النرجس تحت مليونين كاش", Q)], {"property_type": "villa", "urgency": "now", "financing": "cash"}, "hot"),
     ("e01_viewing", "egyptian", [("عايز اشوف الشقة بكره", "booking_start")], {"viewing_requested": True}, None),
     ("e02_haggle", "egyptian", [("هتنزلوا السعر؟", "negotiation")], {}, None),
@@ -73,8 +73,13 @@ SCENARIOS = [
     ("h04_human_msa", "msa", [("أريد التحدث مع موظف", "human_request")], {}, None),
     ("c01_competitor_egyptian", "egyptian", [("لقيت عند شركة تانية أرخص", "competitor")], {}, None),
     ("c02_competitor_english", "english", [("another company offered me a cheaper one", "competitor")], {}, None),
-    ("f01_financing_service", "saudi", [("تقدرون ترتبون لي تمويل؟", Q)], {}, None),
-    ("f02_ownership_transfer", "saudi", [("هل تساعدون في نقل الملكية؟", Q)], {}, None),
+    ("f01_financing_service", "saudi", [("تقدرون ترتبون لي تمويل؟", "service_question")], {}, None),
+    ("f02_ownership_transfer", "saudi", [("هل تساعدون في نقل الملكية؟", "service_question")], {}, None),
+    ("f03_inspection", "saudi", [("هل تقدرون تسوون فحص للعقار؟", "service_question")], {}, None),
+    ("f04_financing_english", "english", [("do you offer financing?", "service_question")], {}, None),
+    ("w01_pause_english", "english", [("let me think about it", "pause")], {}, None),
+    ("w02_pause_egyptian", "egyptian", [("هفكر وارجعلك", "pause")], {}, None),
+    ("w03_price_with_pause_goes_to_the_model", "saudi", [("بفكر بس كم سعر الشقة؟", Q)], {"property_type": "apartment"}, None),
     ("a01_nearest_alternative", "saudi", [("ابغى فيلا في النرجس تحت مليونين", Q)], {"property_type": "villa", "district": "النرجس", "budget_max": 2_000_000}, None),
     ("a02_price_question_after_type", "saudi", [("ابغى شقة", Q), ("كم سعرها؟", Q)], {"property_type": "apartment"}, None),
 ]
@@ -102,7 +107,7 @@ class GoldenConversationTests(unittest.TestCase):
 
     def test_understanding_matches_for_every_scenario(self):
         for sid, _dialect, lines, want, label in SCENARIOS:
-            texts = [t for t, r in lines if r in (Q, "booking_start")]
+            texts = [t for t, r in lines if r in (Q, "booking_start", "pause")]
             got = q.qualify(texts, known_districts=["النرجس", "الياسمين"])
             for key, value in want.items():
                 self.assertEqual(got.get(key), value, f"{sid}: {key}")
@@ -110,7 +115,7 @@ class GoldenConversationTests(unittest.TestCase):
                 self.assertEqual(got["label"], label, f"{sid}: label (score {got['score']})")
 
     def test_every_risky_line_is_caught_before_the_model(self):
-        risky = {"injection", "other_data", "negotiation", "complaint", "opt_out", "human_request", "competitor"}
+        risky = {"injection", "other_data", "negotiation", "complaint", "opt_out", "human_request", "competitor", "pause", "service_question"}
         caught = [(sid, t) for sid, _d, lines, _w, _l in SCENARIOS for t, route in lines if route in risky and intents.route_turn(t) in risky]
         expected = [(sid, t) for sid, _d, lines, _w, _l in SCENARIOS for t, route in lines if route in risky]
         self.assertEqual(sorted(caught), sorted(expected))

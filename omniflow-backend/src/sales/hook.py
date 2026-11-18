@@ -164,7 +164,14 @@ async def _before_llm(decision, now: datetime, qualify: bool = True) -> HookResu
         state = await _booking_state(tenant_id, conversation_id) if sales["booking_enabled"] else None
         ap = await session.scalar(select(Appointment).where(Appointment.tenant_id == tenant_id, Appointment.conversation_id == conversation_id,
                                                             Appointment.status == "scheduled", Appointment.scheduled_at > now).order_by(Appointment.scheduled_at))
-        route = intents.route_turn(text, booking_open=bool(state and state.get("slots")), has_appointment=ap is not None)
+        pending = state.get("pending") if state else None
+        route = intents.route_turn(text, booking_open=bool(state and state.get("slots")), has_appointment=ap is not None, pending=pending)
+        if pending and route not in ("booking_cancel", "booking_reschedule", "opt_out"):
+            await _set_booking_state(tenant_id, conversation_id, None)         # the one-shot question was answered with something else: forget it
+            state = None
+        if route == "cancel_choice":
+            await _set_booking_state(tenant_id, conversation_id, {"pending": "cancel_choice"})
+            return HookResult(reply=intents.REPLIES_AR["cancel_choice"], event="cancel_choice")
         if route == "opt_out":
             customer.opt_out_at, customer.marketing_opt_in = now, False
             await pipeline.cancel_followups(session, tenant_id, customer_id=customer_id, reason="opt_out")
@@ -203,6 +210,7 @@ async def _before_llm(decision, now: datetime, qualify: bool = True) -> HookResu
         if route == "booking_existing":
             if sales["booking_enabled"] and ap is not None:
                 tz = sales["viewing_hours"].get("timezone", "Asia/Riyadh")
+                await _set_booking_state(tenant_id, conversation_id, {"pending": "existing_offer"})      # so a following «غيرها» / «غيّر» changes THIS viewing
                 return HookResult(reply=f"عندك موعد معاينة محجوز يوم {booking.format_slot(ap.scheduled_at, tz)}.\nتبقيه كما هو؟ وإذا تبي تغيّره قل «غيّر الموعد»، وإذا تبي تلغيه قل «ألغِ الموعد».",
                                   event="booking_existing")
             route = "booking_start" if sales["booking_enabled"] else "qualify"
@@ -283,6 +291,7 @@ def build_addendum(q: dict[str, Any], match: matcher.MatchResult, ask: tuple[str
              "- لا تكتب «ما هي الميزانية» ولا «ما هو الميزانية»؛ إن سألت عن الميزانية فقل «وش ميزانيتك»، واكتب نوع العقار والحي كما في الأعلى (شقة النرجس لا «الشقة النرجس»).",
              "- لا تذكر رقم إعلان الهيئة إلا إذا طلبه العميل أو عند ترتيب المعاينة.",
              "- لا تسأل عن وقت المعاينة (صباح أم ظهر… أو أي موعد) ولا تقترح مواعيد: المواعيد تُعرض فقط بقائمة المواعيد المتاحة عندما يكتب العميل «أبغى معاينة».",
+             "- نسّق الرد هكذا: السلام (إن وُجد) في سطر عادي بلا نقطة أو شرطة، ثم الوصف في جملة أو سطرين، ثم السؤال في سطر مستقل في آخر الرد.",
              "- عند عرض أكثر من عقار اكتب كل عقار في سطر مستقل بلا شرطات (-) في بدايته أو بين أجزائه، أو اكتبها بجملة واحدة طبيعية."]
     price_q = phrasing.is_price_question(last_text)
     if price_q:
@@ -331,6 +340,7 @@ async def _booking_turn(route, session, state, ap, text, sales, customer, conver
             return HookResult(reply="تمام، ألغيت طلب الموعد. إذا حبيت نرتبه لاحقًا قل لي بس 🤝", event="booking_cancelled")
         if ap is not None:
             ap.status = "cancelled"
+            await _set_booking_state(tenant_id, conversation_id, None)
             await _notify_staff(session, ap, customer, "ألغى العميل موعد المعاينة", f"{booking.format_slot(ap.scheduled_at, tz)}")
             return HookResult(reply="تم إلغاء موعد المعاينة. إذا حبيت نحجز موعد ثاني قل لي 🤝", event="booking_cancelled")
         return None

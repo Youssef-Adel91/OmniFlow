@@ -95,18 +95,39 @@ def _key(sentence: str) -> str:
     return re.sub(r"[\s\W_]+", " ", _norm(sentence)).strip()
 
 
+def _by_line(text: str) -> list[list[str]]:
+    """Sentences of each line. The model's line breaks (greeting / description / question, one property per line) are LAYOUT: the sentence filters below must keep them
+    (they used to flatten the whole reply into one line, which glued the question to the description and turned bullets into inline dashes)."""
+    return [_SENTENCE.findall(line) for line in (text or "").split("\n")]
+
+
+def _keep(line: list[str], kept: list[str]) -> list[str] | None:
+    """What a filter returns for a line: a blank original line stays blank ([]), a line whose sentences were ALL removed is dropped (None)."""
+    return kept if kept or not line else None
+
+
+def _join_lines(lines: list[list[str] | None], original: str) -> str:
+    out: list[str] = []
+    for sentences in lines:
+        if sentences is None:
+            continue
+        if not sentences:
+            out.append("")                                   # a blank line of the original stays a blank line
+            continue
+        joined = " ".join(x.strip() for x in sentences if x.strip()).strip()
+        if joined:
+            out.append(joined)                               # a line whose sentences were all removed disappears
+    text = "\n".join(out).strip("\n").strip()
+    return re.sub(r"\n{3,}", "\n\n", text) or original
+
+
 def strip_repeated_sentences(answer: str, previous: Iterable[str]) -> str:
     """Remove sentences the assistant already said, word for word, earlier in this conversation (sentences with a number — a price, an ad number — are information, not filler, and stay)."""
     seen = {_key(s) for text in previous for s in _SENTENCE.findall(text or "") if len(_key(s)) >= 12}
     if not seen:
         return answer
-    kept = []
-    for s in _SENTENCE.findall(answer):
-        if len(_key(s)) >= 12 and _key(s) in seen and not re.search(r"\d", s.translate(_AR_DIGITS)):
-            continue
-        kept.append(s)
-    out = " ".join(x.strip() for x in kept).strip()
-    return out or answer
+    kept = [_keep(line, [s for s in line if not (len(_key(s)) >= 12 and _key(s) in seen and not re.search(r"\d", s.translate(_AR_DIGITS)))]) for line in _by_line(answer)]
+    return _join_lines(kept, answer)
 
 
 def polish(answer: str, *, customer_text: str | None, previous: Iterable[str] = (), context: str | None = "", districts: Iterable[str] = (), first_reply: bool = False) -> str:
@@ -121,7 +142,48 @@ def polish(answer: str, *, customer_text: str | None, previous: Iterable[str] = 
     text = fix_type_district(text, districts)
     if first_reply and not asks_for_ad_number(customer_text):
         text = strip_ad_numbers(text)
-    return tidy_listing_format(text)
+    return separate_question(tidy_listing_format(strip_greeting_bullet(text)))
+
+
+_GREETING_LINE = re.compile(r"(?m)^[ \t]*[-–—*•][ \t]+(?=(?:و?عليكم\s+السلام|السلام\s+عليكم|أهلا|اهلا|أهلاً|مرحبا|مرحبًا|هلا|حياك|حياكم|صباح|مساء))")
+
+
+def strip_greeting_bullet(text: str) -> str:
+    """«• وعليكم السلام» as a bullet of its own is a layout accident: a greeting is an ordinary line, never a list item."""
+    return _GREETING_LINE.sub("", text or "")
+
+
+_QUESTION_STARTERS = {"هل", "وش", "ايش", "إيش", "شو", "كم", "وين", "تبي", "تبغى", "تبغاه", "تحب", "تفضل", "تفضّل", "الشراء", "الدفع", "العقار", "تدوّر", "تدور", "عندك", "طريقة", "عدد", "ممكن"}
+
+
+def separate_question(text: str) -> str:
+    """The reply's ONE question goes on its own line: the description is a sentence or two, then a new line for the question — never glued to it
+    («الدفع كاش مباشرة الشراء للسكن أو للاستثمار؟» -> «الدفع كاش مباشرة» / «الشراء للسكن أو للاستثمار؟»). Only for a reply with exactly one question mark, at its end."""
+    if not text or text.count("؟") + text.count("?") != 1:
+        return text
+    lines = text.split("\n")
+    idx = next((i for i in range(len(lines) - 1, -1, -1) if re.search(r"[؟?]\s*$", lines[i])), None)
+    if idx is None:
+        return text
+    line = lines[idx].rstrip()
+    body, mark = line[:-1], line[-1]
+    boundaries = list(re.finditer(r"[.!]\s+", body))
+    start = boundaries[-1].end() if boundaries else 0
+    cut = None
+    for i, tok in enumerate(re.finditer(r"\S+", body[start:])):
+        word = tok.group().strip("،,:")
+        if i >= 2 and (word in _QUESTION_STARTERS or (word == "في" and body[start + tok.end():].lstrip().startswith("أي"))):
+            cut = start + tok.start()
+            break
+    if cut is None:
+        cut = start if start > 0 else None
+    if not cut:
+        return text
+    head = body[:cut].rstrip(" ،")
+    if not head:
+        return text
+    lines[idx] = head + "\n" + body[cut:].lstrip() + mark
+    return "\n".join(lines)
 
 
 _DASH_SEP = re.compile(r"\s[-–—]\s")
@@ -137,7 +199,8 @@ def tidy_listing_format(text: str) -> str:
     stripped = text.strip()
     inline = len(_DASH_SEP.findall(stripped))
     starts_dash = bool(re.match(r"[-–—*•]\s", stripped))
-    if inline < 2 and not (starts_dash and inline >= 1) and not (starts_dash and "\n" not in stripped):
+    line_bullets = bool(_LINE_BULLET.search(stripped)) and "\n" in stripped
+    if inline < 2 and not (starts_dash and inline >= 1) and not (starts_dash and "\n" not in stripped) and not line_bullets:
         return text
     if "\n" in stripped:                                   # already one item per line: only make the bullets uniform and drop dashes inside a line
         out = []
@@ -231,14 +294,14 @@ def strip_ad_numbers(answer: str) -> str:
 # ── one question per reply ───────────────────────────────────────────────────────────────────────────────────────
 def limit_questions(answer: str) -> str:
     """Keep ONE question: the last one. Earlier question sentences are dropped unless they carry a number (a price, an ad number is information)."""
-    sentences = _SENTENCE.findall(answer or "")
-    q_idx = [i for i, s in enumerate(sentences) if s.strip().endswith(("؟", "?"))]
-    if len(q_idx) <= 1:
+    lines = _by_line(answer)
+    flat = [(li, si) for li, line in enumerate(lines) for si, sent in enumerate(line) if sent.strip().endswith(("؟", "?"))]
+    if len(flat) <= 1:
         return answer
-    keep_last = q_idx[-1]
-    kept = [s for i, s in enumerate(sentences) if not (i in q_idx and i != keep_last and not re.search(r"\d", s.translate(_AR_DIGITS)))]
-    out = " ".join(x.strip() for x in kept).strip()
-    return out or answer
+    keep_last = flat[-1]
+    drop = {pos for pos in flat if pos != keep_last and not re.search(r"\d", lines[pos[0]][pos[1]].translate(_AR_DIGITS))}
+    kept = [_keep(line, [sent for si, sent in enumerate(line) if (li, si) not in drop]) for li, line in enumerate(lines)]
+    return _join_lines(kept, answer)
 
 
 # ── services the office has not confirmed ────────────────────────────────────────────────────────────────────────
@@ -275,16 +338,19 @@ SERVICE_HANDOVER_AR = "أحد موظفينا يأكد لك تفاصيل هذي �
 
 def soften_service_claims(answer: str, context: str | None = "") -> str:
     """Replace each sentence that promises an unconfirmed service by ONE hand-over sentence."""
-    out, replaced = [], False
-    for sentence in _SENTENCE.findall(answer or ""):
-        if unverified_service_claims(sentence, context):
-            if not replaced:
-                out.append(SERVICE_HANDOVER_AR)
-                replaced = True
-            continue
-        out.append(sentence)
-    text = " ".join(x.strip() for x in out).strip()
-    return text or answer
+    replaced = False
+    kept: list[list[str] | None] = []
+    for line in _by_line(answer):
+        out: list[str] = []
+        for sentence in line:
+            if unverified_service_claims(sentence, context):
+                if not replaced:
+                    out.append(SERVICE_HANDOVER_AR)
+                    replaced = True
+                continue
+            out.append(sentence)
+        kept.append(_keep(line, out))
+    return _join_lines(kept, answer)
 
 
 # ── questions about services the office may not offer ────────────────────────────────────────────────────────────

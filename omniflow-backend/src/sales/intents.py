@@ -155,6 +155,7 @@ def classify(text: str) -> Intent | None:
 
 # Fixed replies (never generated): short, polite, in the customer's register. {business} is the tenant's display name when known.
 REPLIES_AR = {
+    "cancel_choice": "تبي ألغي موعد المعاينة ولا توقف الرسائل؟",
     "opt_out": "تم إيقاف الرسائل التلقائية لك، ولن نرسل لك أي متابعة. إذا احتجت شيئًا لاحقًا راسلنا في أي وقت 🤝",
     "injection": "أقدر أساعدك في الاستفسارات العقارية: البحث عن عقار، الأسعار المعلنة، وحجز معاينة. كيف أخدمك؟",
     "other_customers_data": "عذرًا، لا أستطيع مشاركة بيانات أي عميل أو مالك. أقدر أساعدك في العقارات المتاحة وحجز معاينة 🤝",
@@ -171,7 +172,13 @@ REPLIES_AR = {
 _CANCEL_WORDS = {"الغاء", "إلغاء", "الغ", "الغي", "كنسل", "cancel", "لا شكرا", "لا شكراً", "مو الحين", "مش دلوقتي"}
 
 
-def route_turn(text: str, *, booking_open: bool = False, has_appointment: bool = False) -> str:
+_BARE_CANCEL = {_light(w) for w in ("الغاء", "إلغاء", "cancel", "كنسل", "الغ", "الغي")}
+_CHOICE_MESSAGES = re.compile(r"(رسائل|رسايل|الرسائل|وقف|توقف|ايقاف|إيقاف|stop|message|unsubscribe)")
+_CHOICE_APPOINTMENT = re.compile(r"(موعد|معاينه|المعاينه|appointment|viewing|booking|حجز)")
+_CHANGE_WORDS = ("غيرها", "غيرهم", "غيره", "غيّر", "غير الموعد", "غير ", "بدل", "مواعيد ثانيه", "مواعيد اخرى", "موعد ثاني", "other times", "different time", "change it", "another time")
+
+
+def route_turn(text: str, *, booking_open: bool = False, has_appointment: bool = False, pending: str | None = None) -> str:
     """
     The single place that decides what kind of turn this is (used by the sales hook AND by the golden-conversation tests, so they cannot drift apart):
 
@@ -181,6 +188,7 @@ def route_turn(text: str, *, booking_open: bool = False, has_appointment: bool =
         service_question                                                     asks about financing / ownership transfer / … : a fixed "an employee will confirm" + hand-over, unless the office's own profile states the service
         pause                                                                «بفكر وارد لك», «اسأل زوجتي وأرجع لك», «بس أتفرج»: a short fixed reply, no question, no model
         booking_answer | booking_cancel | booking_reschedule | booking_start  the viewing dialogue
+        cancel_choice                                                        a bare «إلغاء» while a viewing is booked: ONE question — cancel the viewing or stop the messages (the answer: viewing -> booking_cancel, messages -> opt_out)
         booking_existing                                                     asks to see a property while a viewing is ALREADY booked: show that booking and offer keep / change
         qualify                                                              normal path: qualification + listings -> the model answers
 
@@ -191,6 +199,15 @@ def route_turn(text: str, *, booking_open: bool = False, has_appointment: bool =
     t = _light(text or "").strip(" .!؟?،,")
     if booking_open and t in {_light(w) for w in _CANCEL_WORDS}:
         return "booking_cancel"
+    if has_appointment and not booking_open and t in _BARE_CANCEL:
+        return "cancel_choice"                           # a bare «إلغاء» with a booked viewing is ambiguous: ask ONE question (cancel the viewing or stop the messages)
+    if pending == "cancel_choice":
+        if _CHOICE_MESSAGES.search(t):
+            return "opt_out"                             # when both are named, the customer's safety wins: stop the messages
+        if _CHOICE_APPOINTMENT.search(t):
+            return "booking_cancel"                      # really cancels the booked viewing
+    if pending == "existing_offer" and has_appointment and any(w in t for w in (_light(x) for x in _CHANGE_WORDS)):
+        return "booking_reschedule"                      # «غيرها» right after «عندك موعد محجوز…» means: change that viewing
     intent = classify(text)
     if intent is not None:
         return {"other_customers_data": "other_data"}.get(intent.kind, intent.kind)

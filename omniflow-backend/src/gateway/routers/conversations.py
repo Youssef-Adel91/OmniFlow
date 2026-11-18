@@ -364,6 +364,15 @@ async def get_conversation_recommendations(
 
     preferences = await extract_preferences(customer_texts)
 
+    # The customer's recorded qualification (what the sales summary and the «عقارات مناسبة» panel use) wins over the extractor: both panels now agree on type / budget / district / rooms.
+    from src.sales import recommendation_filters
+    from src.shared.db.models import Customer
+
+    customer = await repo.session.scalar(select(Customer).where(Customer.tenant_id == conversation.tenant_id, Customer.customer_id == conversation.customer_id))
+    hard = recommendation_filters.constraints(customer.qualification if customer else None, preferences)
+    preferences = {**preferences, "property_type": hard.get("property_type"), "budget_min": hard.get("budget_min"), "budget_max": hard.get("budget_max"),
+                   "district": hard.get("district"), "bedrooms": hard.get("rooms")}
+
     # Prefer a canonical query built from what was actually extracted — more
     # precise than the raw message blob for the embedding to key off. Falls
     # back to the raw text when nothing confident was extracted at all.
@@ -394,24 +403,27 @@ async def get_conversation_recommendations(
         district=preferences["district"], property_type=preferences["property_type"],
         bedrooms=preferences["bedrooms"],
     )
-    price_only_filter = qdrant_mgr.build_preference_filter(
-        price_min=preferences["budget_min"], price_max=preferences["budget_max"],
+    price_only_filter = qdrant_mgr.build_preference_filter(            # relaxed: drops district / rooms only — NEVER the type or the budget
+        price_min=preferences["budget_min"], price_max=preferences["budget_max"], property_type=preferences["property_type"],
     )
 
     # Relaxation stages, de-duplicated by identity so an empty/no-op stage
     # (e.g. no budget was ever extracted, so the "price-only" stage is the
     # same as "no filter") isn't queried twice.
     stages: list[list] = []
-    for candidate in (full_filter, price_only_filter, []):
+    for candidate in (full_filter, price_only_filter):
         if not stages or candidate != stages[-1]:
             stages.append(candidate)
+    if not hard:                                                     # nothing known about the customer's needs yet: an unfiltered semantic search is all there is
+        stages.append([])
 
     results: list = []
     for extra_filters in stages:
         results = await qdrant_mgr.search_properties(
-            conversation.tenant_id, query_vector, limit=limit, score_threshold=0.0,
+            conversation.tenant_id, query_vector, limit=max(limit * 5, 15), score_threshold=0.0,
             extra_filters=extra_filters or None,
         )
+        results = recommendation_filters.filter_hits(results, hard)[:limit]  # a hit that breaks a hard constraint is dropped: empty beats wrong
         if results:
             break
 

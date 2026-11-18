@@ -10,6 +10,7 @@
  */
 
 import { useCallback, useEffect, useState } from "react";
+import { formatOfficeTime } from "@/lib/officeTime";
 import { AlertTriangle, Archive, Loader2, Merge, Pencil, RefreshCw, RotateCcw, ShieldCheck, ShieldOff, Trash2, X } from "lucide-react";
 import {
   SOURCE_LABELS, customerErrorInfo, deleteCustomer, fetchCustomerDetail, fetchCustomers, mergeCustomers, updateCustomer,
@@ -23,7 +24,8 @@ interface Props {
   onEdit: (c: Customer) => void;
 }
 
-const date = (iso?: string | null) => (iso ? new Date(iso).toLocaleString("ar-SA-u-ca-gregory", { dateStyle: "medium", timeStyle: "short" }) : "—");
+const date = (iso?: string | null) => (iso ? new Date(iso).toLocaleString("ar-SA-u-ca-gregory", { dateStyle: "medium", timeStyle: "short" }) : "—");   // activity / conversations: browser time is fine
+const viewingTime = (iso: string | null | undefined, tz?: string | null) => formatOfficeTime(iso, tz);                                          // viewings: the OFFICE's timezone
 
 const ACTIVITY_LABELS: Record<string, string> = {
   "customer.created": "أُضيف العميل", "customer.opt_in_granted": "سُجّلت موافقة التواصل التسويقي", "customer.opt_out": "سُحبت موافقة التواصل التسويقي",
@@ -187,7 +189,7 @@ export default function CustomerDetailDrawer({ customerId, onClose, onChanged, o
                   <span>{CHANNEL_LABELS[x.channel] ?? x.channel} · {x.message_count} رسالة</span><span className="text-gray-400">{date(x.last_message_at)}</span>
                 </li>))} />
               <Section title={`المواعيد (${data.appointments.length})`} empty="لا توجد مواعيد." rows={data.appointments.map((x) => (
-                <li key={x.appointment_id} className="flex justify-between gap-2"><span>{x.location_note ?? "معاينة"} · {x.status}</span><span className="text-gray-400">{date(x.scheduled_at)}</span></li>))} />
+                <li key={x.appointment_id} className="flex justify-between gap-2"><span>{x.location_note ?? "معاينة"} · {x.status}</span><span className="text-gray-400">{viewingTime(x.scheduled_at, data.office_timezone)}</span></li>))} />
               <Section title={`التقارير المدفوعة (${data.reports.length})`} empty="لا توجد تقارير." rows={data.reports.map((x) => (
                 <li key={x.report_id} className="flex justify-between gap-2"><span>{x.report_type}{x.price_sar != null ? ` · ${x.price_sar} ر.س` : ""}</span><span className="text-gray-400">{date(x.created_at)}</span></li>))} />
               <Section title="سجل النشاط" empty="لا يوجد نشاط مسجّل." rows={data.activity.map((x, i) => (

@@ -32,7 +32,7 @@ export interface Board { stages: DealStage[]; columns: Record<DealStage, { label
 export interface HandoffSummary {
   label: string | null; score: number | null; summary: string; missing: string[];
   deal: DealCard | null;
-  appointment: { appointment_id: string; scheduled_at: string; location_note: string | null; source: string | null } | null;
+  appointment: { appointment_id: string; scheduled_at: string; location_note: string | null; source: string | null; timezone?: string } | null;
   suggested_listings: { listing_id: string; type_ar: string; district: string | null; price: number | null; bedrooms: number | null }[];
   match_note: string;
 }

@@ -32,6 +32,7 @@ from src.shared.services import tenant_prefs
 
 logger = structlog.get_logger(__name__)
 BOOKING_TTL_S = 24 * 3600
+DONE_TTL_S = 6 * 3600                  # how long a message id stays "already answered" (covers broker redelivery and webhook replays)
 MAX_BOOKING_MISSES = 2
 
 
@@ -40,6 +41,7 @@ class HookResult:
     reply: str | None = None             # fixed reply: publish it and stop (no LLM)
     handoff_reason: str | None = None    # hand the conversation to a person (after `reply` was sent)
     system_addendum: str | None = None   # appended to the model's system prompt when the LLM does run
+    duplicate: bool = False              # this very message was already answered (redelivery): do nothing at all
     event: str = ""                      # machine tag for logs / tests: opt_out | injection | other_data | complaint | negotiation | booking_offer | booking_done | ...
 
     @property
@@ -111,12 +113,42 @@ async def before_llm(decision, *, now: datetime | None = None, qualify: bool = T
         return HookResult()
 
 
+def _done_key(tenant_id, event) -> str | None:
+    mid = getattr(event, "platform_message_id", None) or getattr(event, "event_id", None)
+    return f"t:{tenant_id!s}:sales_done:{mid}" if mid else None
+
+
+async def mark_replied(decision) -> None:
+    """Remember that THIS inbound message got its fixed reply: a redelivery of the same message (Kafka retry, webhook replay) must not be answered or processed a second time."""
+    key = _done_key(decision.tenant_id, decision.event)
+    if key is None:
+        return
+    try:
+        await redis_mgr.set_raw(key, "1", ttl=DONE_TTL_S)
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("sales_done_mark_unavailable", error=type(exc).__name__)
+
+
+async def _already_replied(decision) -> bool:
+    key = _done_key(decision.tenant_id, decision.event)
+    if key is None:
+        return False
+    try:
+        return bool(await redis_mgr.get_raw(key))
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("sales_done_check_unavailable", error=type(exc).__name__)
+        return False
+
+
 async def _before_llm(decision, now: datetime, qualify: bool = True) -> HookResult:
     tenant_id, conversation_id, customer_id = decision.tenant_id, decision.conversation_id, decision.customer_id
     event = decision.event
     text = (event.text_content or "").strip()
     if not (conversation_id and customer_id and text):
         return HookResult()
+    if await _already_replied(decision):                 # idempotency on the message id: the same «1» / «ما قدرت أحدد…» is never handled (or answered) twice
+        logger.info("sales_hook_duplicate_message", tenant_id=str(tenant_id))
+        return HookResult(duplicate=True, event="duplicate")
     prefs = await tenant_prefs.get_prefs(tenant_id)
     sales = tenant_prefs.with_defaults("sales", prefs.get("sales"))
     if not gate(sales):
@@ -168,6 +200,12 @@ async def _before_llm(decision, now: datetime, qualify: bool = True) -> HookResu
             await pipeline.cancel_followups(session, tenant_id, conversation_id=conversation_id, reason=route)
             await _set_booking_state(tenant_id, conversation_id, None)
             return HookResult(reply=intents.REPLIES_AR[route], handoff_reason=route, event=route)
+        if route == "booking_existing":
+            if sales["booking_enabled"] and ap is not None:
+                tz = sales["viewing_hours"].get("timezone", "Asia/Riyadh")
+                return HookResult(reply=f"عندك موعد معاينة محجوز يوم {booking.format_slot(ap.scheduled_at, tz)}.\nتبقيه كما هو؟ وإذا تبي تغيّره قل «غيّر الموعد»، وإذا تبي تلغيه قل «ألغِ الموعد».",
+                                  event="booking_existing")
+            route = "booking_start" if sales["booking_enabled"] else "qualify"
         if route.startswith("booking") and sales["booking_enabled"]:
             res = await _booking_turn(route, session, state, ap, text, sales, customer, conversation_id, channel, now)
             if res is not None:
@@ -243,7 +281,9 @@ def build_addendum(q: dict[str, Any], match: matcher.MatchResult, ask: tuple[str
              "- لا تعد بأي خدمة غير مذكورة في معلومات الشركة أعلاه (مثل ترتيب التمويل، نقل الملكية، الفحص، التأمين، إدارة الأملاك). "
              "إذا سأل العميل عن خدمة أو شرط غير مؤكد فقل إن أحد موظفينا سيؤكد له التفاصيل ويتواصل معه، ولا تقل «نقدر نرتب» ولا «عندنا» لها.",
              "- لا تكتب «ما هي الميزانية» ولا «ما هو الميزانية»؛ إن سألت عن الميزانية فقل «وش ميزانيتك»، واكتب نوع العقار والحي كما في الأعلى (شقة النرجس لا «الشقة النرجس»).",
-             "- لا تذكر رقم إعلان الهيئة إلا إذا طلبه العميل أو عند ترتيب المعاينة."]
+             "- لا تذكر رقم إعلان الهيئة إلا إذا طلبه العميل أو عند ترتيب المعاينة.",
+             "- لا تسأل عن وقت المعاينة (صباح أم ظهر… أو أي موعد) ولا تقترح مواعيد: المواعيد تُعرض فقط بقائمة المواعيد المتاحة عندما يكتب العميل «أبغى معاينة».",
+             "- عند عرض أكثر من عقار اكتب كل عقار في سطر مستقل بلا شرطات (-) في بدايته أو بين أجزائه، أو اكتبها بجملة واحدة طبيعية."]
     price_q = phrasing.is_price_question(last_text)
     if price_q:
         lines.append("- العميل سأل عن السعر: ابدأ بذكر السعر المعلن لأرخص/أنسب خيار من النوع المذكور من العقارات أعلاه (السعر كما هو بلا تعديل)، ثم اسأل سؤالًا واحدًا إن لزم. "

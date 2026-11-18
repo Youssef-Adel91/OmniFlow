@@ -91,6 +91,7 @@ export default function AiSection({ locale, settings, behavior, onSettings, onBe
               <Toggle checked={c.no_competitor_mentions} onChange={(v) => setC("no_competitor_mentions", v)} label="لا يذكر المنافسين" />
               <Toggle checked={c.ask_budget_early} onChange={(v) => setC("ask_budget_early", v)} label="يسأل عن الميزانية والموقع مبكرًا" />
             </fieldset>
+            <Toggle checked={Boolean(bd.voice_replies_enabled)} onChange={(v) => beh.setDraft({ ...bd, voice_replies_enabled: v })} label="ردود صوتية (رسائل صوتية من المساعد)" hint="مغلقة افتراضيًا: العميل الذي يكتب نصًا يصله نص. فعّلها فقط إذا أردت أن يرد المساعد بملاحظة صوتية عند اللزوم." />
             <Field label="رسالة الترحيب (اختياري)" htmlFor="ai-welcome" hint="يبدأ بها المساعد مع العميل الجديد بصياغته الخاصة.">
               <textarea id="ai-welcome" rows={2} maxLength={500} value={bd.welcome_message} onChange={(e) => beh.setDraft({ ...bd, welcome_message: e.target.value })} className={inputClass} />
             </Field>

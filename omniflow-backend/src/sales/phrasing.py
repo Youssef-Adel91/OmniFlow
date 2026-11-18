@@ -121,7 +121,41 @@ def polish(answer: str, *, customer_text: str | None, previous: Iterable[str] = 
     text = fix_type_district(text, districts)
     if first_reply and not asks_for_ad_number(customer_text):
         text = strip_ad_numbers(text)
-    return text
+    return tidy_listing_format(text)
+
+
+_DASH_SEP = re.compile(r"\s[-–—]\s")
+_LINE_BULLET = re.compile(r"(?m)^[ \t]*[-–—*•][ \t]+")
+
+
+def tidy_listing_format(text: str) -> str:
+    """A reply that offers properties came out as ONE line with mixed dashes («- شقة…، 850,000 ريال - مساحة…»). Make it readable:
+    a text that starts with a dash or holds several « - » separators and states a price is rewritten into one line per property (when the dash separates properties)
+    or into plain comma-separated phrases; a leading dash is removed. Text without a price, or with no stray dash, is untouched."""
+    if not text or not _PRICE_IN_ANSWER.search(text):
+        return text
+    stripped = text.strip()
+    inline = len(_DASH_SEP.findall(stripped))
+    starts_dash = bool(re.match(r"[-–—*•]\s", stripped))
+    if inline < 2 and not (starts_dash and inline >= 1) and not (starts_dash and "\n" not in stripped):
+        return text
+    if "\n" in stripped:                                   # already one item per line: only make the bullets uniform and drop dashes inside a line
+        out = []
+        for ln in stripped.split("\n"):
+            bullet = bool(_LINE_BULLET.match(ln))
+            body = _DASH_SEP.sub("، ", _LINE_BULLET.sub("", ln, count=1))
+            out.append(("• " + body) if bullet else body)
+        return "\n".join(out)
+    body = re.sub(r"^[-–—*•]\s+", "", stripped)
+    parts = [p.strip(" ،") for p in _DASH_SEP.split(body) if p.strip(" ،")]
+    # a part that begins with a property noun starts a new property; other parts are attributes of the previous one
+    items: list[str] = []
+    for p in parts:
+        if not items or re.match(rf"(?:\d+[).]\s*)?(?:ال)?(?:{_TYPE_NOUNS})\b", p):
+            items.append(p)
+        else:
+            items[-1] += "، " + p
+    return "\n".join(("• " + i) if len(items) > 1 else i for i in items) if len(items) > 1 else items[0]
 
 
 # ── price questions: answer the price FIRST, from the inventory ──────────────────────────────────────────────────

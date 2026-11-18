@@ -92,7 +92,7 @@ function AudioPlayer({
             isCustomer ? "text-navy-600" : "text-gold-400"
           )}
         >
-          رسالة صوتية
+          {isCustomer ? "رسالة صوتية" : "رد صوتي من المساعد"}
         </span>
       </div>
 

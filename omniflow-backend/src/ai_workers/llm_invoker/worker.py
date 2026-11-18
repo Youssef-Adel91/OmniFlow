@@ -93,6 +93,27 @@ _L0_RESPONSES: dict[str, str] = {
 }
 
 
+_VCARD_AWAITING = {"STATE_VCARD_SENT", "STATE_AWAITING_VALIDATION", "STATE_REMINDER_1", "STATE_REMINDER_2"}
+
+
+def _vcard_thanks_applies(decision: "RoutingDecision") -> bool:
+    """The «شكراً لحفظ رقمنا» template is only right when we actually asked the customer to save our contact card and he has not confirmed yet."""
+    state = (decision.session_state or {}).get("vcard_state") or getattr(decision.event, "vcard_state", None)
+    return str(getattr(state, "value", state) or "") in _VCARD_AWAITING
+
+
+async def _office_allows_voice(tenant_id: uuid.UUID) -> bool:
+    """Voice-note replies are an explicit opt-in of the OFFICE (settings -> AI behaviour). Default off: a customer who typed gets text, never a «🎙 رسالة صوتية»."""
+    try:
+        from src.shared.services import tenant_prefs
+
+        prefs = await tenant_prefs.get_prefs(tenant_id)
+        return bool((prefs.get("ai_behavior") or {}).get("voice_replies_enabled"))
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("voice_prefs_unavailable", error=type(exc).__name__)
+        return False
+
+
 # ── Sprint 14: Voice-note trigger decision ────────────────────────────────────
 
 def _should_use_voice_note(decision: "RoutingDecision", ai_text: str) -> bool:
@@ -275,8 +296,12 @@ class LLMInvokerWorker(BaseKafkaConsumer):
             from src.sales import hook as sales_hook
 
             sres = await sales_hook.before_llm(decision, qualify=tier != RoutingTier.L0_SEMANTIC_CACHE)
+            if sres.duplicate:                  # the same inbound message was already answered: no second reply, no canned template, no second pass through any rule
+                log.info("llm_invoker_duplicate_message_skipped")
+                return
             if sres.reply:
                 await self._publish_outbound(decision=decision, text=sres.reply, llm_response=None, latency_ms=0)
+                await sales_hook.mark_replied(decision)
                 if sres.handoff_reason and decision.conversation_id:
                     await self._handoff_to_human(decision, sres.handoff_reason, log, send_text=False)
                 elif sres.event in ("booking_offer", "booking_clarify"):
@@ -295,6 +320,9 @@ class LLMInvokerWorker(BaseKafkaConsumer):
             if decision.target_tier == RoutingTier.HUMAN_ESCALATION and decision.conversation_id:
                 await self._handoff_to_human(decision, decision.route_reason or "", log)
             return
+
+        if tier == RoutingTier.L0_SEMANTIC_CACHE and "vcard" in (decision.route_reason or "").lower() and not _vcard_thanks_applies(decision):
+            tier = RoutingTier.L1_TRIAGE        # «تم»/«ok» when no contact-card prompt is pending is an ordinary message (e.g. after a viewing was booked): never the "thanks for saving our number" template
 
         if tier == RoutingTier.L0_SEMANTIC_CACHE:
             # Deterministic response — no LLM, instant reply
@@ -567,7 +595,7 @@ class LLMInvokerWorker(BaseKafkaConsumer):
         final_message_type = "text"
         final_media_url: str | None = None
 
-        if settings.feature_voice_notes_enabled and llm_response is not None:
+        if settings.feature_voice_notes_enabled and llm_response is not None and not tts_client.is_mock and await _office_allows_voice(decision.tenant_id):
             if _should_use_voice_note(decision, text):
                 try:
                     audio_url = await asyncio.wait_for(

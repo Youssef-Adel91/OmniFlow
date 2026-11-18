@@ -91,7 +91,7 @@ _GREETING_PATTERNS: Final[list[str]] = [
 # VCard confirmation — customer replies "تم" / "1" after VCard prompt
 _VCARD_PATTERNS: Final[list[str]] = [
     r"^\s*(تم|حفظت?|عملت?\s*ذلك|ok|okay|done|saved?|حفظ)\s*[!.]*\s*$",
-    r"^\s*[1٢٣١]\s*$",  # Button clicks
+    # a bare digit is NOT a vCard confirmation: «1» is an answer to whatever was asked last (usually a viewing slot) — see tests/test_live_dev_workspace.py
 ]
 
 # Vault retrieval — customer asking for their own report/document

@@ -148,7 +148,7 @@ class IntentTests(unittest.TestCase):
         self.assertEqual(intents.route_turn("stop", booking_open=True), "opt_out")
         self.assertEqual(intents.route_turn("2", booking_open=True), "booking_answer")
         self.assertEqual(intents.route_turn("ابغى معاينة"), "booking_start")
-        self.assertEqual(intents.route_turn("ابغى معاينة", has_appointment=True), "qualify")
+        self.assertEqual(intents.route_turn("ابغى معاينة", has_appointment=True), "booking_existing")
         self.assertEqual(intents.route_turn("الغي الموعد", has_appointment=True), "booking_cancel")
         self.assertEqual(intents.route_turn("غير الموعد", has_appointment=True), "booking_reschedule")
         self.assertEqual(intents.route_turn("ممكن خصم", booking_open=True), "negotiation")

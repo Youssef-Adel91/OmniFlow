@@ -223,6 +223,7 @@ export async function deleteCustomer(customerId: string): Promise<void> {
 }
 
 export interface CustomerDetail {
+  office_timezone?: string;
   customer: Customer;
   conversations: { conversation_id: string; channel: string; status: string; message_count: number; last_message_at: string | null; created_at: string | null }[];
   appointments:  { appointment_id: string; scheduled_at: string; status: string; location_note: string | null }[];

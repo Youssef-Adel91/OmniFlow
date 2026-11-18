@@ -85,8 +85,8 @@ class SalesDbTests(unittest.IsolatedAsyncioTestCase):
             r = await matcher.match(s, a, {"property_type": "apartment", "district": "الملقا", "budget_max": 1_000_000})
             self.assertEqual(r.tier, 3)                                                                          # other districts within budget
             r = await matcher.match(s, a, {"property_type": "apartment", "budget_max": 650_000})
-            self.assertEqual(r.tier, 4)                                                                          # slightly over budget (<= 15 %), flagged
-            self.assertTrue(all(c["price"] <= 650_000 * 1.15 for c in r.listings))
+            self.assertEqual(r.tier, 4)                                                                          # slightly over budget (<= 10 %), flagged
+            self.assertTrue(all(c["price"] <= 650_000 * matcher.OVER_BUDGET_FACTOR for c in r.listings))
             r = await matcher.match(s, a, {"property_type": "villa", "budget_max": 1_000_000})
             self.assertEqual(r.listings, [])
             r = await matcher.match(s, a, {})

@@ -80,3 +80,25 @@ class CancelAndChange(SimCase):
         c = await self.booked()
         t = await c.say("غيرها")
         self.assertNotEqual(t.event, "booking_offer")
+
+
+class CancelAfterTheAlternativeSlotList(SimCase):
+    async def test_cancel_after_the_alternatives_for_a_booked_viewing_keeps_that_viewing(self):
+        c = await self.customer()
+        await c.say("ابغى معاينة")
+        await c.say("1")
+        await c.say("ابغى اشوفها بكره")
+        offer = await c.say("غيرها")
+        self.assertEqual(offer.event, "booking_offer")
+        t = await c.say("إلغاء")
+        self.assertEqual((t.source, t.event), ("rule", "booking_change_dropped"))
+        self.assertTrue(t.reply.startswith("تمام، ما غيّرت موعدك القائم يوم "), t.reply)
+        self.assertNotIn("ألغيت", t.reply)
+        self.assertEqual(len(await self.q("SELECT 1 FROM appointments WHERE tenant_id=:t AND customer_id=:c AND status='scheduled'", c=c.customer_id)), 1)
+
+    async def test_cancel_after_a_first_slot_list_still_says_the_request_was_cancelled(self):
+        c = await self.customer()
+        await c.say("ابغى معاينة")
+        t = await c.say("إلغاء")
+        self.assertEqual(t.event, "booking_cancelled")
+        self.assertIn("ألغيت طلب الموعد", t.reply)

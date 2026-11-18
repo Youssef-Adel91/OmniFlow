@@ -153,12 +153,13 @@ def strip_greeting_bullet(text: str) -> str:
     return _GREETING_LINE.sub("", text or "")
 
 
-_QUESTION_STARTERS = {"هل", "وش", "ايش", "إيش", "شو", "كم", "وين", "تبي", "تبغى", "تبغاه", "تحب", "تفضل", "تفضّل", "الشراء", "الدفع", "العقار", "تدوّر", "تدور", "عندك", "طريقة", "عدد", "ممكن"}
+_QUESTION_STARTERS = {"هل"}
 
 
 def separate_question(text: str) -> str:
     """The reply's ONE question goes on its own line: the description is a sentence or two, then a new line for the question — never glued to it
-    («الدفع كاش مباشرة الشراء للسكن أو للاستثمار؟» -> «الدفع كاش مباشرة» / «الشراء للسكن أو للاستثمار؟»). Only for a reply with exactly one question mark, at its end."""
+    («الدفع كاش مباشرة الشراء للسكن أو للاستثمار؟» -> «الدفع كاش مباشرة» / «الشراء للسكن أو للاستثمار؟»). Only for a reply with exactly one question mark, at its end.
+    The cut is made at a sentence end, at one of OUR standard qualification questions, or at «هل»; never in the middle of a question the model worded itself."""
     if not text or text.count("؟") + text.count("?") != 1:
         return text
     lines = text.split("\n")
@@ -169,14 +170,16 @@ def separate_question(text: str) -> str:
     body, mark = line[:-1], line[-1]
     boundaries = list(re.finditer(r"[.!]\s+", body))
     start = boundaries[-1].end() if boundaries else 0
-    cut = None
+    cut = start if start > 0 else None
+    for variants in QUESTION_VARIANTS_AR.values():                      # one of our own standard questions, glued to what comes before it
+        for v in variants:
+            vi = body.rfind(v[:-1])
+            if vi > 0 and body[vi:] == v[:-1] and vi >= (cut or 0):
+                cut = vi
     for i, tok in enumerate(re.finditer(r"\S+", body[start:])):
-        word = tok.group().strip("،,:")
-        if i >= 2 and (word in _QUESTION_STARTERS or (word == "في" and body[start + tok.end():].lstrip().startswith("أي"))):
+        if i >= 2 and tok.group().strip("،,:") in _QUESTION_STARTERS:
             cut = start + tok.start()
             break
-    if cut is None:
-        cut = start if start > 0 else None
     if not cut:
         return text
     head = body[:cut].rstrip(" ،")

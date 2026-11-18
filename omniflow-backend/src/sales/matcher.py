@@ -6,7 +6,7 @@ Tiers, strictest first, stopping at the first one that returns anything:
     1. type + district + rooms + price range                         (exact = True)
     2. type + district + price range                                 (rooms dropped)
     3. type + price range                                            (district dropped -> "nearest alternative")
-    4. type + price up to budget × 1.15                              (slightly above budget -> labelled as such)
+    4. type + price up to budget × 1.10 (OVER_BUDGET_FACTOR)         (only when NOTHING fits the budget; always labelled «فوق ميزانيتك قليلًا»)
 Only VERIFIED_ACTIVE listings are ever returned. Results are ordered by closeness to the budget ceiling (best value first), at most `limit`.
 """
 from __future__ import annotations
@@ -23,7 +23,7 @@ from src.shared.core.enums import ListingStatus
 from src.shared.db.models import PropertyListing
 
 TYPE_AR = {"apartment": "شقة", "villa": "فيلا", "land": "أرض", "office": "مكتب", "commercial": "تجاري", "warehouse": "مستودع", "daily_rental": "إيجار يومي"}
-OVER_BUDGET_FACTOR = 1.15
+OVER_BUDGET_FACTOR = 1.10          # the one defined margin above the customer's ceiling; nothing dearer than this is EVER shown
 _DISTRICT_CACHE: dict[str, tuple[float, list[str]]] = {}
 
 
@@ -90,7 +90,7 @@ _TIERS = (
     (1, dict(district=True, rooms=True, ceiling_factor=1.0), ""),
     (2, dict(district=True, rooms=False, ceiling_factor=1.0), "لم نجد بنفس عدد الغرف، هذه الأقرب."),
     (3, dict(district=False, rooms=False, ceiling_factor=1.0), "لم نجد في الحي المطلوب، هذه بدائل في مناطق أخرى ضمن ميزانيتك."),
-    (4, dict(district=False, rooms=False, ceiling_factor=OVER_BUDGET_FACTOR), "لم نجد ضمن الميزانية بالضبط، هذه أعلى منها بقليل."),
+    (4, dict(district=False, rooms=False, ceiling_factor=OVER_BUDGET_FACTOR), "لا يوجد أي خيار ضمن الميزانية، وهذا الخيار فوق ميزانيتك قليلًا (حتى 10%): اذكرها بهذه الصيغة الصريحة «فوق ميزانيتك قليلًا»."),
 )
 
 
@@ -207,3 +207,36 @@ def format_block(result: MatchResult, *, show_ad_number: bool = True) -> str:
 def districts_in_block(text: str | None) -> set[str]:
     """District names appearing as «في حي X» in an inventory block (used to tidy «الشقة X» in the model's answer)."""
     return {m.group(1).strip() for m in re.finditer(r"في حي ([^،\n—»«)(:.]+)", text or "") if m.group(1).strip()}
+
+
+OVER_BUDGET_PHRASE = "فوق ميزانيتك قليلًا"
+_UNAVAILABLE = ("غير متوفر", "غير متاح", "غير موجود", "ما عندنا", "ما عندي", "لا يوجد", "لا توجد", "مو متوفر", "مب متوفر", "not available", "unavailable", "don't have", "do not have")
+
+
+def allowed_prices(result: MatchResult) -> set[int]:
+    return {int(c["price"]) for c in result.listings if c.get("price") is not None}
+
+
+def says_unavailable(text: str | None) -> bool:
+    t = text or ""
+    return any(p in t for p in _UNAVAILABLE)
+
+
+def render_reply(result: MatchResult, *, show_ad_number: bool = True) -> str:
+    """The reply built from the deterministic database match alone — used when the model's answer contradicts it (says «غير متوفرة» although the match found the property,
+    or quotes a price/listing that is not in the match). No model, no semantic retrieval: the same match always gives the same words."""
+    if not result.listings:
+        return ""
+    lines = []
+    for c in result.listings:
+        price = f"{int(c['price']):,} ريال" if c["price"] is not None else "السعر عند التواصل"
+        bits = [_where_phrase(c), price, f"{int(c['area_sqm'])} م²" if c["area_sqm"] else "", f"{c['bedrooms']} غرف" if c["bedrooms"] else "",
+                f"رقم إعلان الهيئة {c['rega_ad_number']}" if show_ad_number and c["rega_ad_number"] else ""]
+        lines.append("• " + "، ".join(b for b in bits if b))
+    if result.tier == 4:
+        intro = f"ما لقيت أي خيار ضمن ميزانيتك، وهذا الخيار {OVER_BUDGET_PHRASE}:"
+    elif result.tier in (2, 3):
+        intro = {2: "ما لقيت بنفس عدد الغرف بالضبط، هذا الأقرب:", 3: "ما لقيت في الحي المطلوب، هذا بديل ضمن ميزانيتك:"}[result.tier]
+    else:
+        intro = "عندنا خيار مناسب لك:" if len(lines) == 1 else "عندنا خيارات مناسبة لك:"
+    return "\n".join([intro, *lines, "تحب أرتب لك معاينة؟"])

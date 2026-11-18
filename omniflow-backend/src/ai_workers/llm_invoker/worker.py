@@ -291,6 +291,8 @@ class LLMInvokerWorker(BaseKafkaConsumer):
         # Deterministic guards run first and never reach the model: opt-out, prompt-injection, other customers' data, complaints, price negotiation,
         # the viewing-booking dialogue. Otherwise the qualification + matching listings + hard rules are appended to the system prompt below.
         sales_addendum: str | None = None
+        sales_match = None
+        sales_show_ad = True
         sales_followups = False
         if settings.feature_sales_closing and tier != RoutingTier.HUMAN_ESCALATION:
             from src.sales import hook as sales_hook
@@ -309,6 +311,10 @@ class LLMInvokerWorker(BaseKafkaConsumer):
                 log.info("llm_invoker_sales_fixed_reply", event=sres.event, handoff=sres.handoff_reason)
                 return
             sales_addendum = sres.system_addendum
+            sales_match, sales_show_ad = sres.match, sres.show_ad_number
+            if sres.failed:                    # the hook failed twice: never fall back to "model + semantic retrieval alone" — the model is told the inventory is unavailable
+                log.error("llm_invoker_sales_hook_failed_safe_context")
+                sales_addendum = sales_hook.INVENTORY_UNAVAILABLE_ADDENDUM
             sales_followups = True
 
         # ── 2. Non-LLM fast paths ─────────────────────────────────────────────
@@ -428,12 +434,17 @@ class LLMInvokerWorker(BaseKafkaConsumer):
                 intent_hint = "neighborhoods"
 
             if user_text:
-                rag_context = await rag_retriever.get_rag_context(
-                    tenant_id=str(tenant_id),
-                    user_message=user_text,
-                    include_shared_knowledge=True,
-                    intent_hint=intent_hint,
-                )
+                try:
+                    rag_context = await asyncio.wait_for(rag_retriever.get_rag_context(
+                        tenant_id=str(tenant_id),
+                        user_message=user_text,
+                        include_shared_knowledge=True,
+                        intent_hint=intent_hint,
+                        include_properties=sales_addendum is None,      # a sales tenant's property list comes ONLY from the deterministic database match (type + budget + district + rooms), never from semantic retrieval
+                    ), timeout=8.0)
+                except Exception as exc:  # noqa: BLE001  — retrieval failing or timing out is NOT "no property": the answer never depends on it (the inventory comes from the database match)
+                    log.warning("rag_retrieval_failed_continuing_without", error=type(exc).__name__)
+                    rag_context = None
 
             if rag_context and len(rag_context) > settings.llm_rag_max_chars:
                 rag_context = rag_context[: settings.llm_rag_max_chars]          # bound the prompt (and the bill)
@@ -493,9 +504,15 @@ class LLMInvokerWorker(BaseKafkaConsumer):
             from src.sales import output_guard
 
             findings = output_guard.vet_answer(llm_response.text, context=f"{system_prompt}\n{rag_context or ''}\n{gemini_messages}")
+            from src.sales import matcher as sales_matcher
+
+            deterministic = sales_matcher.render_reply(sales_match, show_ad_number=sales_show_ad) if sales_match is not None and sales_match.listings else ""
             if findings:
                 log.warning("llm_invoker_output_guard_blocked", findings=findings)
-                llm_response.text = output_guard.SAFE_FALLBACK_AR
+                llm_response.text = deterministic or output_guard.SAFE_FALLBACK_AR           # the database match answers when it can; the generic fallback only when there is none
+            elif deterministic and self._contradicts_inventory(llm_response.text, sales_match):
+                log.warning("llm_invoker_answer_contradicts_inventory", tier=sales_match.tier)
+                llm_response.text = deterministic
             else:
                 # deterministic manners: no unprompted salam, no sentence repeated word for word from earlier turns of this conversation
                 from src.sales import phrasing
@@ -814,6 +831,23 @@ class LLMInvokerWorker(BaseKafkaConsumer):
             )
         except Exception as exc:
             logger.warning("customer_profile_extraction_background_failed", error=str(exc))
+
+    @staticmethod
+    def _contradicts_inventory(text: str, match) -> bool:
+        """The answer must agree with the deterministic match: no «غير متوفرة» when the exact property was found (tier 1), and no price that is not one of the matched listings'
+        (a villa at 2,400,000 for an apartment under 1,000,000)."""
+        import re as _re
+
+        from src.sales import matcher as sales_matcher, phrasing
+
+        if match.tier == 1 and sales_matcher.says_unavailable(text):
+            return True
+        allowed = sales_matcher.allowed_prices(match)
+        for m in _re.finditer(r"(\d[\d,.]*)\s*(?:ريال|ر\.?\s?س|sar|riyal)", (text or "").translate(phrasing._AR_DIGITS), _re.I):
+            digits = _re.sub(r"[^\d]", "", m.group(1))
+            if len(digits) >= 5 and int(digits) not in allowed:          # an amount in riyals that is not one of the matched listings' prices (ad numbers / phone numbers are not amounts)
+                return True
+        return False
 
     @staticmethod
     async def _get_l0_response(decision: RoutingDecision) -> str:

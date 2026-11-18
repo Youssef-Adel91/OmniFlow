@@ -265,6 +265,7 @@ class RAGRetriever:
         *,
         include_shared_knowledge: bool = True,
         intent_hint: str | None = None,
+        include_properties: bool = True,
     ) -> str | None:
         """
         Full RAG pipeline: embed → search → format.
@@ -313,7 +314,7 @@ class RAGRetriever:
             return []
 
         property_results, document_results, knowledge_results = await asyncio.gather(
-            self._search_properties_safe(tenant_id, query_vector),
+            self._search_properties_safe(tenant_id, query_vector) if include_properties else _empty(),
             self._search_documents_safe(tenant_id, query_vector),
             (
                 self._search_knowledge_safe(query_vector, intent_hint)

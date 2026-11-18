@@ -14,6 +14,7 @@ empty result and the pipeline behaves exactly as before.
 """
 from __future__ import annotations
 
+import asyncio
 import json
 import uuid
 from dataclasses import dataclass
@@ -42,6 +43,9 @@ class HookResult:
     handoff_reason: str | None = None    # hand the conversation to a person (after `reply` was sent)
     system_addendum: str | None = None   # appended to the model's system prompt when the LLM does run
     duplicate: bool = False              # this very message was already answered (redelivery): do nothing at all
+    failed: bool = False                 # the hook itself failed (twice): the invoker must NOT fall back to "model + semantic retrieval"; it answers from the deterministic inventory path
+    match: Any = None                    # the deterministic database MatchResult behind `system_addendum` (None when no search ran)
+    show_ad_number: bool = True
     event: str = ""                      # machine tag for logs / tests: opt_out | injection | other_data | complaint | negotiation | booking_offer | booking_done | ...
 
     @property
@@ -106,11 +110,17 @@ def gate(prefs_sales: dict[str, Any]) -> bool:
 
 async def before_llm(decision, *, now: datetime | None = None, qualify: bool = True) -> HookResult:
     """See the module docstring. Never raises: a problem here must degrade to "no sales logic", not to a lost customer message."""
-    try:
-        return await _before_llm(decision, now or datetime.now(timezone.utc), qualify)
-    except Exception as exc:  # noqa: BLE001
-        logger.error("sales_hook_failed", error=type(exc).__name__, detail=str(exc)[:200], tenant_id=str(decision.tenant_id))
-        return HookResult()
+    last: Exception | None = None
+    for attempt in (1, 2):                                  # one retry: a transient DB / Redis blip must not turn into "no sales logic" (that let the model answer from semantic retrieval alone)
+        try:
+            return await _before_llm(decision, now or datetime.now(timezone.utc), qualify)
+        except Exception as exc:  # noqa: BLE001
+            last = exc
+            logger.warning("sales_hook_attempt_failed", attempt=attempt, error=type(exc).__name__, detail=str(exc)[:200], tenant_id=str(decision.tenant_id))
+            if attempt == 1:
+                await asyncio.sleep(0.2)
+    logger.error("sales_hook_failed", error=type(last).__name__, detail=str(last)[:200], tenant_id=str(decision.tenant_id))
+    return HookResult(failed=True, event="hook_failed")
 
 
 def _done_key(tenant_id, event) -> str | None:
@@ -250,7 +260,8 @@ async def _before_llm(decision, now: datetime, qualify: bool = True) -> HookResu
             replies = phrasing.PAUSE_REPLIES_AR
             return HookResult(reply=replies[len(texts) % len(replies)], event="pause")
         show_ad_number = not first_contact or phrasing.asks_for_ad_number(text)
-        return HookResult(system_addendum=build_addendum(q, match, ask, last_text=text, first_contact=first_contact, show_ad_number=show_ad_number), event="qualified")
+        return HookResult(system_addendum=build_addendum(q, match, ask, last_text=text, first_contact=first_contact, show_ad_number=show_ad_number), event="qualified",
+                          match=match, show_ad_number=show_ad_number)
 
 
 async def _notify_hot(session, tenant_id, conversation_id, customer, q) -> None:
@@ -259,6 +270,11 @@ async def _notify_hot(session, tenant_id, conversation_id, customer, q) -> None:
     await notify_safe(session, tenant_id, "hot_lead", "عميل جاد يحتاج متابعتك",
                       f"{followup.first_name(customer) or 'عميل'}: {qualification.public_summary(q)}", f"/inbox?conversation={conversation_id}",
                       dedupe_key=f"hot:{customer.customer_id}")
+
+
+INVENTORY_UNAVAILABLE_ADDENDUM = ("=== سياق المبيعات (للاستخدام الداخلي) ===\n"
+                                  "تعذّر الآن الوصول إلى مخزون العقارات: لا تعرض أي عقار ولا سعرًا ولا رقم إعلان، ولا تقل إن الوحدة «غير متوفرة». "
+                                  "قل بجملة قصيرة إن أحد المستشارين سيرسل له الخيارات المناسبة قريبًا، ولا تسأل أي سؤال.")
 
 
 def _greeting_rule(last_text: str | None) -> str:
@@ -293,6 +309,13 @@ def build_addendum(q: dict[str, Any], match: matcher.MatchResult, ask: tuple[str
              "- لا تسأل عن وقت المعاينة (صباح أم ظهر… أو أي موعد) ولا تقترح مواعيد: المواعيد تُعرض فقط بقائمة المواعيد المتاحة عندما يكتب العميل «أبغى معاينة».",
              "- نسّق الرد هكذا: السلام (إن وُجد) في سطر عادي بلا نقطة أو شرطة، ثم الوصف في جملة أو سطرين، ثم السؤال في سطر مستقل في آخر الرد.",
              "- عند عرض أكثر من عقار اكتب كل عقار في سطر مستقل بلا شرطات (-) في بدايته أو بين أجزائه، أو اكتبها بجملة واحدة طبيعية."]
+    if match.listings:
+        lines.append("- العقارات المذكورة أعلاه هي الوحيدة المتاحة لهذا العميل الآن، ومرتبة بحسب طلبه: اعرضها ولا تقل «هذه الوحدة غير متوفرة» ولا «غير متوفرة في قائمتنا المعتمدة»، "
+                     "ولا تعرض أي عقار أو سعر أو نوع آخر غير المذكور أعلاه (حتى لو ورد في مصدر آخر).")
+        if match.tier == 4:
+            lines.append(f"- كل عقار أعلاه {matcher.OVER_BUDGET_PHRASE}: ابدأ بقول ذلك صراحة، ولا تقترح أي شيء أغلى منه.")
+    elif match.reason != "need_info":
+        lines.append("- لا يوجد عقار مطابق في المخزون الآن: قل ذلك بصدق (هذه هي الحالة الوحيدة التي تقول فيها إنه غير متوفر) ولا تعرض أي عقار أو سعر.")
     price_q = phrasing.is_price_question(last_text)
     if price_q:
         lines.append("- العميل سأل عن السعر: ابدأ بذكر السعر المعلن لأرخص/أنسب خيار من النوع المذكور من العقارات أعلاه (السعر كما هو بلا تعديل)، ثم اسأل سؤالًا واحدًا إن لزم. "
@@ -337,6 +360,8 @@ async def _booking_turn(route, session, state, ap, text, sales, customer, conver
     if route == "booking_cancel":
         if state and state.get("slots"):
             await _set_booking_state(tenant_id, conversation_id, None)
+            if state.get("replace") and ap is not None:              # the open list was the alternatives for an EXISTING viewing: cancelling the list keeps that viewing
+                return HookResult(reply=f"تمام، ما غيّرت موعدك القائم يوم {booking.format_slot(ap.scheduled_at, tz)}.", event="booking_change_dropped")
             return HookResult(reply="تمام، ألغيت طلب الموعد. إذا حبيت نرتبه لاحقًا قل لي بس 🤝", event="booking_cancelled")
         if ap is not None:
             ap.status = "cancelled"

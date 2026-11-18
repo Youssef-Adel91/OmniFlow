@@ -180,18 +180,21 @@ class EmbeddingService:
     async def _embed_one(self, text: str) -> list[float]:
         if self.provider == "openai":
             return (await self._openai_embed_with_retry([text]))[0]
-        return (await self._fastembed_embed([text]))[0]
+        return (await self._fastembed_embed([text], role="query"))[0]
 
     async def _embed_many(self, texts: list[str]) -> list[list[float]]:
         if self.provider == "openai":
             return await self._openai_embed_with_retry(texts)
-        return await self._fastembed_embed(texts)
+        return await self._fastembed_embed(texts, role="passage")          # batches are the listings being indexed
 
-    async def _fastembed_embed(self, texts: list[str]) -> list[list[float]]:
+    async def _fastembed_embed(self, texts: list[str], *, role: str = "passage") -> list[list[float]]:
         """fastembed's API is synchronous CPU (ONNX) work — offload to a thread
         so it doesn't block the worker's event loop."""
         if self._local_model is None:
             raise RuntimeError("EmbeddingService not configured. Call configure() first.")
+
+        if "e5" in settings.embedding_local_model.lower():              # the E5 family is trained with these prefixes; without them quality drops noticeably
+            texts = [f"{'query' if role == 'query' else 'passage'}: {t}" for t in texts]
 
         def _run() -> list[list[float]]:
             return [vec.tolist() for vec in self._local_model.embed(texts)]  # type: ignore[union-attr]

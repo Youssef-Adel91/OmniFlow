@@ -441,6 +441,7 @@ class LLMInvokerWorker(BaseKafkaConsumer):
                         include_shared_knowledge=True,
                         intent_hint=intent_hint,
                         include_properties=sales_addendum is None,      # a sales tenant's property list comes ONLY from the deterministic database match (type + budget + district + rooms), never from semantic retrieval
+                        priority_listings=sales_match.listings if sales_match is not None else None,   # …and that match is the FIRST thing in the retrieval context
                     ), timeout=8.0)
                 except Exception as exc:  # noqa: BLE001  — retrieval failing or timing out is NOT "no property": the answer never depends on it (the inventory comes from the database match)
                     log.warning("rag_retrieval_failed_continuing_without", error=type(exc).__name__)

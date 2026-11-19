@@ -266,6 +266,8 @@ class RAGRetriever:
         include_shared_knowledge: bool = True,
         intent_hint: str | None = None,
         include_properties: bool = True,
+        constraints: dict | None = None,
+        priority_listings: list[dict] | None = None,
     ) -> str | None:
         """
         Full RAG pipeline: embed → search → format.
@@ -287,8 +289,18 @@ class RAGRetriever:
             Formatting: ~1ms
             Total:      ~161ms (well within 200ms SLA for L2 RAG path)
         """
+        # The deterministic database match (sales hook) is ALWAYS the first thing in the context, and it does not depend on the embedding or Qdrant succeeding.
+        priority_text: str | None = None
+        if priority_listings:
+            from src.ai_workers.rag_engine import ranking
+
+            priority_text = ranking.format_priority_listings(priority_listings)
+
+        def _with_priority(rest: str | None) -> str | None:
+            return "\n\n".join(x for x in (priority_text, rest) if x) or None
+
         if not user_message or not user_message.strip():
-            return None
+            return _with_priority(None)
 
         # ── 1. Embed the query ────────────────────────────────────────────────
         try:
@@ -300,7 +312,7 @@ class RAGRetriever:
                 error=str(exc),
                 exc_type=type(exc).__name__,
             )
-            return None  # Graceful degradation — LLM proceeds without RAG context
+            return _with_priority(None)  # Graceful degradation — LLM proceeds without the semantic part (the database match, if any, is still there)
 
         # ── 2. Parallel search: properties + tenant documents + shared KB ─────
         #
@@ -314,7 +326,7 @@ class RAGRetriever:
             return []
 
         property_results, document_results, knowledge_results = await asyncio.gather(
-            self._search_properties_safe(tenant_id, query_vector) if include_properties else _empty(),
+            self._search_properties_safe(tenant_id, query_vector, constraints) if include_properties else _empty(),
             self._search_documents_safe(tenant_id, query_vector),
             (
                 self._search_knowledge_safe(query_vector, intent_hint)
@@ -341,12 +353,12 @@ class RAGRetriever:
                 tenant_id=str(tenant_id),
                 message_preview=user_message[:60],
             )
-            return None
+            return _with_priority(None)
 
         # ── 3. Format into context string ─────────────────────────────────────
-        return _build_context_string(
+        return _with_priority(_build_context_string(
             property_results, knowledge_results, document_results
-        )
+        ))
 
     async def _search_documents_safe(
         self,
@@ -378,9 +390,23 @@ class RAGRetriever:
         self,
         tenant_id: str | uuid.UUID,
         query_vector: list[float],
+        constraints: dict | None = None,
     ) -> list[qmodels.ScoredPoint]:
-        """Property search with error isolation — never raises."""
+        """Property search with error isolation — never raises.
+
+        With the customer's hard needs known (`constraints`: type, budget, district) they are applied as Qdrant payload filters BEFORE the limit (10 slots, every one of them
+        offerable), the score threshold is dropped (the filter, not the similarity, decides relevance), and the hits are re-ranked deterministically. Without constraints the
+        old behaviour stays: an unfiltered top-5 above the similarity threshold."""
         try:
+            if constraints:
+                from src.ai_workers.rag_engine import ranking
+
+                args = ranking.qdrant_filter_args(constraints)
+                filters = self._qdrant.build_preference_filter(**args)
+                hits = await self._qdrant.search_properties(
+                    tenant_id=tenant_id, query_vector=query_vector, limit=ranking.SEARCH_LIMIT, score_threshold=None, extra_filters=filters or None)
+                hits = ranking.drop_contradicting(hits, constraints)
+                return ranking.rerank(hits, constraints)[:_MAX_PROPERTY_RESULTS]
             return await self._qdrant.search_properties(
                 tenant_id=tenant_id,
                 query_vector=query_vector,

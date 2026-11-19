@@ -12,6 +12,16 @@ from pydantic import AnyHttpUrl, Field, computed_field, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
+# fastembed models we know the output size of (the Qdrant collection must be created with exactly this size). Multilingual ones are the candidates for Arabic text.
+LOCAL_EMBEDDING_DIMS: dict[str, int] = {
+    "BAAI/bge-small-en-v1.5": 384,
+    "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2": 384,
+    "sentence-transformers/paraphrase-multilingual-mpnet-base-v2": 768,
+    "intfloat/multilingual-e5-large": 1024,
+    "minishlab/potion-multilingual-128M": 256,
+}
+
+
 class Settings(BaseSettings):
     """
     OmniFlow AI — Unified Application Settings.
@@ -370,7 +380,10 @@ class Settings(BaseSettings):
     # whenever no real OpenAI key is configured, instead of the previous
     # semantically-meaningless random-vector mock. See embedder.py.
     embedding_local_model: str = "BAAI/bge-small-en-v1.5"
-    embedding_local_model_dim: int = 384
+    embedding_local_model_dim: int = 384          # only used for a model that is NOT in LOCAL_EMBEDDING_DIMS below
+    # Appended to every tenant's listings collection name. Changing the embedding model makes old vectors incompatible (a different space, often a different size): point the app at a
+    # NEW collection with a suffix (e.g. "_ml") and fill it with `python -m scripts.reindex_listings`; the old collection is left untouched until you decide to drop it.
+    qdrant_collection_suffix: str = ""
     whisper_api_model: str = "whisper-1"
     google_ai_api_key: str = Field(
         default="",
@@ -549,7 +562,9 @@ class Settings(BaseSettings):
     def embedding_dim(self) -> int:
         """Vector size for the active embedding provider — Qdrant collections
         must be created with this size, and it changes if the provider does."""
-        return self.embedding_model_dim if self.embedding_provider == "openai" else self.embedding_local_model_dim
+        if self.embedding_provider == "openai":
+            return self.embedding_model_dim
+        return LOCAL_EMBEDDING_DIMS.get(self.embedding_local_model, self.embedding_local_model_dim)
 
     @property
     def is_production(self) -> bool:

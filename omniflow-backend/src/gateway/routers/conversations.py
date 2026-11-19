@@ -398,32 +398,22 @@ async def get_conversation_recommendations(
     # not just rank) — relax in stages rather than risk an empty panel when
     # the extracted district doesn't exactly string-match a listing's, since
     # Qdrant's exact-match filter has no fuzzy tolerance.
-    full_filter = qdrant_mgr.build_preference_filter(
-        price_min=preferences["budget_min"], price_max=preferences["budget_max"],
-        district=preferences["district"], property_type=preferences["property_type"],
-        bedrooms=preferences["bedrooms"],
-    )
-    price_only_filter = qdrant_mgr.build_preference_filter(            # relaxed: drops district / rooms only — NEVER the type or the budget
-        price_min=preferences["budget_min"], price_max=preferences["budget_max"], property_type=preferences["property_type"],
-    )
+    from src.ai_workers.rag_engine import ranking
 
-    # Relaxation stages, de-duplicated by identity so an empty/no-op stage
-    # (e.g. no budget was ever extracted, so the "price-only" stage is the
-    # same as "no filter") isn't queried twice.
-    stages: list[list] = []
-    for candidate in (full_filter, price_only_filter):
+    # Hard needs as Qdrant payload filters BEFORE the limit (type, budget ceiling +10%, district), 10 slots, deterministic re-rank; relaxation drops district/rooms only, never type or budget.
+    stages: list[dict] = []
+    for candidate in (hard, {k: v for k, v in hard.items() if k in ("property_type", "budget_min", "budget_max")}):
         if not stages or candidate != stages[-1]:
             stages.append(candidate)
     if not hard:                                                     # nothing known about the customer's needs yet: an unfiltered semantic search is all there is
-        stages.append([])
+        stages = [{}]
 
     results: list = []
-    for extra_filters in stages:
-        results = await qdrant_mgr.search_properties(
-            conversation.tenant_id, query_vector, limit=max(limit * 5, 15), score_threshold=0.0,
-            extra_filters=extra_filters or None,
-        )
-        results = recommendation_filters.filter_hits(results, hard)[:limit]  # a hit that breaks a hard constraint is dropped: empty beats wrong
+    for stage in stages:
+        filters = qdrant_mgr.build_preference_filter(**ranking.qdrant_filter_args(stage)) if stage else []
+        found = await qdrant_mgr.search_properties(
+            conversation.tenant_id, query_vector, limit=ranking.SEARCH_LIMIT, score_threshold=None, extra_filters=filters or None)
+        results = ranking.rerank(ranking.drop_contradicting(found, stage) if stage else found, hard)[:limit]
         if results:
             break
 

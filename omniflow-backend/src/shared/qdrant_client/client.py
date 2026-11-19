@@ -78,7 +78,7 @@ def _tenant_collection(tenant_id: str | uuid.UUID) -> str:
     Dashes removed because Qdrant collection names must be valid identifiers.
     """
     clean_id = str(tenant_id).replace("-", "")
-    return f"t_{clean_id}_listings"
+    return f"t_{clean_id}_listings{settings.qdrant_collection_suffix}"
 
 
 def tenant_documents_collection(tenant_id: str | uuid.UUID) -> str:
@@ -228,6 +228,7 @@ class QdrantManager:
         district: str | None = None,
         property_type: str | None = None,
         bedrooms: int | None = None,
+        district_any: list[str] | None = None,
     ) -> list[qmodels.Condition]:
         """
         Structured filter conditions from extracted customer preferences
@@ -242,7 +243,11 @@ class QdrantManager:
                 key="price_sar",
                 range=qmodels.Range(gte=price_min, lte=price_max),
             ))
-        if district:
+        if district_any:                                   # spelling variants of ONE district («النرجس» / «نرجس» / «حي النرجس»)
+            conditions.append(qmodels.FieldCondition(
+                key="district", match=qmodels.MatchAny(any=list(district_any)),
+            ))
+        elif district:
             conditions.append(qmodels.FieldCondition(
                 key="district", match=qmodels.MatchValue(value=district),
             ))
@@ -266,7 +271,7 @@ class QdrantManager:
         query_vector: list[float],
         *,
         limit: int = 5,
-        score_threshold: float = 0.60,
+        score_threshold: float | None = 0.60,          # None = no similarity floor (the payload filters decide relevance; cosine can even be negative for an unrelated text)
         with_payload: bool = True,
         extra_filters: list[qmodels.Condition] | None = None,
     ) -> list[qmodels.ScoredPoint]:
